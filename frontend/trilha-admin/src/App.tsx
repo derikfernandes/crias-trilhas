@@ -1,0 +1,93 @@
+import type { ReactNode } from 'react'
+import { BrowserRouter, Link, Navigate, Route, Routes } from 'react-router-dom'
+import { db, firebaseConfigError } from './lib/firebase'
+import { DocPage } from './pages/DocPage'
+import { HomePage } from './pages/HomePage'
+import { InstitutionDetailPage } from './pages/InstitutionDetailPage'
+import { InstitutionNewPage } from './pages/InstitutionNewPage'
+import './App.css'
+
+const routerBasename =
+  import.meta.env.BASE_URL === '/'
+    ? undefined
+    : import.meta.env.BASE_URL.replace(/\/$/, '')
+
+const firebaseOk = !firebaseConfigError && db
+
+function Layout({ children }: { children: ReactNode }) {
+  return (
+    <div className="admin">
+      <nav className="nav">
+        <Link to="/" className="nav__brand">
+          Crias Trilha
+        </Link>
+        <div className="nav__links">
+          <Link to="/">Início</Link>
+          {firebaseOk ? (
+            <Link to="/instituicoes/novo">Nova instituição</Link>
+          ) : null}
+          <Link to="/doc">API / Doc</Link>
+        </div>
+      </nav>
+      {children}
+    </div>
+  )
+}
+
+function FirebaseGate({ children }: { children: ReactNode }) {
+  if (!firebaseOk) {
+    return (
+      <>
+        <header className="admin__header">
+          <h1>Instituições</h1>
+        </header>
+        <p className="banner banner--error" role="alert">
+          {firebaseConfigError ??
+            'Firebase não inicializado. Verifique o arquivo .env.'}
+        </p>
+        <p className="admin__lede muted">
+          A documentação da API em <Link to="/doc">/doc</Link> continua
+          disponível.
+        </p>
+      </>
+    )
+  }
+  return children
+}
+
+export default function App() {
+  return (
+    <BrowserRouter basename={routerBasename}>
+      <Layout>
+        <Routes>
+          <Route path="/doc" element={<DocPage />} />
+          <Route
+            path="/"
+            element={
+              <FirebaseGate>
+                <HomePage />
+              </FirebaseGate>
+            }
+          />
+          <Route
+            path="/instituicoes/novo"
+            element={
+              <FirebaseGate>
+                <InstitutionNewPage />
+              </FirebaseGate>
+            }
+          />
+          <Route
+            path="/instituicoes/:id"
+            element={
+              <FirebaseGate>
+                <InstitutionDetailPage />
+              </FirebaseGate>
+            }
+          />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </Layout>
+    </BrowserRouter>
+  )
+}
