@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { BrowserRouter, Link, Navigate, Route, Routes } from 'react-router-dom'
 import { db, firebaseConfigError } from './lib/firebase'
+import { PRODUCTION_APP_ORIGIN } from './lib/site'
 import { DocPage } from './pages/DocPage'
 import { HomePage } from './pages/HomePage'
 import { InstitutionDetailPage } from './pages/InstitutionDetailPage'
@@ -43,11 +44,14 @@ function FirebaseGate({ children }: { children: ReactNode }) {
         </header>
         <p className="banner banner--error" role="alert">
           {firebaseConfigError ??
-            'Firebase não inicializado. Verifique o arquivo .env.'}
+            'Firebase não inicializado. Configure VITE_FIREBASE_* no .env local ou nas Environment Variables da Vercel.'}
         </p>
         <p className="admin__lede muted">
-          A documentação da API em <Link to="/doc">/doc</Link> continua
-          disponível.
+          App em produção:{' '}
+          <a href={PRODUCTION_APP_ORIGIN} target="_blank" rel="noreferrer">
+            {PRODUCTION_APP_ORIGIN}
+          </a>
+          . Documentação da API em <Link to="/doc">/doc</Link>.
         </p>
       </>
     )

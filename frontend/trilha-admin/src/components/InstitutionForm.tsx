@@ -10,6 +10,7 @@ import {
 } from 'firebase/firestore'
 import { db } from '../lib/firebase'
 import { fullInstitutionUrl, institutionPath } from '../lib/paths'
+import { PRODUCTION_APP_ORIGIN } from '../lib/site'
 import { INSTITUTIONS_COLLECTION } from '../lib/institutionFirestore'
 import type { Institution } from '../types/institution'
 
@@ -136,8 +137,12 @@ export function InstitutionForm({ docId, initial }: Props) {
             </button>
           </div>
           <p className="public-link__hint muted">
-            O mesmo valor é gravado no Firestore no campo{' '}
-            <code>public_link</code> ao salvar.
+            O mesmo valor é gravado no Firestore no campo <code>public_link</code> ao
+            salvar. Em produção o link costuma ser em{' '}
+            <a href={PRODUCTION_APP_ORIGIN} target="_blank" rel="noreferrer">
+              {PRODUCTION_APP_ORIGIN.replace(/^https?:\/\//, '')}
+            </a>
+            .
           </p>
         </div>
       ) : null}

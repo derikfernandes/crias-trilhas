@@ -1,4 +1,8 @@
-# React + TypeScript + Vite
+# Crias Trilha — admin (React + TypeScript + Vite)
+
+**Produção (Vercel):** o painel público está em [https://crias-ai.vercel.app](https://crias-ai.vercel.app). Variáveis `VITE_*`: arquivo `.env` nesta pasta em desenvolvimento, ou **Settings → Environment Variables** no projeto Vercel (o fluxo não depende de `localhost` em produção).
+
+---
 
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 
