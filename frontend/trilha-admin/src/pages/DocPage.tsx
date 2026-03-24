@@ -1,8 +1,9 @@
 import { useMemo } from 'react'
 import { Link } from 'react-router-dom'
+import { PRODUCTION_API_DOC_BASE, PRODUCTION_APP_ORIGIN } from '../lib/site'
 
 const DEFAULT_BASE =
-  import.meta.env.VITE_API_BASE_URL ?? 'https://api.exemplo.com'
+  import.meta.env.VITE_API_BASE_URL ?? PRODUCTION_API_DOC_BASE
 
 type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE'
 
@@ -233,13 +234,22 @@ export function DocPage() {
           <strong>método HTTP</strong>, o <strong>caminho</strong>, o que a rota
           faz e os parâmetros ou corpo esperados.
         </p>
+        <p className="admin__lede muted">
+          <strong>Painel (esta interface) em produção:</strong>{' '}
+          <a href={PRODUCTION_APP_ORIGIN} target="_blank" rel="noreferrer">
+            {PRODUCTION_APP_ORIGIN}
+          </a>
+          . Todas as variáveis <code>VITE_*</code> vão no <code>.env</code> local ou
+          em <strong>Settings → Environment Variables</strong> na Vercel (não dependem
+          de <code>localhost</code>).
+        </p>
         <p className="doc__base">
-          <span className="doc__base-label">Base URL</span>
+          <span className="doc__base-label">Base URL da API</span>
           <code className="doc__base-value">{baseUrl}</code>
           {!import.meta.env.VITE_API_BASE_URL ? (
             <span className="muted doc__base-hint">
-              Defina <code>VITE_API_BASE_URL</code> no <code>.env</code> para
-              refletir seu ambiente real.
+              Padrão: mesmo host do app na Vercel. Se a API REST estiver em outro domínio,
+              defina <code>VITE_API_BASE_URL</code> no <code>.env</code> ou na Vercel.
             </span>
           ) : null}
         </p>

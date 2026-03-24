@@ -26,7 +26,7 @@ function missingEnvKeys(): string[] {
 const missing = missingEnvKeys()
 export const firebaseConfigError =
   missing.length > 0
-    ? `Variáveis de ambiente ausentes: ${missing.join(', ')}. Copie .env para a raiz do projeto.`
+    ? `Variáveis de ambiente ausentes: ${missing.join(', ')}. Defina-as em frontend/trilha-admin/.env (desenvolvimento) ou em Settings → Environment Variables na Vercel (produção).`
     : null
 
 export const app = firebaseConfigError ? null : initializeApp(firebaseConfig)

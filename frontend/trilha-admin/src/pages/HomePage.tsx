@@ -8,6 +8,7 @@ import {
   snapshotToInstitution,
 } from '../lib/institutionFirestore'
 import { fullInstitutionUrl, institutionPath } from '../lib/paths'
+import { PRODUCTION_APP_ORIGIN } from '../lib/site'
 import type { Institution } from '../types/institution'
 
 export function HomePage() {
@@ -53,7 +54,7 @@ export function HomePage() {
   }
 
   function rowLink(inst: Institution): string {
-    return inst.public_link ?? fullInstitutionUrl(inst.id)
+    return fullInstitutionUrl(inst.id)
   }
 
   return (
@@ -61,9 +62,13 @@ export function HomePage() {
       <header className="admin__header">
         <h1>Início — Instituições</h1>
         <p className="admin__lede">
-          Cada registro tem um <strong>link fixo</strong> na aplicação (e o
-          campo <code>public_link</code> no Firestore após salvar). Use na Vercel
-          ou local: a URL muda só o domínio.
+          Cada registro tem um <strong>link fixo</strong> (gravado em{' '}
+          <code>public_link</code> ao salvar). Em produção os links usam{' '}
+          <a href={PRODUCTION_APP_ORIGIN} target="_blank" rel="noreferrer">
+            {PRODUCTION_APP_ORIGIN.replace(/^https?:\/\//, '')}
+          </a>
+          . Outro domínio: variável <code>VITE_PUBLIC_APP_ORIGIN</code> no painel da
+          Vercel.
         </p>
         <p className="admin__actions">
           <Link className="btn btn--primary" to="/instituicoes/novo">
