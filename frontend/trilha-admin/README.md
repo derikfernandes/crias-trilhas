@@ -1,6 +1,15 @@
 # Crias Trilha — admin (React + TypeScript + Vite)
 
-**Produção (Vercel):** o painel público está em [https://crias-ai.vercel.app](https://crias-ai.vercel.app). Variáveis `VITE_*`: arquivo `.env` nesta pasta em desenvolvimento, ou **Settings → Environment Variables** no projeto Vercel (o fluxo não depende de `localhost` em produção).
+**Produção (Vercel):** o painel público está em [https://crias-trilhas.vercel.app](https://crias-trilhas.vercel.app). Variáveis `VITE_*`: arquivo `.env` nesta pasta em desenvolvimento, ou **Settings → Environment Variables** no projeto Vercel (o fluxo não depende de `localhost` em produção).
+
+## API REST (CRUD de Instituições)
+As rotas REST ficam disponíveis no mesmo domínio, por exemplo:
+
+- `POST /institution/`
+- `PUT /institution/:id`
+- `DELETE /institution/:id`
+
+Para funcionar, a Vercel precisa da variável `FIREBASE_ADMIN_SERVICE_ACCOUNT_JSON` (JSON do service account do Firebase Admin).
 
 ---
 
