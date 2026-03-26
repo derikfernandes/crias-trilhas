@@ -23,3 +23,10 @@ export function institutionPath(id: string): string {
 export function fullInstitutionUrl(id: string): string {
   return `${publicAppOrigin()}${institutionPath(id)}`
 }
+
+/** Caminho interno para abrir/editar um aluno no painel. */
+export function studentPath(id: string): string {
+  const base = import.meta.env.BASE_URL
+  if (base === '/') return `/alunos/${id}`
+  return `${base.replace(/\/$/, '')}/alunos/${id}`
+}

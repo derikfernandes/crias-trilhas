@@ -6,6 +6,8 @@ import { DocPage } from './pages/DocPage'
 import { HomePage } from './pages/HomePage'
 import { InstitutionDetailPage } from './pages/InstitutionDetailPage'
 import { InstitutionNewPage } from './pages/InstitutionNewPage'
+import { StudentDetailPage } from './pages/StudentDetailPage'
+import { StudentNewPage } from './pages/StudentNewPage'
 import './App.css'
 
 const routerBasename =
@@ -27,6 +29,7 @@ function Layout({ children }: { children: ReactNode }) {
           {firebaseOk ? (
             <Link to="/instituicoes/novo">Nova instituição</Link>
           ) : null}
+          {firebaseOk ? <Link to="/alunos/novo">Novo aluno</Link> : null}
           <Link to="/doc">API / Doc</Link>
         </div>
       </nav>
@@ -86,6 +89,22 @@ export default function App() {
             element={
               <FirebaseGate>
                 <InstitutionDetailPage />
+              </FirebaseGate>
+            }
+          />
+          <Route
+            path="/alunos/novo"
+            element={
+              <FirebaseGate>
+                <StudentNewPage />
+              </FirebaseGate>
+            }
+          />
+          <Route
+            path="/alunos/:id"
+            element={
+              <FirebaseGate>
+                <StudentDetailPage />
               </FirebaseGate>
             }
           />

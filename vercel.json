@@ -15,6 +15,36 @@
       "source": "/institution/:id([A-Za-z0-9_-]+)/",
       "destination": "/api/institution?id=:id"
     },
+    { "source": "/student/", "destination": "/api/student" },
+    { "source": "/student", "destination": "/api/student" },
+    { "source": "/student/simple", "destination": "/api/student?simple=1" },
+    {
+      "source": "/student/:phone([0-9]+)",
+      "destination": "/api/student?phone_number=:phone"
+    },
+    {
+      "source": "/student/:id([A-Za-z0-9_-]+)",
+      "destination": "/api/student?id=:id"
+    },
+    {
+      "source": "/student/:id([A-Za-z0-9_-]+)/",
+      "destination": "/api/student?id=:id"
+    },
+    { "source": "/students/", "destination": "/api/student" },
+    { "source": "/students", "destination": "/api/student" },
+    { "source": "/students/simple", "destination": "/api/student?simple=1" },
+    {
+      "source": "/students/:phone([0-9]+)",
+      "destination": "/api/student?phone_number=:phone"
+    },
+    {
+      "source": "/students/:id([A-Za-z0-9_-]+)",
+      "destination": "/api/student?id=:id"
+    },
+    {
+      "source": "/students/:id([A-Za-z0-9_-]+)/",
+      "destination": "/api/student?id=:id"
+    },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }

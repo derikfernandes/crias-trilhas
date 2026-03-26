@@ -2,50 +2,39 @@ import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { doc, onSnapshot } from 'firebase/firestore'
 import { db } from '../lib/firebase'
-import {
-  INSTITUTIONS_COLLECTION,
-  snapshotToInstitution,
-} from '../lib/institutionFirestore'
-import { InstitutionForm } from '../components/InstitutionForm'
-import type { Institution } from '../types/institution'
+import { STUDENTS_COLLECTION, snapshotToStudent } from '../lib/studentFirestore'
+import { StudentForm } from '../components/StudentForm'
+import type { Student } from '../types/student'
 
-export function InstitutionDetailPage() {
+export function StudentDetailPage() {
   const { id } = useParams<{ id: string }>()
-  const [inst, setInst] = useState<Institution | null>(null)
+  const [stu, setStu] = useState<Student | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    let unsub: (() => void) | null = null
+    if (!db || !id) return
+    const unsub = onSnapshot(
+      doc(db, STUDENTS_COLLECTION, id),
+      (snap) => {
+        if (!snap.exists()) {
+          setStu(null)
+          setError(null)
+          setLoading(false)
+          return
+        }
 
-    async function run() {
-      if (!db || !id) {
+        setStu(snapshotToStudent(snap))
+        setError(null)
         setLoading(false)
-        return
-      }
+      },
+      (err) => {
+        setError(err.message)
+        setLoading(false)
+      },
+    )
 
-      setLoading(true)
-      unsub = onSnapshot(
-        doc(db, INSTITUTIONS_COLLECTION, id),
-        (snap) => {
-          if (!snap.exists()) {
-            setInst(null)
-            setError(null)
-          } else {
-            setInst(snapshotToInstitution(snap))
-            setError(null)
-          }
-          setLoading(false)
-        },
-        (err) => {
-          setError(err.message)
-          setLoading(false)
-        },
-      )
-    }
-
-    void run()
-    return () => unsub?.()
+    return () => unsub()
   }, [id])
 
   if (!id) {
@@ -59,7 +48,7 @@ export function InstitutionDetailPage() {
   return (
     <>
       <header className="admin__header">
-        <h1>Instituição</h1>
+        <h1>Aluno</h1>
         <p className="admin__actions">
           <Link className="btn btn--ghost" to="/">
             ← Voltar ao início
@@ -75,13 +64,14 @@ export function InstitutionDetailPage() {
 
       {loading ? (
         <p className="muted">Carregando…</p>
-      ) : !inst ? (
+      ) : !stu ? (
         <p className="banner banner--error" role="alert">
           Registro não encontrado.
         </p>
       ) : (
-        <InstitutionForm docId={id} initial={inst} />
+        <StudentForm docId={id} initial={stu} />
       )}
     </>
   )
 }
+
