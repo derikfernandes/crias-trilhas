@@ -81,8 +81,7 @@ function sanitizeString(v: unknown): string | null {
   return s.length ? s : null
 }
 
-export default {
-  async fetch(request: Request): Promise<Response> {
+async function handleRequest(request: Request): Promise<Response> {
     const url = new URL(request.url)
     const id = url.searchParams.get('id')?.trim()
     const simple = url.searchParams.get('simple') === '1'
@@ -299,6 +298,45 @@ export default {
         error: e instanceof Error ? e.message : 'Erro interno',
       })
     }
-  },
+}
+
+export default async function handler(req: any, res: any): Promise<void> {
+  const method = (req?.method ?? 'GET') as string
+  const host = (req?.headers?.host ?? 'localhost') as string
+  const path = (req?.url ?? '/') as string
+  const url = new URL(path, `https://${host}`)
+
+  const headers = new Headers()
+  const rawHeaders = (req?.headers ?? {}) as Record<string, unknown>
+  for (const [k, v] of Object.entries(rawHeaders)) {
+    if (typeof v === 'string') headers.set(k, v)
+    else if (Array.isArray(v)) headers.set(k, v.join(','))
+  }
+
+  const init: RequestInit = { method, headers }
+
+  if (!['GET', 'HEAD'].includes(method.toUpperCase())) {
+    const body = req?.body
+    if (body !== undefined && body !== null) {
+      init.body = typeof body === 'string' ? body : JSON.stringify(body)
+      if (!headers.has('content-type')) {
+        headers.set('content-type', 'application/json; charset=utf-8')
+      }
+    }
+  }
+
+  const response = await handleRequest(new Request(url.toString(), init))
+
+  res.statusCode = response.status
+  response.headers.forEach((value, key) => {
+    try {
+      res.setHeader(key, value)
+    } catch {
+      // ignora headers inválidos no ambiente serverless
+    }
+  })
+
+  const ab = await response.arrayBuffer()
+  res.end(Buffer.from(ab))
 }
 

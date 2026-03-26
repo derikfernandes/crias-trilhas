@@ -214,6 +214,357 @@ const INSTITUTION_ENDPOINTS: DocEndpoint[] = [
   },
 ]
 
+const STUDENT_ENDPOINTS: DocEndpoint[] = [
+  {
+    id: 'get-student-list',
+    method: 'GET',
+    path: '/student/',
+    title: 'Listar alunos (com filtros)',
+    description:
+      'Retorna a lista de alunos. Use query params para filtrar por `institution_id`, `school_level`, `school_grade`, `student_level` e `active`.',
+    auth: true,
+    queryParams: [
+      {
+        name: 'institution_id',
+        type: 'string',
+        required: false,
+        description: 'Filtra alunos pertencentes à instituição.',
+      },
+      {
+        name: 'school_level',
+        type: '"fundamental" | "médio"',
+        required: false,
+        description: 'Nível escolar do aluno (ex.: fundamental, médio).',
+      },
+      {
+        name: 'school_grade',
+        type: 'string',
+        required: false,
+        description:
+          'Série/ano do aluno (ex.: "7º ano", "2º ano"). Não confundir com `student_level`. Valores comuns: `fundamental` → "1º ano" ... "9º ano"; `médio` → "1º ano" ... "3º ano".',
+      },
+      {
+        name: 'student_level',
+        type: '1 | 2 | 3',
+        required: false,
+        description:
+          'Nível pedagógico atual. Se não preencher no cadastro, o backend usa default `2` (intermediário).',
+      },
+      {
+        name: 'active',
+        type: 'boolean',
+        required: false,
+        description: 'Filtra apenas alunos ativos/inativos.',
+      },
+    ],
+    responses: [
+      { code: '200', description: 'Lista de alunos (array JSON).' },
+      { code: '401', description: 'Não autenticado.' },
+    ],
+  },
+  {
+    id: 'get-student-simple',
+    method: 'GET',
+    path: '/student/simple',
+    title: 'Listar alunos (formato simplificado)',
+    description:
+      'Versão reduzida do endpoint de listagem, útil para selects e telas leves.',
+    auth: true,
+    queryParams: [
+      {
+        name: 'institution_id',
+        type: 'string',
+        required: false,
+        description: 'Filtra alunos pertencentes à instituição.',
+      },
+      {
+        name: 'school_level',
+        type: '"fundamental" | "médio"',
+        required: false,
+        description: 'Nível escolar do aluno (ex.: fundamental, médio).',
+      },
+      {
+        name: 'school_grade',
+        type: 'string',
+        required: false,
+        description:
+          'Série/ano do aluno (ex.: "7º ano", "2º ano"). Não confundir com `student_level`. Valores comuns: `fundamental` → "1º ano" ... "9º ano"; `médio` → "1º ano" ... "3º ano".',
+      },
+      {
+        name: 'student_level',
+        type: '1 | 2 | 3',
+        required: false,
+        description: 'Nível pedagógico atual do aluno (1, 2 ou 3).',
+      },
+      {
+        name: 'active',
+        type: 'boolean',
+        required: false,
+        description: 'Filtra apenas alunos ativos/inativos.',
+      },
+    ],
+    responses: [
+      { code: '200', description: 'Lista simplificada (campos reduzidos).' },
+      { code: '401', description: 'Não autenticado.' },
+    ],
+  },
+  {
+    id: 'get-student-id',
+    method: 'GET',
+    path: '/student/{id}',
+    title: 'Buscar aluno por ID',
+    description: 'Obtém os dados de um aluno a partir do identificador único.',
+    auth: true,
+    pathParams: [
+      {
+        name: 'id',
+        type: 'string',
+        description: 'Identificador único do aluno no sistema.',
+      },
+    ],
+    responses: [
+      { code: '200', description: 'Objeto do aluno encontrado.' },
+      { code: '404', description: 'Aluno não encontrado para o id informado.' },
+      { code: '401', description: 'Não autenticado.' },
+    ],
+  },
+  {
+    id: 'get-student-phone',
+    method: 'GET',
+    path: '/student/{phone_number}',
+    title: 'Buscar aluno por phone_number',
+    description:
+      'Obtém os dados de um aluno a partir do telefone (phone_number). A busca é feita pelos dígitos; caracteres não numéricos são removidos pelo backend.',
+    auth: true,
+    pathParams: [
+      {
+        name: 'phone_number',
+        type: 'string',
+        description:
+          'Telefone do aluno. Quando usado no path, a rota captura apenas dígitos.',
+      },
+    ],
+    responses: [
+      { code: '200', description: 'Objeto do aluno encontrado.' },
+      { code: '404', description: 'Aluno não encontrado para o telefone informado.' },
+      { code: '400', description: 'Telefone inválido (sem dígitos).' },
+      { code: '401', description: 'Não autenticado.' },
+    ],
+  },
+  {
+    id: 'post-student',
+    method: 'POST',
+    path: '/student/',
+    title: 'Criar novo aluno',
+    description:
+      'Cria um novo aluno vinculado a uma instituição. Campos importantes: `school_level`/`school_grade` representam a série/ano escolar; `student_level` representa o nível pedagógico atual e é independente deles. Se `student_level` não for enviado, o backend assume default `2` (intermediário).',
+    auth: true,
+    bodyFields: [
+      {
+        name: 'institution_id',
+        type: 'string',
+        required: true,
+        description: 'ID da instituição de ensino do aluno.',
+        example: 'inst_abc123',
+      },
+      {
+        name: 'name',
+        type: 'string',
+        required: true,
+        description: 'Nome completo do aluno.',
+        example: 'João da Silva',
+      },
+      {
+        name: 'phone_number',
+        type: 'string',
+        required: true,
+        description:
+          'Telefone de contato. O backend/painel salva apenas números (remove `+`, espaços, hífen, parênteses etc.).',
+        example: '+55 11 99999-0000',
+      },
+      {
+        name: 'school_level',
+        type: '"fundamental" | "médio"',
+        required: true,
+        description:
+          'Nível escolar. Use "fundamental" ou "médio" (equivalente a ensino médio).',
+        example: 'fundamental',
+      },
+      {
+        name: 'school_grade',
+        type: 'string',
+        required: true,
+        description:
+          'Série/ano escolar (ex.: "7º ano"). Não confundir com `student_level`. Valores comuns: `fundamental` → "1º ano" ... "9º ano"; `médio` → "1º ano" ... "3º ano".',
+        example: '7º ano',
+      },
+      {
+        name: 'student_level',
+        type: '1 | 2 | 3',
+        required: false,
+        description:
+          'Nível pedagógico atual (1, 2, 3). Default quando não preenchido: `2`.',
+        example: '1',
+      },
+      {
+        name: 'active',
+        type: 'boolean',
+        required: false,
+        description:
+          'Indica se o aluno está ativo. Se não enviar, o backend usa `true`.',
+        example: 'true',
+      },
+    ],
+    bodyExample: `{
+  "institution_id": "inst_abc123",
+  "name": "João da Silva",
+  "phone_number": "+55 11 99999-0000",
+  "school_level": "fundamental",
+  "school_grade": "7º ano",
+  "student_level": 1,
+  "active": true
+}
+{
+  "institution_id": "inst_abc123",
+  "name": "Maria Souza",
+  "phone_number": "+55 11 98888-0000",
+  "school_level": "fundamental",
+  "school_grade": "7º ano",
+  "active": true
+  // student_level omitido -> default 2 (intermediário)
+}
+{
+  "institution_id": "inst_abc123",
+  "name": "Carlos Pereira",
+  "phone_number": "+55 11 97777-0000",
+  "school_level": "fundamental",
+  "school_grade": "7º ano",
+  "student_level": 3,
+  "active": true
+}
+{
+  "institution_id": "inst_abc123",
+  "name": "Ana Oliveira",
+  "phone_number": "+55 11 96666-0000",
+  "school_level": "médio",
+  "school_grade": "1º ano",
+  "student_level": 1,
+  "active": true
+}
+{
+  "institution_id": "inst_abc123",
+  "name": "Pedro Santos",
+  "phone_number": "+55 11 95555-0000",
+  "school_level": "médio",
+  "school_grade": "1º ano",
+  "student_level": 2,
+  "active": true
+}
+{
+  "institution_id": "inst_abc123",
+  "name": "Bruna Costa",
+  "phone_number": "+55 11 94444-0000",
+  "school_level": "médio",
+  "school_grade": "1º ano",
+  "student_level": 3,
+  "active": true
+}`,
+    responses: [
+      { code: '201', description: 'Criado — aluno disponível no corpo.' },
+      { code: '400', description: 'Dados inválidos ou campos obrigatórios ausentes.' },
+      { code: '401', description: 'Não autenticado — token ausente ou inválido.' },
+    ],
+  },
+  {
+    id: 'put-student-id',
+    method: 'PUT',
+    path: '/student/{id}',
+    title: 'Atualizar aluno',
+    description:
+      'Atualiza campos do aluno indicado pelo `id`. O corpo pode ser parcial: envie somente os campos que deseja alterar.',
+    auth: true,
+    pathParams: [
+      {
+        name: 'id',
+        type: 'string',
+        description: 'Identificador do aluno a ser atualizado.',
+      },
+    ],
+    bodyFields: [
+      {
+        name: 'institution_id',
+        type: 'string',
+        required: false,
+        description: 'Pode re-vincular o aluno a outra instituição (se regra permitir).',
+      },
+      {
+        name: 'name',
+        type: 'string',
+        required: false,
+        description: 'Novo nome do aluno.',
+      },
+      {
+        name: 'phone_number',
+        type: 'string',
+        required: false,
+        description:
+          'Novo telefone do aluno. O backend/painel salva apenas dígitos (remove caracteres não numéricos).',
+      },
+      {
+        name: 'school_level',
+        type: '"fundamental" | "médio"',
+        required: false,
+        description: 'Atualiza o nível escolar.',
+      },
+      {
+        name: 'school_grade',
+        type: 'string',
+        required: false,
+        description: 'Atualiza a série/ano escolar.',
+      },
+      {
+        name: 'student_level',
+        type: '1 | 2 | 3',
+        required: false,
+        description: 'Atualiza o nível pedagógico atual.',
+      },
+      {
+        name: 'active',
+        type: 'boolean',
+        required: false,
+        description: 'Ativa/desativa o aluno.',
+      },
+    ],
+    responses: [
+      { code: '200', description: 'Aluno atualizado com sucesso.' },
+      { code: '400', description: 'Payload inválido.' },
+      { code: '404', description: 'Aluno não encontrado.' },
+      { code: '401', description: 'Não autenticado.' },
+    ],
+  },
+  {
+    id: 'delete-student-id',
+    method: 'DELETE',
+    path: '/student/{id}',
+    title: 'Deletar aluno',
+    description:
+      'Remove permanentemente o registro do aluno. Operação irreversível; valide regras de negócio no backend.',
+    auth: true,
+    pathParams: [
+      {
+        name: 'id',
+        type: 'string',
+        description: 'Identificador do aluno a ser removido.',
+      },
+    ],
+    responses: [
+      { code: '204', description: 'Exclusão concluída (No Content).' },
+      { code: '404', description: 'Aluno não encontrado.' },
+      { code: '401', description: 'Não autenticado.' },
+    ],
+  },
+]
+
 const METHOD_EXPLAIN: Record<HttpMethod, string> = {
   GET: 'Consulta — lê dados do servidor sem alterar o estado do recurso (idempotente).',
   POST: 'Criação — envia um corpo (body) para criar um novo recurso; gera um novo id no servidor.',
@@ -229,8 +580,9 @@ export function DocPage() {
       <header className="admin__header">
         <h1>Documentação da API</h1>
         <p className="admin__lede">
-          Referência dos endpoints REST do recurso <strong>Institution</strong>{' '}
-          (gerenciamento de instituições). Cada bloco indica o{' '}
+          Referência dos endpoints REST dos recursos{' '}
+          <strong>Institution</strong> e <strong>Student</strong> (gerenciamento
+          de instituições e alunos). Cada bloco indica o{' '}
           <strong>método HTTP</strong>, o <strong>caminho</strong>, o que a rota
           faz e os parâmetros ou corpo esperados.
         </p>
@@ -284,6 +636,162 @@ export function DocPage() {
 
         <div className="doc__endpoints">
           {INSTITUTION_ENDPOINTS.map((ep) => (
+            <details key={ep.id} className="doc-endpoint">
+              <summary className="doc-endpoint__summary">
+                <span
+                  className={`doc-method doc-method--${ep.method.toLowerCase()}`}
+                >
+                  {ep.method}
+                </span>
+                <code className="doc-endpoint__path">{ep.path}</code>
+                <span className="doc-endpoint__title">{ep.title}</span>
+                {ep.auth ? (
+                  <span
+                    className="doc-endpoint__lock"
+                    title="Pode exigir autenticação"
+                    aria-label="Autenticação"
+                  >
+                    <LockIcon />
+                  </span>
+                ) : null}
+              </summary>
+
+              <div className="doc-endpoint__body">
+                <p className="doc-endpoint__desc">{ep.description}</p>
+
+                <p className="doc-endpoint__fullurl">
+                  <span className="muted">URL completa de exemplo:</span>{' '}
+                  <code>
+                    {ep.method} {baseUrl}
+                    {ep.path.replace('{id}', '{id}')}
+                  </code>
+                </p>
+
+                {ep.pathParams?.length ? (
+                  <div className="doc-block">
+                    <h3 className="doc-block__title">Parâmetros de path</h3>
+                    <table className="doc-table">
+                      <thead>
+                        <tr>
+                          <th>Nome</th>
+                          <th>Tipo</th>
+                          <th>Descrição</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {ep.pathParams.map((p) => (
+                          <tr key={p.name}>
+                            <td>
+                              <code>{p.name}</code>
+                            </td>
+                            <td>{p.type}</td>
+                            <td>{p.description}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : null}
+
+                {ep.queryParams?.length ? (
+                  <div className="doc-block">
+                    <h3 className="doc-block__title">Query</h3>
+                    <table className="doc-table">
+                      <thead>
+                        <tr>
+                          <th>Nome</th>
+                          <th>Tipo</th>
+                          <th>Obrigatório</th>
+                          <th>Descrição</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {ep.queryParams.map((q) => (
+                          <tr key={q.name}>
+                            <td>
+                              <code>{q.name}</code>
+                            </td>
+                            <td>{q.type}</td>
+                            <td>{q.required ? 'Sim' : 'Não'}</td>
+                            <td>{q.description}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : null}
+
+                {ep.bodyFields?.length ? (
+                  <div className="doc-block">
+                    <h3 className="doc-block__title">Corpo da requisição (JSON)</h3>
+                    <table className="doc-table">
+                      <thead>
+                        <tr>
+                          <th>Campo</th>
+                          <th>Tipo</th>
+                          <th>Obrigatório</th>
+                          <th>Descrição</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {ep.bodyFields.map((f) => (
+                          <tr key={f.name}>
+                            <td>
+                              <code>{f.name}</code>
+                            </td>
+                            <td>{f.type}</td>
+                            <td>{f.required ? 'Sim' : 'Não'}</td>
+                            <td>
+                              {f.description}
+                              {f.example ? (
+                                <span className="doc-example">
+                                  {' '}
+                                  Ex.: <code>{f.example}</code>
+                                </span>
+                              ) : null}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    {ep.bodyExample ? (
+                      <pre className="doc-pre" tabIndex={0}>
+                        <code>{ep.bodyExample}</code>
+                      </pre>
+                    ) : null}
+                  </div>
+                ) : null}
+
+                <div className="doc-block">
+                  <h3 className="doc-block__title">Respostas</h3>
+                  <ul className="doc-responses">
+                    {ep.responses.map((r) => (
+                      <li key={r.code}>
+                        <span
+                          className={`doc-code doc-code--${r.code.startsWith('2') ? 'ok' : r.code.startsWith('4') ? 'client' : 'other'}`}
+                        >
+                          {r.code}
+                        </span>
+                        {r.description}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            </details>
+          ))}
+        </div>
+      </section>
+
+      <section className="panel doc__section">
+        <h2>Student (Aluno) — endpoints</h2>
+        <p className="doc__section-intro muted">
+          Rotas para cadastrar e gerenciar alunos vinculados a instituições.
+          `student_level` é independente de `school_grade` (ano/série escolar).
+        </p>
+
+        <div className="doc__endpoints">
+          {STUDENT_ENDPOINTS.map((ep) => (
             <details key={ep.id} className="doc-endpoint">
               <summary className="doc-endpoint__summary">
                 <span

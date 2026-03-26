@@ -25,24 +25,31 @@ export function HomePage() {
   }, [items])
 
   useEffect(() => {
-    if (!db) {
-      setLoadingList(false)
-      return
+    let unsub: (() => void) | null = null
+
+    async function run() {
+      if (!db) {
+        setLoadingList(false)
+        return
+      }
+
+      setLoadingList(true)
+      unsub = onSnapshot(
+        collection(db, INSTITUTIONS_COLLECTION),
+        (snap) => {
+          setItems(snap.docs.map(snapshotToInstitution))
+          setListError(null)
+          setLoadingList(false)
+        },
+        (err) => {
+          setListError(err.message)
+          setLoadingList(false)
+        },
+      )
     }
-    setLoadingList(true)
-    const unsub = onSnapshot(
-      collection(db, INSTITUTIONS_COLLECTION),
-      (snap) => {
-        setItems(snap.docs.map(snapshotToInstitution))
-        setListError(null)
-        setLoadingList(false)
-      },
-      (err) => {
-        setListError(err.message)
-        setLoadingList(false)
-      },
-    )
-    return () => unsub()
+
+    void run()
+    return () => unsub?.()
   }, [])
 
   async function copyLink(url: string) {
