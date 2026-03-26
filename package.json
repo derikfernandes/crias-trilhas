@@ -1,11 +1,16 @@
 {
   "name": "crias-trilha",
   "private": true,
-  "workspaces": ["frontend/trilha-admin"],
+  "workspaces": [
+    "frontend/trilha-admin"
+  ],
   "scripts": {
     "dev": "npm run dev -w trilha-admin",
     "build": "npm run build -w trilha-admin",
     "lint": "npm run lint -w trilha-admin",
     "preview": "npm run preview -w trilha-admin"
+  },
+  "dependencies": {
+    "firebase-admin": "^13.7.0"
   }
 }

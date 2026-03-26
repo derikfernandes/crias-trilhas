@@ -1,5 +1,5 @@
 /** Origem pública do painel Trilha em produção na Vercel (links e documentação). */
-export const PRODUCTION_APP_ORIGIN = 'https://crias-ai.vercel.app'
+export const PRODUCTION_APP_ORIGIN = 'https://crias-trilhas.vercel.app'
 
 /**
  * Base da API na documentação /doc quando `VITE_API_BASE_URL` não está definida.

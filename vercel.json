@@ -3,5 +3,18 @@
   "installCommand": "npm install",
   "buildCommand": "npm run build",
   "outputDirectory": "frontend/trilha-admin/dist",
-  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
+  "rewrites": [
+    { "source": "/institution/", "destination": "/api/institution" },
+    { "source": "/institution", "destination": "/api/institution" },
+    { "source": "/institution/simple", "destination": "/api/institution?simple=1" },
+    {
+      "source": "/institution/:id([A-Za-z0-9_-]+)",
+      "destination": "/api/institution?id=:id"
+    },
+    {
+      "source": "/institution/:id([A-Za-z0-9_-]+)/",
+      "destination": "/api/institution?id=:id"
+    },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
 }
