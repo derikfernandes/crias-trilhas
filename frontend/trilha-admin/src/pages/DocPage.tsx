@@ -565,6 +565,209 @@ const STUDENT_ENDPOINTS: DocEndpoint[] = [
   },
 ]
 
+const TRAIL_ENDPOINTS: DocEndpoint[] = [
+  {
+    id: 'get-trail-list',
+    method: 'GET',
+    path: '/trails/',
+    title: 'Listar trilhas (com filtros)',
+    description:
+      'Retorna a lista de trilhas. Use query params para filtrar por `institution_id` e `active`.',
+    auth: true,
+    queryParams: [
+      {
+        name: 'institution_id',
+        type: 'string',
+        required: false,
+        description: 'Filtra trilhas pertencentes à instituição.',
+      },
+      {
+        name: 'active',
+        type: 'boolean',
+        required: false,
+        description: 'Filtra apenas trilhas ativas/inativas.',
+      },
+    ],
+    responses: [
+      { code: '200', description: 'Lista de trilhas (array JSON).' },
+      { code: '401', description: 'Não autenticado.' },
+    ],
+  },
+  {
+    id: 'get-trail-simple',
+    method: 'GET',
+    path: '/trails/simple',
+    title: 'Listar trilhas (formato simplificado)',
+    description:
+      'Versão reduzida da listagem, útil para selects e telas leves.',
+    auth: true,
+    queryParams: [
+      {
+        name: 'institution_id',
+        type: 'string',
+        required: false,
+        description: 'Filtra trilhas pertencentes à instituição.',
+      },
+      {
+        name: 'active',
+        type: 'boolean',
+        required: false,
+        description: 'Filtra apenas trilhas ativas/inativas.',
+      },
+    ],
+    responses: [
+      { code: '200', description: 'Lista simplificada (campos reduzidos).' },
+      { code: '401', description: 'Não autenticado.' },
+    ],
+  },
+  {
+    id: 'get-trail-id',
+    method: 'GET',
+    path: '/trails/{id}',
+    title: 'Buscar trilha por ID',
+    description:
+      'Obtém os dados de uma única trilha a partir do identificador único.',
+    auth: true,
+    pathParams: [
+      {
+        name: 'id',
+        type: 'string',
+        description: 'Identificador único da trilha no sistema.',
+      },
+    ],
+    responses: [
+      { code: '200', description: 'Objeto da trilha encontrado.' },
+      { code: '404', description: 'Trilha não encontrada para o id informado.' },
+      { code: '401', description: 'Não autenticado.' },
+    ],
+  },
+  {
+    id: 'post-trail',
+    method: 'POST',
+    path: '/trails/',
+    title: 'Criar nova trilha',
+    description:
+      'Cria uma nova trilha com os campos macro. `default_total_steps_per_stage` é opcional e o backend usa default `8` quando não enviado.',
+    auth: true,
+    bodyFields: [
+      {
+        name: 'institution_id',
+        type: 'string',
+        required: true,
+        description: 'ID da instituição dona da trilha.',
+        example: 'inst_abc123',
+      },
+      {
+        name: 'name',
+        type: 'string',
+        required: true,
+        description: 'Nome/identificador da trilha.',
+        example: 'Trilha de Matemática Básica',
+      },
+      {
+        name: 'description',
+        type: 'string',
+        required: true,
+        description: 'Descrição geral da trilha.',
+        example: 'Visão macro do conteúdo e objetivos...',
+      },
+      {
+        name: 'subject',
+        type: 'string',
+        required: true,
+        description: 'Matéria ou tema principal da trilha.',
+        example: 'Matemática',
+      },
+      {
+        name: 'default_total_steps_per_stage',
+        type: 'number (inteiro)',
+        required: false,
+        description:
+          'Valor padrão de passos por stage (o backend usa `8` se omitido).',
+        example: '8',
+      },
+      {
+        name: 'active',
+        type: 'boolean',
+        required: false,
+        description: 'Indica se a trilha está ativa no sistema.',
+        example: 'true',
+      },
+    ],
+    responses: [
+      { code: '201', description: 'Trilha criada com sucesso.' },
+      { code: '400', description: 'Dados inválidos ou campos obrigatórios ausentes.' },
+      { code: '401', description: 'Não autenticado — token ausente ou inválido.' },
+    ],
+  },
+  {
+    id: 'put-trail-id',
+    method: 'PUT',
+    path: '/trails/{id}',
+    title: 'Atualizar trilha',
+    description:
+      'Atualiza campos da trilha indicada pelo `id`. O corpo pode ser parcial.',
+    auth: true,
+    pathParams: [
+      {
+        name: 'id',
+        type: 'string',
+        description: 'Identificador da trilha a ser atualizada.',
+      },
+    ],
+    bodyFields: [
+      {
+        name: 'institution_id',
+        type: 'string',
+        required: false,
+        description: 'Pode re-vincular a trilha a outra instituição.',
+      },
+      { name: 'name', type: 'string', required: false, description: 'Novo nome da trilha.' },
+      { name: 'description', type: 'string', required: false, description: 'Nova descrição geral.' },
+      { name: 'subject', type: 'string', required: false, description: 'Novo tema/matéria principal.' },
+      {
+        name: 'default_total_steps_per_stage',
+        type: 'number (inteiro)',
+        required: false,
+        description: 'Novo valor padrão de passos por stage.',
+      },
+      {
+        name: 'active',
+        type: 'boolean',
+        required: false,
+        description: 'Ativa/desativa a trilha.',
+      },
+    ],
+    responses: [
+      { code: '200', description: 'Trilha atualizada com sucesso.' },
+      { code: '400', description: 'Payload inválido.' },
+      { code: '404', description: 'Trilha não encontrada.' },
+      { code: '401', description: 'Não autenticado.' },
+    ],
+  },
+  {
+    id: 'delete-trail-id',
+    method: 'DELETE',
+    path: '/trails/{id}',
+    title: 'Deletar trilha',
+    description:
+      'Remove permanentemente o registro da trilha. Operação irreversível; valide regras de negócio no backend.',
+    auth: true,
+    pathParams: [
+      {
+        name: 'id',
+        type: 'string',
+        description: 'Identificador da trilha a ser removida.',
+      },
+    ],
+    responses: [
+      { code: '204', description: 'Exclusão concluída (No Content).' },
+      { code: '404', description: 'Trilha não encontrada.' },
+      { code: '401', description: 'Não autenticado.' },
+    ],
+  },
+]
+
 const METHOD_EXPLAIN: Record<HttpMethod, string> = {
   GET: 'Consulta — lê dados do servidor sem alterar o estado do recurso (idempotente).',
   POST: 'Criação — envia um corpo (body) para criar um novo recurso; gera um novo id no servidor.',
@@ -581,8 +784,9 @@ export function DocPage() {
         <h1>Documentação da API</h1>
         <p className="admin__lede">
           Referência dos endpoints REST dos recursos{' '}
-          <strong>Institution</strong> e <strong>Student</strong> (gerenciamento
-          de instituições e alunos). Cada bloco indica o{' '}
+          <strong>Institution</strong>, <strong>Student</strong> e{' '}
+          <strong>Trails</strong> (gerenciamento de instituições, alunos e
+          trilhas). Cada bloco indica o{' '}
           <strong>método HTTP</strong>, o <strong>caminho</strong>, o que a rota
           faz e os parâmetros ou corpo esperados.
         </p>
@@ -792,6 +996,161 @@ export function DocPage() {
 
         <div className="doc__endpoints">
           {STUDENT_ENDPOINTS.map((ep) => (
+            <details key={ep.id} className="doc-endpoint">
+              <summary className="doc-endpoint__summary">
+                <span
+                  className={`doc-method doc-method--${ep.method.toLowerCase()}`}
+                >
+                  {ep.method}
+                </span>
+                <code className="doc-endpoint__path">{ep.path}</code>
+                <span className="doc-endpoint__title">{ep.title}</span>
+                {ep.auth ? (
+                  <span
+                    className="doc-endpoint__lock"
+                    title="Pode exigir autenticação"
+                    aria-label="Autenticação"
+                  >
+                    <LockIcon />
+                  </span>
+                ) : null}
+              </summary>
+
+              <div className="doc-endpoint__body">
+                <p className="doc-endpoint__desc">{ep.description}</p>
+
+                <p className="doc-endpoint__fullurl">
+                  <span className="muted">URL completa de exemplo:</span>{' '}
+                  <code>
+                    {ep.method} {baseUrl}
+                    {ep.path.replace('{id}', '{id}')}
+                  </code>
+                </p>
+
+                {ep.pathParams?.length ? (
+                  <div className="doc-block">
+                    <h3 className="doc-block__title">Parâmetros de path</h3>
+                    <table className="doc-table">
+                      <thead>
+                        <tr>
+                          <th>Nome</th>
+                          <th>Tipo</th>
+                          <th>Descrição</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {ep.pathParams.map((p) => (
+                          <tr key={p.name}>
+                            <td>
+                              <code>{p.name}</code>
+                            </td>
+                            <td>{p.type}</td>
+                            <td>{p.description}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : null}
+
+                {ep.queryParams?.length ? (
+                  <div className="doc-block">
+                    <h3 className="doc-block__title">Query</h3>
+                    <table className="doc-table">
+                      <thead>
+                        <tr>
+                          <th>Nome</th>
+                          <th>Tipo</th>
+                          <th>Obrigatório</th>
+                          <th>Descrição</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {ep.queryParams.map((q) => (
+                          <tr key={q.name}>
+                            <td>
+                              <code>{q.name}</code>
+                            </td>
+                            <td>{q.type}</td>
+                            <td>{q.required ? 'Sim' : 'Não'}</td>
+                            <td>{q.description}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : null}
+
+                {ep.bodyFields?.length ? (
+                  <div className="doc-block">
+                    <h3 className="doc-block__title">Corpo da requisição (JSON)</h3>
+                    <table className="doc-table">
+                      <thead>
+                        <tr>
+                          <th>Campo</th>
+                          <th>Tipo</th>
+                          <th>Obrigatório</th>
+                          <th>Descrição</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {ep.bodyFields.map((f) => (
+                          <tr key={f.name}>
+                            <td>
+                              <code>{f.name}</code>
+                            </td>
+                            <td>{f.type}</td>
+                            <td>{f.required ? 'Sim' : 'Não'}</td>
+                            <td>
+                              {f.description}
+                              {f.example ? (
+                                <span className="doc-example">
+                                  {' '}
+                                  Ex.: <code>{f.example}</code>
+                                </span>
+                              ) : null}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    {ep.bodyExample ? (
+                      <pre className="doc-pre" tabIndex={0}>
+                        <code>{ep.bodyExample}</code>
+                      </pre>
+                    ) : null}
+                  </div>
+                ) : null}
+
+                <div className="doc-block">
+                  <h3 className="doc-block__title">Respostas</h3>
+                  <ul className="doc-responses">
+                    {ep.responses.map((r) => (
+                      <li key={r.code}>
+                        <span
+                          className={`doc-code doc-code--${r.code.startsWith('2') ? 'ok' : r.code.startsWith('4') ? 'client' : 'other'}`}
+                        >
+                          {r.code}
+                        </span>
+                        {r.description}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            </details>
+          ))}
+        </div>
+      </section>
+
+      <section className="panel doc__section">
+        <h2>Trails — endpoints</h2>
+        <p className="doc__section-intro muted">
+          Rotas para cadastrar e gerenciar trilhas com campos macro.
+        </p>
+
+        <div className="doc__endpoints">
+          {TRAIL_ENDPOINTS.map((ep) => (
             <details key={ep.id} className="doc-endpoint">
               <summary className="doc-endpoint__summary">
                 <span
