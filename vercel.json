@@ -45,6 +45,17 @@
       "source": "/students/:id([A-Za-z0-9_-]+)/",
       "destination": "/api/student?id=:id"
     },
+    { "source": "/trails/", "destination": "/api/trails" },
+    { "source": "/trails", "destination": "/api/trails" },
+    { "source": "/trails/simple", "destination": "/api/trails?simple=1" },
+    {
+      "source": "/trails/:id([A-Za-z0-9_-]+)",
+      "destination": "/api/trails?id=:id"
+    },
+    {
+      "source": "/trails/:id([A-Za-z0-9_-]+)/",
+      "destination": "/api/trails?id=:id"
+    },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }

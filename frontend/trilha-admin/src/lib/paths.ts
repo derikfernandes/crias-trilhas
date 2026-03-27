@@ -30,3 +30,10 @@ export function studentPath(id: string): string {
   if (base === '/') return `/alunos/${id}`
   return `${base.replace(/\/$/, '')}/alunos/${id}`
 }
+
+/** Caminho interno para abrir/editar uma trilha no painel. */
+export function trailPath(id: string): string {
+  const base = import.meta.env.BASE_URL
+  if (base === '/') return `/trilhas/${id}`
+  return `${base.replace(/\/$/, '')}/trilhas/${id}`
+}

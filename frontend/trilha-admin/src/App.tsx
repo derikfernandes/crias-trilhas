@@ -6,6 +6,8 @@ import { DocPage } from './pages/DocPage'
 import { HomePage } from './pages/HomePage'
 import { InstitutionDetailPage } from './pages/InstitutionDetailPage'
 import { InstitutionNewPage } from './pages/InstitutionNewPage'
+import { TrailDetailPage } from './pages/TrailDetailPage'
+import { TrailNewPage } from './pages/TrailNewPage'
 import { StudentDetailPage } from './pages/StudentDetailPage'
 import { StudentNewPage } from './pages/StudentNewPage'
 import './App.css'
@@ -30,6 +32,7 @@ function Layout({ children }: { children: ReactNode }) {
             <Link to="/instituicoes/novo">Nova instituição</Link>
           ) : null}
           {firebaseOk ? <Link to="/alunos/novo">Novo aluno</Link> : null}
+          {firebaseOk ? <Link to="/trilhas/novo">Nova trilha</Link> : null}
           <Link to="/doc">API / Doc</Link>
         </div>
       </nav>
@@ -105,6 +108,22 @@ export default function App() {
             element={
               <FirebaseGate>
                 <StudentDetailPage />
+              </FirebaseGate>
+            }
+          />
+          <Route
+            path="/trilhas/novo"
+            element={
+              <FirebaseGate>
+                <TrailNewPage />
+              </FirebaseGate>
+            }
+          />
+          <Route
+            path="/trilhas/:id"
+            element={
+              <FirebaseGate>
+                <TrailDetailPage />
               </FirebaseGate>
             }
           />
