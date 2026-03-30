@@ -37,3 +37,11 @@ export function trailPath(id: string): string {
   if (base === '/') return `/trilhas/${id}`
   return `${base.replace(/\/$/, '')}/trilhas/${id}`
 }
+
+/** Questões/etapas de um stage específico (collection `trail_stage_questions`). */
+export function trailStageQuestionsPath(trailId: string, stageNumber: number): string {
+  const base = import.meta.env.BASE_URL
+  const sn = String(stageNumber)
+  if (base === '/') return `/trilhas/${trailId}/stages/${sn}/questoes`
+  return `${base.replace(/\/$/, '')}/trilhas/${trailId}/stages/${sn}/questoes`
+}

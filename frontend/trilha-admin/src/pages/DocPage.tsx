@@ -942,6 +942,297 @@ const TRAIL_STAGE_ENDPOINTS: DocEndpoint[] = [
   },
 ]
 
+const TRAIL_STAGE_QUESTION_ENDPOINTS: DocEndpoint[] = [
+  {
+    id: 'get-trail-stage-question-list',
+    method: 'GET',
+    path: '/trail_stage_questions/',
+    title: 'Listar questões de um stage',
+    description:
+      'Retorna questões ordenadas por `question_number` quando `trail_id` e `stage_number` são informados. Opcional: `active` (filtra ativas/inativas), `simple=1`.',
+    auth: true,
+    queryParams: [
+      {
+        name: 'trail_id',
+        type: 'string',
+        required: false,
+        description:
+          'ID da trilha — obrigatório com `stage_number` para listar ou com `question_number` para item único.',
+      },
+      {
+        name: 'stage_number',
+        type: 'number (inteiro)',
+        required: false,
+        description: 'Número do stage (obrigatório para listar / buscar por tríade).',
+      },
+      {
+        name: 'question_number',
+        type: 'number (inteiro)',
+        required: false,
+        description:
+          'Se informado junto com trail_id e stage_number, retorna uma única questão (em vez da lista).',
+      },
+      {
+        name: 'active',
+        type: 'boolean',
+        required: false,
+        description: 'Filtra apenas questões ativas ou inativas.',
+      },
+      {
+        name: 'simple',
+        type: 'string',
+        required: false,
+        description: 'Use `1` para omitir timestamps no payload.',
+      },
+      {
+        name: 'id',
+        type: 'string',
+        required: false,
+        description: 'ID do documento Firestore (alternativa à lista ou à tríade trail/stage/question).',
+      },
+    ],
+    responses: [
+      { code: '200', description: 'Lista ou um único objeto JSON.' },
+      { code: '400', description: 'Parâmetros insuficientes ou inválidos.' },
+      { code: '404', description: 'Questão não encontrada.' },
+      { code: '401', description: 'Não autenticado.' },
+    ],
+  },
+  {
+    id: 'get-trail-stage-question-simple',
+    method: 'GET',
+    path: '/trail_stage_questions/simple',
+    title: 'Atalho simple=1',
+    description: 'Mesmas consultas que a rota base, com corpo reduzido (sem timestamps).',
+    auth: true,
+    queryParams: [
+      {
+        name: 'trail_id',
+        type: 'string',
+        required: false,
+        description: 'Ver rota principal.',
+      },
+    ],
+    responses: [{ code: '200', description: 'Dados conforme filtros.' }],
+  },
+  {
+    id: 'get-trail-stage-question-id',
+    method: 'GET',
+    path: '/trail_stage_questions/{id}',
+    title: 'Buscar questão por ID do documento',
+    description:
+      'O `id` segue o padrão `{trail_id}_stage_{stage_number}_q_{question_number}`.',
+    auth: true,
+    pathParams: [
+      {
+        name: 'id',
+        type: 'string',
+        description: 'Document ID na collection `trail_stage_questions`.',
+      },
+    ],
+    responses: [
+      { code: '200', description: 'Objeto da questão.' },
+      { code: '404', description: 'Não encontrado.' },
+    ],
+  },
+  {
+    id: 'post-trail-stage-question',
+    method: 'POST',
+    path: '/trail_stage_questions/',
+    title: 'Criar questão / etapa',
+    description:
+      '`active` inicia como `true`. Não há campo de prompt: o contrato de IA fica no sistema por `question_number`. Documento identificado de forma única por trail_id + stage_number + question_number.',
+    auth: true,
+    bodyFields: [
+      {
+        name: 'trail_id',
+        type: 'string',
+        required: true,
+        description: 'ID da trilha.',
+        example: 'trail_001',
+      },
+      {
+        name: 'stage_number',
+        type: 'number (inteiro)',
+        required: true,
+        description: 'Número do stage (>= 1).',
+        example: '1',
+      },
+      {
+        name: 'question_number',
+        type: 'number (inteiro)',
+        required: true,
+        description: 'Ordem da questão dentro do stage (>= 1).',
+        example: '5',
+      },
+      {
+        name: 'question_type',
+        type: 'string',
+        required: true,
+        description: 'Um de: ai, fixed, exercise.',
+        example: 'exercise',
+      },
+      {
+        name: 'title',
+        type: 'string',
+        required: true,
+        description: 'Nome da etapa (ex.: Contexto, Exercício 1).',
+      },
+      {
+        name: 'content',
+        type: 'string',
+        required: true,
+        description: 'Texto principal / enunciado.',
+      },
+      {
+        name: 'correct_option',
+        type: 'string | null',
+        required: false,
+        description: 'Obrigatório para exercise; null para ai/fixed.',
+        example: 'A',
+      },
+      {
+        name: 'options',
+        type: 'array | null',
+        required: false,
+        description: 'Alternativas de múltipla escolha; null se não aplicável.',
+      },
+      {
+        name: 'explanation',
+        type: 'string | null',
+        required: false,
+        description: 'Explicação opcional (ex.: feedback pós-resposta).',
+      },
+    ],
+    bodyExample: `{
+  "trail_id": "trail_001",
+  "stage_number": 1,
+  "question_number": 5,
+  "question_type": "exercise",
+  "title": "Exercício 1",
+  "content": "Qual fração representa metade de uma pizza?",
+  "correct_option": "A",
+  "options": [
+    { "key": "A", "text": "1/2" },
+    { "key": "B", "text": "1/3" }
+  ],
+  "explanation": "Metade corresponde a 1/2."
+}`,
+    responses: [
+      { code: '201', description: 'Criado (corpo com dados da questão).' },
+      { code: '400', description: 'Validação ou JSON inválido.' },
+      { code: '409', description: 'Conflito: question_number já existe no stage.' },
+    ],
+  },
+  {
+    id: 'put-trail-stage-question-id',
+    method: 'PUT',
+    path: '/trail_stage_questions/{id}',
+    title: 'Atualizar questão',
+    description:
+      'Atualização parcial. Não altere trail_id, stage_number nem question_number. O servidor revalida o documento inteiro após o merge.',
+    auth: true,
+    pathParams: [
+      {
+        name: 'id',
+        type: 'string',
+        description: 'ID do documento.',
+      },
+    ],
+    bodyFields: [
+      {
+        name: 'question_type',
+        type: 'string',
+        required: false,
+        description: 'ai | fixed | exercise.',
+      },
+      {
+        name: 'title',
+        type: 'string',
+        required: false,
+        description: 'Novo título.',
+      },
+      {
+        name: 'content',
+        type: 'string',
+        required: false,
+        description: 'Novo conteúdo.',
+      },
+      {
+        name: 'correct_option',
+        type: 'string | null',
+        required: false,
+        description: 'Para exercise; null se mudou para ai/fixed.',
+      },
+      {
+        name: 'options',
+        type: 'array | null',
+        required: false,
+        description: 'Lista de alternativas ou null.',
+      },
+      {
+        name: 'explanation',
+        type: 'string | null',
+        required: false,
+        description: 'Texto ou null.',
+      },
+      {
+        name: 'active',
+        type: 'boolean',
+        required: false,
+        description: 'Use false para desativar sem apagar o documento.',
+      },
+    ],
+    responses: [
+      { code: '200', description: '{ ok: true, id }' },
+      { code: '400', description: 'Payload inválido ou campos de identidade no body.' },
+      { code: '404', description: 'Não encontrado.' },
+    ],
+  },
+  {
+    id: 'put-trail-stage-question-deactivate',
+    method: 'PUT',
+    path: '/trail_stage_questions/{id}?deactivate=1',
+    title: 'Desativar questão (sem deletar)',
+    description:
+      'Atalho: query `deactivate=1` e corpo JSON vazio `{}`. Equivale a `active: false`.',
+    auth: true,
+    pathParams: [
+      {
+        name: 'id',
+        type: 'string',
+        description: 'ID do documento.',
+      },
+    ],
+    queryParams: [
+      {
+        name: 'deactivate',
+        type: 'string',
+        required: true,
+        description: 'Deve ser `1`.',
+      },
+    ],
+    responses: [
+      { code: '200', description: '{ ok: true, id, active: false }' },
+      { code: '400', description: 'Corpo não vazio quando deactivate=1.' },
+      { code: '404', description: 'Não encontrado.' },
+    ],
+  },
+  {
+    id: 'delete-trail-stage-question',
+    method: 'DELETE',
+    path: '/trail_stage_questions/{id}',
+    title: 'DELETE não suportado',
+    description:
+      'A API não remove documentos desta collection; use desativação (`active: false`).',
+    auth: true,
+    pathParams: [
+      { name: 'id', type: 'string', description: '—' },
+    ],
+    responses: [{ code: '405', description: 'Método não permitido.' }],
+  },
+]
+
 const METHOD_EXPLAIN: Record<HttpMethod, string> = {
   GET: 'Consulta — lê dados do servidor sem alterar o estado do recurso (idempotente).',
   POST: 'Criação — envia um corpo (body) para criar um novo recurso; gera um novo id no servidor.',
@@ -958,11 +1249,11 @@ export function DocPage() {
         <h1>Documentação da API</h1>
         <p className="admin__lede">
           Referência dos endpoints REST dos recursos{' '}
-          <strong>Institution</strong>, <strong>Student</strong>, <strong>Trails</strong>{' '}
-          e <strong>Trail stages</strong> (gerenciamento de instituições, alunos,
-          trilhas e stages pedagógicos). Cada bloco indica o{' '}
-          <strong>método HTTP</strong>, o <strong>caminho</strong>, o que a rota
-          faz e os parâmetros ou corpo esperados.
+          <strong>Institution</strong>, <strong>Student</strong>, <strong>Trails</strong>,{' '}
+          <strong>Trail stages</strong> e <strong>Trail stage questions</strong>{' '}
+          (instituições, alunos, trilhas, stages e questões/etapas por stage). Cada
+          bloco indica o <strong>método HTTP</strong>, o <strong>caminho</strong>, o
+          que a rota faz e os parâmetros ou corpo esperados.
         </p>
         <p className="admin__lede muted">
           <strong>Painel (esta interface) em produção:</strong>{' '}
@@ -1590,6 +1881,163 @@ export function DocPage() {
                         ))}
                       </tbody>
                     </table>
+                  </div>
+                ) : null}
+
+                <div className="doc-block">
+                  <h3 className="doc-block__title">Respostas</h3>
+                  <ul className="doc-responses">
+                    {ep.responses.map((r) => (
+                      <li key={r.code}>
+                        <span
+                          className={`doc-code doc-code--${r.code.startsWith('2') ? 'ok' : r.code.startsWith('4') ? 'client' : 'other'}`}
+                        >
+                          {r.code}
+                        </span>
+                        {r.description}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            </details>
+          ))}
+        </div>
+      </section>
+
+      <section className="panel doc__section">
+        <h2>Trail stage questions — endpoints</h2>
+        <p className="doc__section-intro muted">
+          Collection <code>trail_stage_questions</code>: etapas sequenciais dentro de um
+          stage (contexto, exercícios, etc.). O prompt da IA não é gravado aqui — apenas
+          conteúdo, tipo e dados de correção quando for <code>exercise</code>.
+        </p>
+
+        <div className="doc__endpoints">
+          {TRAIL_STAGE_QUESTION_ENDPOINTS.map((ep) => (
+            <details key={ep.id} className="doc-endpoint">
+              <summary className="doc-endpoint__summary">
+                <span
+                  className={`doc-method doc-method--${ep.method.toLowerCase()}`}
+                >
+                  {ep.method}
+                </span>
+                <code className="doc-endpoint__path">{ep.path}</code>
+                <span className="doc-endpoint__title">{ep.title}</span>
+                {ep.auth ? (
+                  <span
+                    className="doc-endpoint__lock"
+                    title="Pode exigir autenticação"
+                    aria-label="Autenticação"
+                  >
+                    <LockIcon />
+                  </span>
+                ) : null}
+              </summary>
+
+              <div className="doc-endpoint__body">
+                <p className="doc-endpoint__desc">{ep.description}</p>
+
+                <p className="doc-endpoint__fullurl">
+                  <span className="muted">URL completa de exemplo:</span>{' '}
+                  <code>
+                    {ep.method} {baseUrl}
+                    {ep.path.replace('{id}', '{id}')}
+                  </code>
+                </p>
+
+                {ep.pathParams?.length ? (
+                  <div className="doc-block">
+                    <h3 className="doc-block__title">Parâmetros de path</h3>
+                    <table className="doc-table">
+                      <thead>
+                        <tr>
+                          <th>Nome</th>
+                          <th>Tipo</th>
+                          <th>Descrição</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {ep.pathParams.map((p) => (
+                          <tr key={p.name}>
+                            <td>
+                              <code>{p.name}</code>
+                            </td>
+                            <td>{p.type}</td>
+                            <td>{p.description}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : null}
+
+                {ep.queryParams?.length ? (
+                  <div className="doc-block">
+                    <h3 className="doc-block__title">Query</h3>
+                    <table className="doc-table">
+                      <thead>
+                        <tr>
+                          <th>Nome</th>
+                          <th>Tipo</th>
+                          <th>Obrigatório</th>
+                          <th>Descrição</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {ep.queryParams.map((q) => (
+                          <tr key={q.name}>
+                            <td>
+                              <code>{q.name}</code>
+                            </td>
+                            <td>{q.type}</td>
+                            <td>{q.required ? 'Sim' : 'Não'}</td>
+                            <td>{q.description}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : null}
+
+                {ep.bodyFields?.length ? (
+                  <div className="doc-block">
+                    <h3 className="doc-block__title">Corpo da requisição (JSON)</h3>
+                    <table className="doc-table">
+                      <thead>
+                        <tr>
+                          <th>Campo</th>
+                          <th>Tipo</th>
+                          <th>Obrigatório</th>
+                          <th>Descrição</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {ep.bodyFields.map((f) => (
+                          <tr key={f.name}>
+                            <td>
+                              <code>{f.name}</code>
+                            </td>
+                            <td>{f.type}</td>
+                            <td>{f.required ? 'Sim' : 'Não'}</td>
+                            <td>
+                              {f.description}
+                              {f.example ? (
+                                <span className="doc-example">
+                                  {' '}
+                                  Ex.: <code>{f.example}</code>
+                                </span>
+                              ) : null}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    {ep.bodyExample ? (
+                      <pre className="doc-pre" tabIndex={0}>
+                        <code>{ep.bodyExample}</code>
+                      </pre>
+                    ) : null}
                   </div>
                 ) : null}
 

@@ -18,6 +18,7 @@ import { TrailForm } from '../components/TrailForm'
 import { TrailStageForm } from '../components/TrailStageForm'
 import type { Trail } from '../types/trail'
 import type { TrailStage } from '../types/trailStage'
+import { trailStageQuestionsPath } from '../lib/paths'
 
 export function TrailDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -229,6 +230,12 @@ export function TrailDetailPage() {
                           <td>{s.is_released ? 'Sim' : 'Não'}</td>
                           <td>{formatTrailStageTs(s.updated_at ?? s.created_at)}</td>
                           <td className="table__actions">
+                            <Link
+                              className="btn btn--small btn--ghost"
+                              to={trailStageQuestionsPath(id, s.stage_number)}
+                            >
+                              Questões
+                            </Link>
                             <button
                               type="button"
                               className="btn btn--small btn--ghost"
