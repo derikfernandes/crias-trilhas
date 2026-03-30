@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  addDoc,
   collection,
   deleteDoc,
   doc,
   onSnapshot,
+  runTransaction,
   serverTimestamp,
   updateDoc,
 } from 'firebase/firestore'
@@ -105,6 +105,7 @@ export function TrailForm({ docId, initial }: Props) {
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     if (!db) return
+    const dbOk = db
 
     const instId = institution_id.trim()
     const trimmedName = trimRequiredString(name)
@@ -140,7 +141,7 @@ export function TrailForm({ docId, initial }: Props) {
     setFormError(null)
     try {
       if (docId) {
-        await updateDoc(doc(db, TRAILS_COLLECTION, docId), {
+        await updateDoc(doc(dbOk, TRAILS_COLLECTION, docId), {
           institution_id: instId,
           name: trimmedName,
           description: trimmedDescription,
@@ -150,18 +151,45 @@ export function TrailForm({ docId, initial }: Props) {
           updated_at: serverTimestamp(),
         })
       } else {
-        const ref = await addDoc(collection(db, TRAILS_COLLECTION), {
-          institution_id: instId,
-          name: trimmedName,
-          description: trimmedDescription,
-          subject: trimmedSubject,
-          default_total_steps_per_stage: parsedSteps,
-          active,
-          created_at: serverTimestamp(),
-          updated_at: serverTimestamp(),
+        // IDs sequenciais: t1, t2, t3...
+        // Usa transação com contador em counters/trails { next: number }.
+        const newId = await runTransaction(dbOk, async (tx) => {
+          const counterRef = doc(dbOk, 'counters', 'trails')
+          const counterSnap = await tx.get(counterRef)
+          const data = counterSnap.exists() ? counterSnap.data() : {}
+          const rawNext = (data as { next?: unknown }).next
+          const next =
+            typeof rawNext === 'number' && Number.isFinite(rawNext) && rawNext >= 1
+              ? Math.floor(rawNext)
+              : 1
+
+          const trailId = `t${next}`
+          const trailRef = doc(collection(dbOk, TRAILS_COLLECTION), trailId)
+
+          const existing = await tx.get(trailRef)
+          if (existing.exists()) {
+            throw new Error(
+              `Conflito ao gerar id sequencial (${trailId}). Verifique counters/trails.next.`,
+            )
+          }
+
+          tx.set(trailRef, {
+            institution_id: instId,
+            name: trimmedName,
+            description: trimmedDescription,
+            subject: trimmedSubject,
+            default_total_steps_per_stage: parsedSteps,
+            active,
+            created_at: serverTimestamp(),
+            updated_at: serverTimestamp(),
+          })
+
+          tx.set(counterRef, { next: next + 1 }, { merge: true })
+
+          return trailId
         })
 
-        navigate(trailPath(ref.id))
+        navigate(trailPath(newId))
       }
     } catch (err) {
       setFormError(err instanceof Error ? err.message : 'Erro ao salvar.')

@@ -1,10 +1,10 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  addDoc,
   collection,
   deleteDoc,
   doc,
+  runTransaction,
   serverTimestamp,
   updateDoc,
 } from 'firebase/firestore'
@@ -60,6 +60,7 @@ export function InstitutionForm({ docId, initial }: Props) {
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     if (!db) return
+    const dbOk = db
     const trimmedName = name.trim()
     const trimmedType = type.trim()
     if (!trimmedName) {
@@ -75,7 +76,7 @@ export function InstitutionForm({ docId, initial }: Props) {
     try {
       if (docId) {
         const link = fullInstitutionUrl(docId)
-        await updateDoc(doc(db, INSTITUTIONS_COLLECTION, docId), {
+        await updateDoc(doc(dbOk, INSTITUTIONS_COLLECTION, docId), {
           name: trimmedName,
           type: trimmedType,
           active,
@@ -83,18 +84,44 @@ export function InstitutionForm({ docId, initial }: Props) {
           public_link: link,
         })
       } else {
-        const ref = await addDoc(collection(db, INSTITUTIONS_COLLECTION), {
-          name: trimmedName,
-          type: trimmedType,
-          active,
-          created_at: serverTimestamp(),
-          updated_at: serverTimestamp(),
+        // IDs sequenciais: i1, i2, i3...
+        // Usa transação com contador em counters/institutions { next: number }.
+        const newId = await runTransaction(dbOk, async (tx) => {
+          const counterRef = doc(dbOk, 'counters', 'institutions')
+          const counterSnap = await tx.get(counterRef)
+          const data = counterSnap.exists() ? counterSnap.data() : {}
+          const rawNext = (data as { next?: unknown }).next
+          const next =
+            typeof rawNext === 'number' && Number.isFinite(rawNext) && rawNext >= 1
+              ? Math.floor(rawNext)
+              : 1
+
+          const instId = `i${next}`
+          const instRef = doc(collection(dbOk, INSTITUTIONS_COLLECTION), instId)
+
+          const existing = await tx.get(instRef)
+          if (existing.exists()) {
+            throw new Error(
+              `Conflito ao gerar id sequencial (${instId}). Verifique counters/institutions.next.`,
+            )
+          }
+
+          const link = fullInstitutionUrl(instId)
+          tx.set(instRef, {
+            name: trimmedName,
+            type: trimmedType,
+            active,
+            created_at: serverTimestamp(),
+            updated_at: serverTimestamp(),
+            public_link: link,
+          })
+
+          tx.set(counterRef, { next: next + 1 }, { merge: true })
+
+          return instId
         })
-        const link = fullInstitutionUrl(ref.id)
-        await updateDoc(ref, {
-          public_link: link,
-        })
-        navigate(institutionPath(ref.id))
+
+        navigate(institutionPath(newId))
       }
     } catch (err) {
       setFormError(err instanceof Error ? err.message : 'Erro ao salvar.')

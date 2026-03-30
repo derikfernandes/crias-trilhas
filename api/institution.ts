@@ -213,22 +213,52 @@ async function handleRequest(request: Request): Promise<Response> {
         }
 
         const now = FieldValue.serverTimestamp()
-        const ref = await db.collection(collection).add({
-          name,
-          type,
-          active,
-          created_at: now,
-          updated_at: now,
-          public_link: '', // preenchido abaixo
-          ...optionalFields,
+
+        // IDs sequenciais: i1, i2, i3...
+        // Mantém um contador em counters/institutions { next: number } e incrementa via transação.
+        const counterRef = db.collection('counters').doc('institutions')
+
+        const newId = await db.runTransaction(async (tx) => {
+          const counterSnap = await tx.get(counterRef)
+          const counterData = counterSnap.data() ?? {}
+          const rawNext = (counterData as { next?: unknown }).next
+
+          const next =
+            typeof rawNext === 'number' && Number.isFinite(rawNext) && rawNext >= 1
+              ? Math.floor(rawNext)
+              : 1
+
+          const instId = `i${next}`
+          const instRef = db.collection(collection).doc(instId)
+
+          const existing = await tx.get(instRef)
+          if (existing.exists) {
+            throw new Error(
+              `Conflito ao gerar id sequencial (${instId}). Verifique counters/institutions.next.`,
+            )
+          }
+
+          const link = publicLinkFor(instId)
+          tx.set(instRef, {
+            name,
+            type,
+            active,
+            created_at: now,
+            updated_at: now,
+            public_link: link,
+            ...optionalFields,
+          })
+
+          tx.set(counterRef, { next: next + 1 }, { merge: true })
+
+          return instId
         })
 
-        const link = publicLinkFor(ref.id)
-        await ref.update({ public_link: link })
+        const link = publicLinkFor(newId)
 
         return jsonResponse(
           {
-            id: ref.id,
+            id: newId,
             name,
             type,
             active,

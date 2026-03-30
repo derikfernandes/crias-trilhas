@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  addDoc,
   collection,
   deleteDoc,
   doc,
   onSnapshot,
+  runTransaction,
   serverTimestamp,
   updateDoc,
 } from 'firebase/firestore'
@@ -133,6 +133,7 @@ export function StudentForm({ docId, initial }: Props) {
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     if (!db) return
+    const dbOk = db
 
     const instId = institution_id.trim()
     const trimmedName = name.trim()
@@ -169,7 +170,7 @@ export function StudentForm({ docId, initial }: Props) {
     setFormError(null)
     try {
       if (docId) {
-        await updateDoc(doc(db, STUDENTS_COLLECTION, docId), {
+        await updateDoc(doc(dbOk, STUDENTS_COLLECTION, docId), {
           institution_id: instId,
           name: trimmedName,
           phone_number: trimmedPhone,
@@ -180,18 +181,46 @@ export function StudentForm({ docId, initial }: Props) {
           updated_at: serverTimestamp(),
         })
       } else {
-        const ref = await addDoc(collection(db, STUDENTS_COLLECTION), {
-          institution_id: instId,
-          name: trimmedName,
-          phone_number: trimmedPhone,
-          school_level: normalizedLevel,
-          school_grade,
-          student_level: normalizedStudentLevel,
-          active,
-          created_at: serverTimestamp(),
-          updated_at: serverTimestamp(),
+        // IDs sequenciais: s1, s2, s3...
+        // Usa transação com contador em counters/students { next: number }.
+        const newId = await runTransaction(dbOk, async (tx) => {
+          const counterRef = doc(dbOk, 'counters', 'students')
+          const counterSnap = await tx.get(counterRef)
+          const data = counterSnap.exists() ? counterSnap.data() : {}
+          const rawNext = (data as { next?: unknown }).next
+          const next =
+            typeof rawNext === 'number' && Number.isFinite(rawNext) && rawNext >= 1
+              ? Math.floor(rawNext)
+              : 1
+
+          const studentId = `s${next}`
+          const studentRef = doc(collection(dbOk, STUDENTS_COLLECTION), studentId)
+
+          const existing = await tx.get(studentRef)
+          if (existing.exists()) {
+            throw new Error(
+              `Conflito ao gerar id sequencial (${studentId}). Verifique counters/students.next.`,
+            )
+          }
+
+          tx.set(studentRef, {
+            institution_id: instId,
+            name: trimmedName,
+            phone_number: trimmedPhone,
+            school_level: normalizedLevel,
+            school_grade,
+            student_level: normalizedStudentLevel,
+            active,
+            created_at: serverTimestamp(),
+            updated_at: serverTimestamp(),
+          })
+
+          tx.set(counterRef, { next: next + 1 }, { merge: true })
+
+          return studentId
         })
-        navigate(studentPath(ref.id))
+
+        navigate(studentPath(newId))
       }
     } catch (err) {
       setFormError(err instanceof Error ? err.message : 'Erro ao salvar.')

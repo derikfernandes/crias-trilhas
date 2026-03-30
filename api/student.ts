@@ -350,21 +350,51 @@ async function handleRequest(request: Request): Promise<Response> {
         const active = typeof body.active === 'boolean' ? body.active : true
 
         const now = FieldValue.serverTimestamp()
-        const ref = await db.collection(collection).add({
-          institution_id,
-          name,
-          phone_number,
-          school_level: normalizedSchoolLevel,
-          school_grade,
-          student_level: studentLevel,
-          active,
-          created_at: now,
-          updated_at: now,
+
+        // IDs sequenciais: s1, s2, s3...
+        // Mantém um contador em counters/students { next: number } e incrementa via transação.
+        const counterRef = db.collection('counters').doc('students')
+
+        const newId = await db.runTransaction(async (tx) => {
+          const counterSnap = await tx.get(counterRef)
+          const counterData = counterSnap.data() ?? {}
+          const rawNext = (counterData as { next?: unknown }).next
+
+          const next =
+            typeof rawNext === 'number' && Number.isFinite(rawNext) && rawNext >= 1
+              ? Math.floor(rawNext)
+              : 1
+
+          const studentId = `s${next}`
+          const studentRef = db.collection(collection).doc(studentId)
+
+          const existing = await tx.get(studentRef)
+          if (existing.exists) {
+            throw new Error(
+              `Conflito ao gerar id sequencial (${studentId}). Verifique counters/students.next.`,
+            )
+          }
+
+          tx.set(studentRef, {
+            institution_id,
+            name,
+            phone_number,
+            school_level: normalizedSchoolLevel,
+            school_grade,
+            student_level: studentLevel,
+            active,
+            created_at: now,
+            updated_at: now,
+          })
+
+          tx.set(counterRef, { next: next + 1 }, { merge: true })
+
+          return studentId
         })
 
         return jsonResponse(
           {
-            id: ref.id,
+            id: newId,
             institution_id,
             name,
             phone_number,
