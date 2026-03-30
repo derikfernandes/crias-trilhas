@@ -768,6 +768,180 @@ const TRAIL_ENDPOINTS: DocEndpoint[] = [
   },
 ]
 
+const TRAIL_STAGE_ENDPOINTS: DocEndpoint[] = [
+  {
+    id: 'get-trail-stage-list',
+    method: 'GET',
+    path: '/trail_stages/',
+    title: 'Listar stages (com filtros)',
+    description:
+      'Retorna a lista de stages. Use query params para filtrar por `trail_id`, `active` e `is_released`.',
+    auth: true,
+    queryParams: [
+      {
+        name: 'trail_id',
+        type: 'string',
+        required: false,
+        description: 'Filtra stages pertencentes à trilha.',
+      },
+      {
+        name: 'active',
+        type: 'boolean',
+        required: false,
+        description: 'Filtra apenas stages ativas/inativas.',
+      },
+      {
+        name: 'is_released',
+        type: 'boolean',
+        required: false,
+        description: 'Filtra apenas stages liberadas/não liberadas.',
+      },
+    ],
+    responses: [
+      { code: '200', description: 'Lista de stages (array JSON).' },
+      { code: '401', description: 'Não autenticado.' },
+    ],
+  },
+  {
+    id: 'get-trail-stage-simple',
+    method: 'GET',
+    path: '/trail_stages/simple',
+    title: 'Listar stages (formato simplificado)',
+    description: 'Versão reduzida da listagem.',
+    auth: true,
+    queryParams: [
+      {
+        name: 'trail_id',
+        type: 'string',
+        required: false,
+        description: 'Filtra stages pertencentes à trilha.',
+      },
+    ],
+    responses: [
+      { code: '200', description: 'Lista simplificada.' },
+      { code: '401', description: 'Não autenticado.' },
+    ],
+  },
+  {
+    id: 'get-trail-stage-id',
+    method: 'GET',
+    path: '/trail_stages/{id}',
+    title: 'Buscar stage por ID',
+    description: 'Obtém os dados de um único stage.',
+    auth: true,
+    pathParams: [
+      {
+        name: 'id',
+        type: 'string',
+        description: 'Identificador do stage (docId).',
+      },
+    ],
+    responses: [
+      { code: '200', description: 'Objeto do stage encontrado.' },
+      { code: '404', description: 'Stage não encontrado.' },
+      { code: '401', description: 'Não autenticado.' },
+    ],
+  },
+  {
+    id: 'post-trail-stage',
+    method: 'POST',
+    path: '/trail_stages/',
+    title: 'Criar novo stage',
+    description:
+      'Cria um novo stage de uma trilha. `is_released` inicia como `false` e `active` inicia como `true`.',
+    auth: true,
+    bodyFields: [
+      {
+        name: 'trail_id',
+        type: 'string',
+        required: true,
+        description: 'ID da trilha a que o stage pertence.',
+        example: 'trail_001',
+      },
+      {
+        name: 'stage_number',
+        type: 'number (inteiro)',
+        required: true,
+        description: 'Número sequencial do stage (começa em 1). Deve ser único dentro da mesma trail.',
+        example: '1',
+      },
+      {
+        name: 'title',
+        type: 'string',
+        required: true,
+        description: 'Nome do stage.',
+        example: 'Frações básicas',
+      },
+    ],
+    responses: [
+      { code: '201', description: 'Stage criado com sucesso.' },
+      { code: '400', description: 'Dados inválidos ou conflito de stage_number.' },
+      { code: '401', description: 'Não autenticado — token ausente ou inválido.' },
+    ],
+  },
+  {
+    id: 'put-trail-stage-id',
+    method: 'PUT',
+    path: '/trail_stages/{id}',
+    title: 'Atualizar stage',
+    description: 'Atualiza campos do stage. `stage_number` e `trail_id` não são suportados para mudança.',
+    auth: true,
+    pathParams: [
+      {
+        name: 'id',
+        type: 'string',
+        description: 'Identificador do stage a ser atualizado.',
+      },
+    ],
+    bodyFields: [
+      {
+        name: 'title',
+        type: 'string',
+        required: false,
+        description: 'Novo título do stage.',
+      },
+      {
+        name: 'is_released',
+        type: 'boolean',
+        required: false,
+        description: 'Define se o stage está liberado para os alunos.',
+      },
+      {
+        name: 'active',
+        type: 'boolean',
+        required: false,
+        description: 'Define se o stage está ativo no sistema.',
+      },
+    ],
+    responses: [
+      { code: '200', description: 'Stage atualizado com sucesso.' },
+      { code: '400', description: 'Payload inválido.' },
+      { code: '404', description: 'Stage não encontrado.' },
+      { code: '401', description: 'Não autenticado.' },
+    ],
+  },
+  {
+    id: 'delete-trail-stage-id',
+    method: 'DELETE',
+    path: '/trail_stages/{id}',
+    title: 'Deletar stage',
+    description: 'Remove permanentemente o stage.',
+    auth: true,
+    pathParams: [
+      {
+        name: 'id',
+        type: 'string',
+        description: 'Identificador do stage a ser removido.',
+      },
+    ],
+    responses: [
+      { code: '204', description: 'Exclusão concluída (No Content).' },
+      { code: '404', description: 'Stage não encontrado.' },
+      { code: '401', description: 'Não autenticado.' },
+    ],
+  },
+]
+
 const METHOD_EXPLAIN: Record<HttpMethod, string> = {
   GET: 'Consulta — lê dados do servidor sem alterar o estado do recurso (idempotente).',
   POST: 'Criação — envia um corpo (body) para criar um novo recurso; gera um novo id no servidor.',
@@ -784,9 +958,9 @@ export function DocPage() {
         <h1>Documentação da API</h1>
         <p className="admin__lede">
           Referência dos endpoints REST dos recursos{' '}
-          <strong>Institution</strong>, <strong>Student</strong> e{' '}
-          <strong>Trails</strong> (gerenciamento de instituições, alunos e
-          trilhas). Cada bloco indica o{' '}
+          <strong>Institution</strong>, <strong>Student</strong>, <strong>Trails</strong>{' '}
+          e <strong>Trail stages</strong> (gerenciamento de instituições, alunos,
+          trilhas e stages pedagógicos). Cada bloco indica o{' '}
           <strong>método HTTP</strong>, o <strong>caminho</strong>, o que a rota
           faz e os parâmetros ou corpo esperados.
         </p>
@@ -1274,6 +1448,148 @@ export function DocPage() {
                         <code>{ep.bodyExample}</code>
                       </pre>
                     ) : null}
+                  </div>
+                ) : null}
+
+                <div className="doc-block">
+                  <h3 className="doc-block__title">Respostas</h3>
+                  <ul className="doc-responses">
+                    {ep.responses.map((r) => (
+                      <li key={r.code}>
+                        <span
+                          className={`doc-code doc-code--${r.code.startsWith('2') ? 'ok' : r.code.startsWith('4') ? 'client' : 'other'}`}
+                        >
+                          {r.code}
+                        </span>
+                        {r.description}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            </details>
+          ))}
+        </div>
+      </section>
+
+      <section className="panel doc__section">
+        <h2>Trail stages — endpoints</h2>
+        <p className="doc__section-intro muted">
+          Rotas para cadastrar e gerenciar stages de trilhas pedagógicas.
+        </p>
+
+        <div className="doc__endpoints">
+          {TRAIL_STAGE_ENDPOINTS.map((ep) => (
+            <details key={ep.id} className="doc-endpoint">
+              <summary className="doc-endpoint__summary">
+                <span
+                  className={`doc-method doc-method--${ep.method.toLowerCase()}`}
+                >
+                  {ep.method}
+                </span>
+                <code className="doc-endpoint__path">{ep.path}</code>
+                <span className="doc-endpoint__title">{ep.title}</span>
+                {ep.auth ? (
+                  <span
+                    className="doc-endpoint__lock"
+                    title="Pode exigir autenticação"
+                    aria-label="Autenticação"
+                  >
+                    <LockIcon />
+                  </span>
+                ) : null}
+              </summary>
+
+              <div className="doc-endpoint__body">
+                <p className="doc-endpoint__desc">{ep.description}</p>
+
+                <p className="doc-endpoint__fullurl">
+                  <span className="muted">URL completa de exemplo:</span>{' '}
+                  <code>
+                    {ep.method} {baseUrl}
+                    {ep.path.replace('{id}', '{id}')}
+                  </code>
+                </p>
+
+                {ep.pathParams?.length ? (
+                  <div className="doc-block">
+                    <h3 className="doc-block__title">Parâmetros de path</h3>
+                    <table className="doc-table">
+                      <thead>
+                        <tr>
+                          <th>Nome</th>
+                          <th>Tipo</th>
+                          <th>Descrição</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {ep.pathParams.map((p) => (
+                          <tr key={p.name}>
+                            <td>
+                              <code>{p.name}</code>
+                            </td>
+                            <td>{p.type}</td>
+                            <td>{p.description}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : null}
+
+                {ep.queryParams?.length ? (
+                  <div className="doc-block">
+                    <h3 className="doc-block__title">Query</h3>
+                    <table className="doc-table">
+                      <thead>
+                        <tr>
+                          <th>Nome</th>
+                          <th>Tipo</th>
+                          <th>Obrigatório</th>
+                          <th>Descrição</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {ep.queryParams.map((q) => (
+                          <tr key={q.name}>
+                            <td>
+                              <code>{q.name}</code>
+                            </td>
+                            <td>{q.type}</td>
+                            <td>{q.required ? 'Sim' : 'Não'}</td>
+                            <td>{q.description}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : null}
+
+                {ep.bodyFields?.length ? (
+                  <div className="doc-block">
+                    <h3 className="doc-block__title">Corpo da requisição (JSON)</h3>
+                    <table className="doc-table">
+                      <thead>
+                        <tr>
+                          <th>Campo</th>
+                          <th>Tipo</th>
+                          <th>Obrigatório</th>
+                          <th>Descrição</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {ep.bodyFields.map((f) => (
+                          <tr key={f.name}>
+                            <td>
+                              <code>{f.name}</code>
+                            </td>
+                            <td>{f.type}</td>
+                            <td>{f.required ? 'Sim' : 'Não'}</td>
+                            <td>{f.description}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
                 ) : null}
 

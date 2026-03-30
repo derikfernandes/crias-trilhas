@@ -56,6 +56,17 @@
       "source": "/trails/:id([A-Za-z0-9_-]+)/",
       "destination": "/api/trails?id=:id"
     },
+    { "source": "/trail_stages/", "destination": "/api/trail_stages" },
+    { "source": "/trail_stages", "destination": "/api/trail_stages" },
+    { "source": "/trail_stages/simple", "destination": "/api/trail_stages?simple=1" },
+    {
+      "source": "/trail_stages/:id([A-Za-z0-9_-]+)",
+      "destination": "/api/trail_stages?id=:id"
+    },
+    {
+      "source": "/trail_stages/:id([A-Za-z0-9_-]+)/",
+      "destination": "/api/trail_stages?id=:id"
+    },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }

@@ -83,8 +83,7 @@ function parseBoolean(v: unknown): boolean | null {
 }
 
 function parseIntLoose(v: unknown): number | null {
-  if (typeof v === 'number' && Number.isFinite(v)) {
-    if (!Number.isInteger(v)) return null
+  if (typeof v === 'number' && Number.isFinite(v) && Number.isInteger(v)) {
     return v
   }
   if (typeof v !== 'string') return null
@@ -94,40 +93,43 @@ function parseIntLoose(v: unknown): number | null {
   return n
 }
 
-function toTrailOutput(
+function stageDocId(trail_id: string, stage_number: number): string {
+  // Tornar determinístico simplifica a regra de unicidade:
+  // `stage_number` é único dentro de cada `trail_id`.
+  return `${trail_id}_stage_${stage_number}`
+}
+
+function toTrailStageOutput(
   data: Record<string, unknown>,
   id: string,
   opts?: { simple?: boolean },
 ): Json {
-  const institution_id =
-    typeof data.institution_id === 'string' ? data.institution_id : ''
-  const name = typeof data.name === 'string' ? data.name : ''
-  const description =
-    typeof data.description === 'string' ? data.description : ''
-  const subject = typeof data.subject === 'string' ? data.subject : ''
-  const default_total_steps_per_stage =
-    typeof data.default_total_steps_per_stage === 'number'
-      ? data.default_total_steps_per_stage
+  const trail_id = typeof data.trail_id === 'string' ? data.trail_id : ''
+  const stage_number =
+    typeof data.stage_number === 'number' && Number.isFinite(data.stage_number)
+      ? data.stage_number
       : 0
+  const title = typeof data.title === 'string' ? data.title : ''
+  const is_released = typeof data.is_released === 'boolean' ? data.is_released : false
   const active = typeof data.active === 'boolean' ? data.active : false
 
   if (opts?.simple) {
     return {
       id,
-      institution_id,
-      name,
-      subject,
+      trail_id,
+      stage_number,
+      title,
+      is_released,
       active,
     }
   }
 
   return {
     id,
-    institution_id,
-    name,
-    description,
-    subject,
-    default_total_steps_per_stage,
+    trail_id,
+    stage_number,
+    title,
+    is_released,
     active,
     created_at: serializeTs(data.created_at),
     updated_at: serializeTs(data.updated_at),
@@ -158,7 +160,7 @@ async function handleRequest(request: Request): Promise<Response> {
     })
   }
 
-  const collection = process.env.TRAILS_COLLECTION ?? 'trails'
+  const collection = process.env.TRAIL_STAGES_COLLECTION ?? 'trail_stages'
 
   const respond = (status: number, body: Json): Response => {
     return new Response(JSON.stringify(body), {
@@ -170,43 +172,59 @@ async function handleRequest(request: Request): Promise<Response> {
     })
   }
 
-  const qInstitutionId = url.searchParams.get('institution_id')?.trim() || null
-  const qActive = parseBoolean(url.searchParams.get('active') ?? '') ?? null
+  const qTrailId = url.searchParams.get('trail_id')?.trim() || null
+  const qStageActive = parseBoolean(url.searchParams.get('active') ?? '') ?? null
+  const qIsReleased = parseBoolean(url.searchParams.get('is_released') ?? '') ?? null
 
   try {
-    // GET /trails/
-    // GET /trails/simple
-    // GET /trails/:id (via ?id=:id)
     if (request.method === 'GET') {
       if (id) {
         const snap = await db.collection(collection).doc(id).get()
         if (!snap.exists) return respond(404, { error: 'Not found' })
         const data = (snap.data() ?? {}) as Record<string, unknown>
-        return jsonResponse(
-          toTrailOutput(data, snap.id, { simple }),
-          { status: 200, headers: corsHeaders() },
-        )
+        return jsonResponse(toTrailStageOutput(data, snap.id, { simple }), {
+          status: 200,
+          headers: corsHeaders(),
+        })
       }
 
-      const snap = await db.collection(collection).orderBy('updated_at', 'desc').get()
+      // Lista:
+      // - se vier `trail_id`, devolve os stages dessa trilha
+      // - se não vier, devolve tudo (ordenado por updated_at desc)
+      let snap
+      if (qTrailId) {
+        snap = await db
+          .collection(collection)
+          .where('trail_id', '==', qTrailId)
+          .orderBy('stage_number', 'asc')
+          .get()
+      } else {
+        snap = await db.collection(collection).orderBy('updated_at', 'desc').get()
+      }
 
       const items = snap.docs
-        .map((d) => toTrailOutput((d.data() ?? {}) as Record<string, unknown>, d.id, { simple }))
+        .map((d) =>
+          toTrailStageOutput((d.data() ?? {}) as Record<string, unknown>, d.id, {
+            simple,
+          }),
+        )
         .filter((item) => {
-          const instOk =
-            qInstitutionId ? item.institution_id === qInstitutionId : true
-          if (!instOk) return false
-          if (qActive === null) return true
-          return typeof item.active === 'boolean' ? item.active === qActive : false
+          if (!qTrailId) return true
+          // qTrailId é aplicado via query, mas mantemos o filtro defensivo.
+          return (item as Json).trail_id === qTrailId
+        })
+        .filter((item) => {
+          if (qStageActive === null) return true
+          return typeof item.active === 'boolean' ? item.active === qStageActive : false
+        })
+        .filter((item) => {
+          if (qIsReleased === null) return true
+          return typeof item.is_released === 'boolean' ? item.is_released === qIsReleased : false
         })
 
-      return jsonResponse(items as Json[], {
-        status: 200,
-        headers: corsHeaders(),
-      })
+      return jsonResponse(items as Json[], { status: 200, headers: corsHeaders() })
     }
 
-    // POST /trails/
     if (request.method === 'POST') {
       if (id) return respond(400, { error: 'id não deve ser enviado em POST' })
 
@@ -216,96 +234,60 @@ async function handleRequest(request: Request): Promise<Response> {
       } catch {
         return respond(400, { error: 'JSON inválido' })
       }
+
       if (!payload || typeof payload !== 'object') {
         return respond(400, { error: 'Payload inválido' })
       }
 
       const body = payload as Json
 
-      const institution_id = sanitizeString(body.institution_id)
-      const name = sanitizeString(body.name)
-      const description = sanitizeString(body.description)
-      const subject = sanitizeString(body.subject)
+      const trail_id = sanitizeString(body.trail_id)
+      const stage_number = parseIntLoose(body.stage_number)
+      const title = sanitizeString(body.title)
 
-      if (!institution_id) return respond(400, { error: 'Campo "institution_id" é obrigatório' })
-      if (!name) return respond(400, { error: 'Campo "name" é obrigatório' })
-      if (!description) return respond(400, { error: 'Campo "description" é obrigatório' })
-      if (!subject) return respond(400, { error: 'Campo "subject" é obrigatório' })
-
-      const steps =
-        body.default_total_steps_per_stage === undefined
-          ? 8
-          : parseIntLoose(body.default_total_steps_per_stage)
-
-      if (steps === null) {
-        return respond(400, {
-          error: 'Campo "default_total_steps_per_stage" deve ser um inteiro',
-        })
+      if (!trail_id) return respond(400, { error: 'Campo "trail_id" é obrigatório' })
+      if (stage_number === null) {
+        return respond(400, { error: 'Campo "stage_number" deve ser um inteiro' })
       }
-      if (steps < 0) {
-        return respond(400, {
-          error: 'Campo "default_total_steps_per_stage" não pode ser negativo',
-        })
+      if (stage_number < 1) {
+        return respond(400, { error: 'Campo "stage_number" deve ser >= 1' })
       }
-
-      const active =
-        body.active === undefined ? true : parseBoolean(body.active) ?? null
-      if (active === null) {
-        return respond(400, {
-          error: 'Campo "active" deve ser boolean (ou string booleana)',
-        })
-      }
+      if (!title) return respond(400, { error: 'Campo "title" é obrigatório' })
 
       const now = FieldValue.serverTimestamp()
-      // IDs sequenciais: t1, t2, t3...
-      // Mantém um contador em counters/trails { next: number } e incrementa via transação.
-      const counterRef = db.collection('counters').doc('trails')
+      const docId = stageDocId(trail_id, stage_number)
+      const docRef = db.collection(collection).doc(docId)
 
-      const newId = await db.runTransaction(async (tx) => {
-        const counterSnap = await tx.get(counterRef)
-        const counterData = counterSnap.data() ?? {}
-        const rawNext = (counterData as { next?: unknown }).next
-
-        const next =
-          typeof rawNext === 'number' && Number.isFinite(rawNext) && rawNext >= 1
-            ? Math.floor(rawNext)
-            : 1
-
-        const trailId = `t${next}`
-        const trailRef = db.collection(collection).doc(trailId)
-
-        const existing = await tx.get(trailRef)
+      await db.runTransaction(async (tx) => {
+        const existing = await tx.get(docRef)
         if (existing.exists) {
           throw new Error(
-            `Conflito ao gerar id sequencial (${trailId}). Verifique counters/trails.next.`,
+            `Conflito: stage_number ${stage_number} já existe para trail_id "${trail_id}".`,
           )
         }
 
-        tx.set(trailRef, {
-          institution_id,
-          name,
-          description,
-          subject,
-          default_total_steps_per_stage: steps,
-          active,
+        // Persistência dos campos com defaults solicitados:
+        // - `is_released` inicia como false
+        // - `active` inicia como true
+        tx.set(docRef, {
+          trail_id,
+          stage_number,
+          title,
+          is_released: false,
+          active: true,
           created_at: now,
           updated_at: now,
         })
-
-        tx.set(counterRef, { next: next + 1 }, { merge: true })
-
-        return trailId
       })
 
       return jsonResponse(
         {
-          id: newId,
-          institution_id,
-          name,
-          description,
-          subject,
-          default_total_steps_per_stage: steps,
-          active,
+          id: docId,
+          trail_id,
+          stage_number,
+          title,
+          is_released: false,
+          active: true,
           created_at: null,
           updated_at: null,
         },
@@ -313,7 +295,6 @@ async function handleRequest(request: Request): Promise<Response> {
       )
     }
 
-    // PUT /trails/:id (via ?id=:id)
     if (request.method === 'PUT') {
       if (!id) return respond(400, { error: 'id é obrigatório em PUT' })
 
@@ -323,6 +304,7 @@ async function handleRequest(request: Request): Promise<Response> {
       } catch {
         return respond(400, { error: 'JSON inválido' })
       }
+
       if (!payload || typeof payload !== 'object') {
         return respond(400, { error: 'Payload inválido' })
       }
@@ -330,58 +312,73 @@ async function handleRequest(request: Request): Promise<Response> {
       const body = payload as Json
       const updates: Json = {}
 
-      const institution_id = sanitizeString(body.institution_id)
-      if (institution_id) updates.institution_id = institution_id
+      const ref = db.collection(collection).doc(id)
+      const snap = await ref.get()
+      if (!snap.exists) return respond(404, { error: 'Not found' })
 
-      const name = sanitizeString(body.name)
-      if (name) updates.name = name
+      const existing = (snap.data() ?? {}) as Record<string, unknown>
 
-      const description = sanitizeString(body.description)
-      if (description) updates.description = description
+      const existingTrailId =
+        typeof existing.trail_id === 'string' ? existing.trail_id : ''
+      const existingStageNumber =
+        typeof existing.stage_number === 'number' ? existing.stage_number : 0
 
-      const subject = sanitizeString(body.subject)
-      if (subject) updates.subject = subject
-
-      if ('default_total_steps_per_stage' in body) {
-        if (body.default_total_steps_per_stage === undefined) {
-          // ignora
-        } else {
-          const steps = parseIntLoose(body.default_total_steps_per_stage)
-          if (steps === null) {
-            return respond(400, {
-              error: 'Campo "default_total_steps_per_stage" deve ser um inteiro',
-            })
-          }
-          if (steps < 0) {
-            return respond(400, {
-              error: 'Campo "default_total_steps_per_stage" não pode ser negativo',
-            })
-          }
-          updates.default_total_steps_per_stage = steps
+      if ('trail_id' in body && body.trail_id !== undefined) {
+        const requestedTrailId = sanitizeString(body.trail_id)
+        if (!requestedTrailId || requestedTrailId !== existingTrailId) {
+          return respond(400, {
+            error:
+              'Atualização de "trail_id" não é suportada (para preservar a unicidade).',
+          })
         }
       }
 
-      if (body.active !== undefined) {
+      if ('stage_number' in body && body.stage_number !== undefined) {
+        const requestedStageNumber = parseIntLoose(body.stage_number)
+        if (requestedStageNumber === null || requestedStageNumber !== existingStageNumber) {
+          return respond(400, {
+            error:
+              'Atualização de "stage_number" não é suportada (para preservar a unicidade).',
+          })
+        }
+      }
+
+      if ('title' in body) {
+        if (body.title === undefined) {
+          // ignora
+        } else {
+          const title = sanitizeString(body.title)
+          if (!title) return respond(400, { error: 'Campo "title" deve ser uma string não vazia' })
+          updates.title = title
+        }
+      }
+
+      if ('is_released' in body && body.is_released !== undefined) {
+        const is_released = parseBoolean(body.is_released)
+        if (is_released === null) {
+          return respond(400, { error: 'Campo "is_released" deve ser boolean' })
+        }
+        updates.is_released = is_released
+      }
+
+      if ('active' in body && body.active !== undefined) {
         const active = parseBoolean(body.active)
         if (active === null) {
-          return respond(400, {
-            error: 'Campo "active" deve ser boolean (ou string booleana)',
-          })
+          return respond(400, { error: 'Campo "active" deve ser boolean' })
         }
         updates.active = active
       }
 
-      updates.updated_at = FieldValue.serverTimestamp()
+      if (Object.keys(updates).length === 0) {
+        return respond(400, { error: 'Nenhum campo válido para atualizar' })
+      }
 
-      const ref = db.collection(collection).doc(id)
-      const snap = await ref.get()
-      if (!snap.exists) return respond(404, { error: 'Not found' })
+      updates.updated_at = FieldValue.serverTimestamp()
 
       await ref.update(updates)
       return jsonResponse({ ok: true, id }, { status: 200, headers: corsHeaders() })
     }
 
-    // DELETE /trails/:id (via ?id=:id)
     if (request.method === 'DELETE') {
       if (!id) return respond(400, { error: 'id é obrigatório em DELETE' })
 
@@ -395,9 +392,7 @@ async function handleRequest(request: Request): Promise<Response> {
 
     return respond(405, { error: `Método ${request.method} não permitido` })
   } catch (e) {
-    return respond(500, {
-      error: e instanceof Error ? e.message : 'Erro interno',
-    })
+    return respond(500, { error: e instanceof Error ? e.message : 'Erro interno' })
   }
 }
 
