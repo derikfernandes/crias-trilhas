@@ -1,0 +1,14 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "trail_stage_questions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "trail_id", "order": "ASCENDING" },
+        { "fieldPath": "stage_number", "order": "ASCENDING" },
+        { "fieldPath": "question_number", "order": "ASCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

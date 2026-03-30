@@ -67,6 +67,26 @@
       "source": "/trail_stages/:id([A-Za-z0-9_-]+)/",
       "destination": "/api/trail_stages?id=:id"
     },
+    {
+      "source": "/trail_stage_questions/",
+      "destination": "/api/trail_stage_questions"
+    },
+    {
+      "source": "/trail_stage_questions",
+      "destination": "/api/trail_stage_questions"
+    },
+    {
+      "source": "/trail_stage_questions/simple",
+      "destination": "/api/trail_stage_questions?simple=1"
+    },
+    {
+      "source": "/trail_stage_questions/:id([A-Za-z0-9_.-]+)",
+      "destination": "/api/trail_stage_questions?id=:id"
+    },
+    {
+      "source": "/trail_stage_questions/:id([A-Za-z0-9_.-]+)/",
+      "destination": "/api/trail_stage_questions?id=:id"
+    },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }

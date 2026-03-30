@@ -7,6 +7,7 @@ import { HomePage } from './pages/HomePage'
 import { InstitutionDetailPage } from './pages/InstitutionDetailPage'
 import { InstitutionNewPage } from './pages/InstitutionNewPage'
 import { TrailDetailPage } from './pages/TrailDetailPage'
+import { TrailStageQuestionsPage } from './pages/TrailStageQuestionsPage'
 import { TrailNewPage } from './pages/TrailNewPage'
 import { StudentDetailPage } from './pages/StudentDetailPage'
 import { StudentNewPage } from './pages/StudentNewPage'
@@ -116,6 +117,14 @@ export default function App() {
             element={
               <FirebaseGate>
                 <TrailNewPage />
+              </FirebaseGate>
+            }
+          />
+          <Route
+            path="/trilhas/:trailId/stages/:stageNumber/questoes"
+            element={
+              <FirebaseGate>
+                <TrailStageQuestionsPage />
               </FirebaseGate>
             }
           />
