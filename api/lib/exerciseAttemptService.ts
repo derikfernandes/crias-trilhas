@@ -1,0 +1,231 @@
+import type {
+  Firestore,
+  QuerySnapshot,
+  DocumentSnapshot,
+} from 'firebase-admin/firestore'
+import { FieldValue } from 'firebase-admin/firestore'
+
+import type { ExerciseAttemptCreatePayload } from './exerciseAttemptValidation'
+
+export type ExerciseAttemptRuntime = {
+  id: string
+  student_id: string
+  institution_id: string
+  trail_id: string
+  stage_number: number
+  question_number: number
+  student_answer: string
+  correct_option: string
+  is_correct: boolean
+  score: number | null
+  feedback: string | null
+  attempt_number: number
+  attempted_at: unknown
+  created_at: unknown
+  updated_at: unknown
+}
+
+type QuestionDocData = {
+  trail_id?: string
+  stage_number?: number
+  question_number?: number
+  question_type?: string
+  correct_option?: string | null
+}
+
+function readQuestionData(snap: DocumentSnapshot): QuestionDocData {
+  const raw = (snap.data() ?? {}) as Record<string, unknown>
+
+  const question_type =
+    typeof raw.question_type === 'string' ? raw.question_type : undefined
+
+  let correct_option: string | null = null
+  if (raw.correct_option !== undefined && raw.correct_option !== null) {
+    correct_option =
+      typeof raw.correct_option === 'string' ? raw.correct_option : null
+  }
+
+  return {
+    trail_id:
+      typeof raw.trail_id === 'string' ? (raw.trail_id as string) : undefined,
+    stage_number:
+      typeof raw.stage_number === 'number' && Number.isFinite(raw.stage_number)
+        ? (raw.stage_number as number)
+        : undefined,
+    question_number:
+      typeof raw.question_number === 'number' &&
+      Number.isFinite(raw.question_number)
+        ? (raw.question_number as number)
+        : undefined,
+    question_type,
+    correct_option,
+  }
+}
+
+export async function listExerciseAttemptsByStudent(
+  db: Firestore,
+  collectionName: string,
+  studentId: string,
+): Promise<QuerySnapshot> {
+  return db
+    .collection(collectionName)
+    .where('student_id', '==', studentId)
+    .orderBy('attempted_at', 'asc')
+    .get()
+}
+
+export async function listExerciseAttemptsByQuestion(
+  db: Firestore,
+  collectionName: string,
+  trailId: string,
+  stageNumber: number,
+  questionNumber: number,
+): Promise<QuerySnapshot> {
+  return db
+    .collection(collectionName)
+    .where('trail_id', '==', trailId)
+    .where('stage_number', '==', stageNumber)
+    .where('question_number', '==', questionNumber)
+    .orderBy('attempt_number', 'asc')
+    .get()
+}
+
+export async function countExerciseAttemptsForQuestion(
+  db: Firestore,
+  collectionName: string,
+  studentId: string,
+  trailId: string,
+  stageNumber: number,
+  questionNumber: number,
+): Promise<number> {
+  const snap = await db
+    .collection(collectionName)
+    .where('student_id', '==', studentId)
+    .where('trail_id', '==', trailId)
+    .where('stage_number', '==', stageNumber)
+    .where('question_number', '==', questionNumber)
+    .get()
+
+  return snap.size
+}
+
+export async function getLastExerciseAttemptForQuestion(
+  db: Firestore,
+  collectionName: string,
+  studentId: string,
+  trailId: string,
+  stageNumber: number,
+  questionNumber: number,
+): Promise<DocumentSnapshot | null> {
+  const snap = await db
+    .collection(collectionName)
+    .where('student_id', '==', studentId)
+    .where('trail_id', '==', trailId)
+    .where('stage_number', '==', stageNumber)
+    .where('question_number', '==', questionNumber)
+    .orderBy('attempt_number', 'desc')
+    .limit(1)
+    .get()
+
+  if (snap.empty) return null
+  return snap.docs[0]
+}
+
+export async function createExerciseAttemptWithQuestionLookup(
+  db: Firestore,
+  attemptsCollection: string,
+  questionsCollection: string,
+  data: ExerciseAttemptCreatePayload,
+): Promise<{
+  id: string
+  is_correct: boolean
+  attempt_number: number
+  score: number | null
+}> {
+  const questionsRef = db.collection(questionsCollection)
+  const attemptsRef = db.collection(attemptsCollection)
+
+  const now = FieldValue.serverTimestamp()
+
+  const result = await db.runTransaction(async (tx) => {
+    const questionSnap = await tx.get(
+      questionsRef.doc(
+        `${data.trail_id}_stage_${data.stage_number}_q_${data.question_number}`,
+      ),
+    )
+
+    if (!questionSnap.exists) {
+      throw new Error('Questão não encontrada para registrar tentativa.')
+    }
+
+    const q = readQuestionData(questionSnap)
+
+    if (q.question_type && q.question_type !== 'exercise') {
+      throw new Error(
+        `Apenas questões do tipo "exercise" podem registrar tentativas. Tipo atual: "${q.question_type}".`,
+      )
+    }
+
+    if (!q.correct_option) {
+      throw new Error(
+        'Questão de exercício sem "correct_option" definida. Não é possível registrar tentativa.',
+      )
+    }
+
+    const attemptsQuery = await tx.get(
+      attemptsRef
+        .where('student_id', '==', data.student_id)
+        .where('trail_id', '==', data.trail_id)
+        .where('stage_number', '==', data.stage_number)
+        .where('question_number', '==', data.question_number),
+    )
+
+    let maxAttempt = 0
+    for (const doc of attemptsQuery.docs) {
+      const raw = (doc.data() ?? {}) as Record<string, unknown>
+      const n = raw.attempt_number
+      if (typeof n === 'number' && Number.isFinite(n) && n > maxAttempt) {
+        maxAttempt = n
+      }
+    }
+
+    const attempt_number = maxAttempt + 1
+
+    const correct_option = q.correct_option
+
+    const studentAnswer = data.student_answer.trim()
+    const is_correct = studentAnswer === correct_option
+
+    const score = is_correct ? 1 : 0
+
+    const doc: Record<string, unknown> = {
+      student_id: data.student_id,
+      institution_id: data.institution_id,
+      trail_id: data.trail_id,
+      stage_number: data.stage_number,
+      question_number: data.question_number,
+      student_answer: studentAnswer,
+      correct_option,
+      is_correct,
+      score,
+      feedback: data.feedback ?? null,
+      attempt_number,
+      attempted_at: now,
+      created_at: now,
+      updated_at: now,
+    }
+
+    const ref = attemptsRef.doc()
+    tx.set(ref, doc)
+
+    return {
+      id: ref.id,
+      is_correct,
+      attempt_number,
+      score,
+    }
+  })
+
+  return result
+}
+
