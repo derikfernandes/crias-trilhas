@@ -1,4 +1,4 @@
-import { cert, getApps, initializeApp } from 'firebase-admin/app'
+import { cert, getApps, initializeApp, type ServiceAccount } from 'firebase-admin/app'
 import { getFirestore } from 'firebase-admin/firestore'
 
 import {
@@ -7,12 +7,12 @@ import {
   getLastExerciseAttemptForQuestion,
   listExerciseAttemptsByQuestion,
   listExerciseAttemptsByStudent,
-} from './lib/exerciseAttemptService'
+} from '../server/lib/exerciseAttemptService'
 import {
   validateExerciseAttemptCreate,
   parseIntLoose,
   sanitizeString,
-} from './lib/exerciseAttemptValidation'
+} from '../server/lib/exerciseAttemptValidation'
 
 type Json = Record<string, unknown>
 
@@ -62,12 +62,7 @@ function getDb() {
     )
   }
 
-  const serviceAccount = JSON.parse(saJson) as {
-    project_id?: string
-    client_email?: string
-    private_key?: string
-    [k: string]: unknown
-  }
+  const serviceAccount = JSON.parse(saJson) as ServiceAccount
 
   if (!getApps().length) {
     initializeApp({
@@ -318,7 +313,7 @@ async function handleRequest(request: Request): Promise<Response> {
       }
 
       const validated = validateExerciseAttemptCreate(payload)
-      if (!validated.ok) return respond(400, { error: validated.error })
+      if (validated.ok === false) return respond(400, { error: validated.error })
 
       const result = await createExerciseAttemptWithQuestionLookup(
         db,

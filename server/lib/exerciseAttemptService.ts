@@ -190,12 +190,9 @@ export async function createExerciseAttemptWithQuestionLookup(
     }
 
     const attempt_number = maxAttempt + 1
-
     const correct_option = q.correct_option
-
     const studentAnswer = data.student_answer.trim()
     const is_correct = studentAnswer === correct_option
-
     const score = is_correct ? 1 : 0
 
     const doc: Record<string, unknown> = {
@@ -228,4 +225,3 @@ export async function createExerciseAttemptWithQuestionLookup(
 
   return result
 }
-

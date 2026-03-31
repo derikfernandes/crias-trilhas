@@ -120,4 +120,3 @@ export async function listRecentConversationLogs(
 
   return query.get()
 }
-

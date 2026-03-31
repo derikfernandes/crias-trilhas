@@ -1,11 +1,25 @@
 import type {
   DocumentSnapshot,
   QueryDocumentSnapshot,
+  Timestamp,
 } from 'firebase/firestore'
 
 import type { ExerciseAttempt } from '../types/exerciseAttempt'
 
 export const EXERCISE_ATTEMPTS_COLLECTION = 'exercise_attempts'
+
+function asTimestampOrNull(value: unknown): Timestamp | null {
+  if (!value || typeof value !== 'object') return null
+  if (
+    'toDate' in value &&
+    typeof (value as { toDate?: unknown }).toDate === 'function' &&
+    'toMillis' in value &&
+    typeof (value as { toMillis?: unknown }).toMillis === 'function'
+  ) {
+    return value as Timestamp
+  }
+  return null
+}
 
 export function snapshotToExerciseAttempt(
   d: DocumentSnapshot | QueryDocumentSnapshot,
@@ -92,9 +106,9 @@ export function snapshotToExerciseAttempt(
           ? null
           : null,
     attempt_number,
-    attempted_at: (body.attempted_at as any) ?? null,
-    created_at: (body.created_at as any) ?? null,
-    updated_at: (body.updated_at as any) ?? null,
+    attempted_at: asTimestampOrNull(body.attempted_at),
+    created_at: asTimestampOrNull(body.created_at),
+    updated_at: asTimestampOrNull(body.updated_at),
   }
 }
 

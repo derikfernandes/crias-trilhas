@@ -5,10 +5,6 @@ export type ExerciseAttemptCreatePayload = {
   stage_number: number
   question_number: number
   student_answer: string
-  /**
-   * Feedback opcional calculado/definido pelo backend.
-   * Se não enviado, fica null.
-   */
   feedback: string | null
 }
 
@@ -99,4 +95,3 @@ export function validateExerciseAttemptCreate(
     },
   }
 }
-

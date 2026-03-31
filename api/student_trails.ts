@@ -1,4 +1,4 @@
-import { cert, getApps, initializeApp } from 'firebase-admin/app'
+import { cert, getApps, initializeApp, type ServiceAccount } from 'firebase-admin/app'
 import { getFirestore } from 'firebase-admin/firestore'
 
 import {
@@ -67,12 +67,7 @@ function getDb() {
     )
   }
 
-  const serviceAccount = JSON.parse(saJson) as {
-    project_id?: string
-    client_email?: string
-    private_key?: string
-    [k: string]: unknown
-  }
+  const serviceAccount = JSON.parse(saJson) as ServiceAccount
 
   if (!getApps().length) {
     initializeApp({
@@ -242,7 +237,7 @@ async function handleRequest(request: Request): Promise<Response> {
       }
 
       const validated = validateStudentTrailCreate(payload)
-      if (!validated.ok) return respond(400, { error: validated.error })
+      if (validated.ok === false) return respond(400, { error: validated.error })
 
       try {
         const { id: newId } = await createStudentTrail(
@@ -287,19 +282,6 @@ async function handleRequest(request: Request): Promise<Response> {
         })
       }
 
-      const targetStudentId =
-        qStudentId ?? sanitizeString((await request.json()?.student_id)) ?? null
-      const targetTrailId =
-        qTrailId ?? sanitizeString((await request.json()?.trail_id)) ?? null
-
-      if (!targetStudentId || !targetTrailId) {
-        return respond(400, {
-          error:
-            'Campos "student_id" e "trail_id" são obrigatórios (query ou body) para operações de runtime.',
-        })
-      }
-
-      // Re-leitura do payload (já consumido acima se usado).
       let payload: unknown
       try {
         payload = await request.json()
@@ -307,6 +289,18 @@ async function handleRequest(request: Request): Promise<Response> {
         payload = {}
       }
       const body = (payload ?? {}) as Record<string, unknown>
+
+      const targetStudentId =
+        qStudentId ?? sanitizeString(body.student_id) ?? null
+      const targetTrailId =
+        qTrailId ?? sanitizeString(body.trail_id) ?? null
+
+      if (!targetStudentId || !targetTrailId) {
+        return respond(400, {
+          error:
+            'Campos "student_id" e "trail_id" são obrigatórios (query ou body) para operações de runtime.',
+        })
+      }
 
       if (action === 'advance_question') {
         const pos = await advanceStudentTrailQuestion(
@@ -383,7 +377,7 @@ async function handleRequest(request: Request): Promise<Response> {
         }
 
         const { updateStudentTrailStatus } = await import(
-          './lib/studentTrailService'
+          './lib/studentTrailService.js'
         )
         await updateStudentTrailStatus(
           db,
@@ -445,7 +439,7 @@ async function handleRequest(request: Request): Promise<Response> {
         }
 
         const { updateStudentTrailFields } = await import(
-          './lib/studentTrailService'
+          './lib/studentTrailService.js'
         )
         await updateStudentTrailFields(db, collection, snap.id, patch)
 
