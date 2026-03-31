@@ -1233,6 +1233,924 @@ const TRAIL_STAGE_QUESTION_ENDPOINTS: DocEndpoint[] = [
   },
 ]
 
+const STUDENT_TRAIL_ENDPOINTS: DocEndpoint[] = [
+  {
+    id: 'get-student-trail-position',
+    method: 'GET',
+    path: '/student_trails/',
+    title: 'Buscar posição atual do aluno em uma trilha',
+    description:
+      'Retorna o estado atual do aluno dentro de uma trilha (stage, questão e status) a partir de `student_id` + `trail_id`.',
+    auth: true,
+    queryParams: [
+      {
+        name: 'student_id',
+        type: 'string',
+        required: true,
+        description: 'ID do aluno (campo student_id na collection student_trails).',
+      },
+      {
+        name: 'trail_id',
+        type: 'string',
+        required: true,
+        description: 'ID da trilha pedagógica.',
+      },
+    ],
+    responses: [
+      {
+        code: '200',
+        description:
+          'Objeto com stage/questão/status atuais, além de timestamps (started_at, completed_at, last_interaction_at, created_at, updated_at).',
+      },
+      { code: '400', description: 'Parâmetros obrigatórios ausentes.' },
+      { code: '404', description: 'Progresso não encontrado para student_id + trail_id.' },
+      { code: '401', description: 'Não autenticado.' },
+    ],
+  },
+  {
+    id: 'post-student-trail',
+    method: 'POST',
+    path: '/student_trails/',
+    title: 'Criar progresso de aluno em uma trilha',
+    description:
+      'Cria um registro na collection `student_trails` para controlar o estado atual do aluno em uma trilha específica. Apenas um registro por combinação student_id + trail_id.',
+    auth: true,
+    bodyFields: [
+      {
+        name: 'student_id',
+        type: 'string',
+        required: true,
+        description: 'ID do aluno.',
+        example: 'stu_001',
+      },
+      {
+        name: 'institution_id',
+        type: 'string',
+        required: true,
+        description: 'ID da instituição à qual o aluno pertence.',
+        example: 'inst_001',
+      },
+      {
+        name: 'trail_id',
+        type: 'string',
+        required: true,
+        description: 'ID da trilha pedagógica.',
+        example: 'trail_001',
+      },
+      {
+        name: 'current_stage_number',
+        type: 'number (inteiro)',
+        required: false,
+        description: 'Stage atual (default 1 quando omitido).',
+        example: '1',
+      },
+      {
+        name: 'current_question_number',
+        type: 'number (inteiro)',
+        required: false,
+        description: 'Questão atual dentro do stage (default 1 quando omitido).',
+        example: '1',
+      },
+      {
+        name: 'status',
+        type: '"not_started" | "in_progress" | "completed" | "blocked"',
+        required: false,
+        description:
+          'Estado da jornada do aluno na trilha. Default `not_started` quando omitido.',
+        example: 'in_progress',
+      },
+    ],
+    bodyExample: `{
+  "student_id": "stu_001",
+  "institution_id": "inst_001",
+  "trail_id": "trail_001",
+  "current_stage_number": 1,
+  "current_question_number": 1,
+  "status": "in_progress"
+}`,
+    responses: [
+      {
+        code: '201',
+        description:
+          'Progresso criado com sucesso (apenas estado atual; histórico detalhado é salvo em outras collections).',
+      },
+      {
+        code: '409',
+        description:
+          'Já existe um registro de progresso para a combinação student_id + trail_id.',
+      },
+      { code: '400', description: 'Payload inválido ou campos obrigatórios ausentes.' },
+      { code: '401', description: 'Não autenticado.' },
+    ],
+  },
+  {
+    id: 'put-student-trail-advance-question',
+    method: 'PUT',
+    path: '/student_trails/?action=advance_question',
+    title: 'Avançar para a próxima questão',
+    description:
+      'Incrementa `current_question_number` do aluno em uma trilha. Se o status estiver `not_started`, passa para `in_progress` e preenche `started_at` se ainda estiver null.',
+    auth: true,
+    queryParams: [
+      {
+        name: 'student_id',
+        type: 'string',
+        required: true,
+        description: 'ID do aluno.',
+      },
+      {
+        name: 'trail_id',
+        type: 'string',
+        required: true,
+        description: 'ID da trilha.',
+      },
+      {
+        name: 'action',
+        type: 'string',
+        required: true,
+        description: 'Deve ser "advance_question".',
+      },
+    ],
+    responses: [
+      {
+        code: '200',
+        description:
+          'Objeto com posição atualizada (stage, questão e status). `last_interaction_at` é atualizado.',
+      },
+      {
+        code: '400',
+        description:
+          'Parâmetros inválidos ou tentativa de avançar quando o status está `completed` ou `blocked`.',
+      },
+      { code: '404', description: 'Progresso não encontrado para student_id + trail_id.' },
+      { code: '401', description: 'Não autenticado.' },
+    ],
+  },
+  {
+    id: 'put-student-trail-advance-stage',
+    method: 'PUT',
+    path: '/student_trails/?action=advance_stage',
+    title: 'Avançar para o próximo stage',
+    description:
+      'Incrementa `current_stage_number` e reseta `current_question_number` para 1. Mesma regra de status/started_at do avanço de questão.',
+    auth: true,
+    queryParams: [
+      {
+        name: 'student_id',
+        type: 'string',
+        required: true,
+        description: 'ID do aluno.',
+      },
+      {
+        name: 'trail_id',
+        type: 'string',
+        required: true,
+        description: 'ID da trilha.',
+      },
+      {
+        name: 'action',
+        type: 'string',
+        required: true,
+        description: 'Deve ser "advance_stage".',
+      },
+    ],
+    responses: [
+      {
+        code: '200',
+        description:
+          'Objeto com novo stage atual e questão 1. `last_interaction_at` é atualizado.',
+      },
+      {
+        code: '400',
+        description:
+          'Parâmetros inválidos ou tentativa de avançar quando o status está `completed` ou `blocked`.',
+      },
+      { code: '404', description: 'Progresso não encontrado.' },
+      { code: '401', description: 'Não autenticado.' },
+    ],
+  },
+  {
+    id: 'put-student-trail-mark-last-interaction',
+    method: 'PUT',
+    path: '/student_trails/?action=mark_last_interaction',
+    title: 'Marcar última interação',
+    description:
+      'Apenas atualiza `last_interaction_at` (e `updated_at`) do registro de progresso.',
+    auth: true,
+    queryParams: [
+      {
+        name: 'student_id',
+        type: 'string',
+        required: true,
+        description: 'ID do aluno.',
+      },
+      {
+        name: 'trail_id',
+        type: 'string',
+        required: true,
+        description: 'ID da trilha.',
+      },
+      {
+        name: 'action',
+        type: 'string',
+        required: true,
+        description: 'Deve ser "mark_last_interaction".',
+      },
+    ],
+    responses: [
+      { code: '200', description: '{ ok: true } — sucesso.' },
+      { code: '404', description: 'Progresso não encontrado.' },
+      { code: '401', description: 'Não autenticado.' },
+    ],
+  },
+  {
+    id: 'put-student-trail-complete',
+    method: 'PUT',
+    path: '/student_trails/?action=complete',
+    title: 'Concluir trilha para o aluno',
+    description:
+      'Define `status = "completed"`, preenche `completed_at` e atualiza `last_interaction_at`.',
+    auth: true,
+    queryParams: [
+      {
+        name: 'student_id',
+        type: 'string',
+        required: true,
+        description: 'ID do aluno.',
+      },
+      {
+        name: 'trail_id',
+        type: 'string',
+        required: true,
+        description: 'ID da trilha.',
+      },
+      {
+        name: 'action',
+        type: 'string',
+        required: true,
+        description: 'Deve ser "complete".',
+      },
+    ],
+    responses: [
+      { code: '200', description: '{ ok: true, status: "completed" }.' },
+      { code: '404', description: 'Progresso não encontrado.' },
+      { code: '401', description: 'Não autenticado.' },
+    ],
+  },
+  {
+    id: 'put-student-trail-block',
+    method: 'PUT',
+    path: '/student_trails/?action=block',
+    title: 'Bloquear trilha para o aluno',
+    description:
+      'Define `status = "blocked"`. Pode ser usado para interromper a jornada do aluno na trilha quando houver algum impedimento.',
+    auth: true,
+    queryParams: [
+      {
+        name: 'student_id',
+        type: 'string',
+        required: true,
+        description: 'ID do aluno.',
+      },
+      {
+        name: 'trail_id',
+        type: 'string',
+        required: true,
+        description: 'ID da trilha.',
+      },
+      {
+        name: 'action',
+        type: 'string',
+        required: true,
+        description: 'Deve ser "block".',
+      },
+    ],
+    responses: [
+      { code: '200', description: '{ ok: true, status: "blocked" }.' },
+      { code: '404', description: 'Progresso não encontrado.' },
+      { code: '401', description: 'Não autenticado.' },
+    ],
+  },
+  {
+    id: 'put-student-trail-update-status',
+    method: 'PUT',
+    path: '/student_trails/?action=update_status',
+    title: 'Atualizar status manualmente',
+    description:
+      'Permite forçar o status da trilha do aluno para qualquer um dos valores válidos, respeitando as regras de timestamps (started_at/completed_at).',
+    auth: true,
+    queryParams: [
+      {
+        name: 'student_id',
+        type: 'string',
+        required: true,
+        description: 'ID do aluno.',
+      },
+      {
+        name: 'trail_id',
+        type: 'string',
+        required: true,
+        description: 'ID da trilha.',
+      },
+      {
+        name: 'action',
+        type: 'string',
+        required: true,
+        description: 'Deve ser "update_status".',
+      },
+    ],
+    bodyFields: [
+      {
+        name: 'status',
+        type: '"not_started" | "in_progress" | "completed" | "blocked"',
+        required: true,
+        description: 'Novo status desejado.',
+        example: 'blocked',
+      },
+    ],
+    responses: [
+      { code: '200', description: '{ ok: true, status: "<novo_status>" }.' },
+      { code: '400', description: 'Status inválido.' },
+      { code: '404', description: 'Progresso não encontrado.' },
+      { code: '401', description: 'Não autenticado.' },
+    ],
+  },
+  {
+    id: 'put-student-trail-update-position',
+    method: 'PUT',
+    path: '/student_trails/?action=update_position',
+    title: 'Ajustar manualmente stage/questão atuais',
+    description:
+      'Atualiza diretamente `current_stage_number` e/ou `current_question_number` para correções pontuais, sem alterar o histórico de conversas.',
+    auth: true,
+    queryParams: [
+      {
+        name: 'student_id',
+        type: 'string',
+        required: true,
+        description: 'ID do aluno.',
+      },
+      {
+        name: 'trail_id',
+        type: 'string',
+        required: true,
+        description: 'ID da trilha.',
+      },
+      {
+        name: 'action',
+        type: 'string',
+        required: true,
+        description: 'Deve ser "update_position".',
+      },
+    ],
+    bodyFields: [
+      {
+        name: 'current_stage_number',
+        type: 'number (inteiro)',
+        required: false,
+        description: 'Novo stage atual (>= 1).',
+        example: '2',
+      },
+      {
+        name: 'current_question_number',
+        type: 'number (inteiro)',
+        required: false,
+        description: 'Nova questão atual (>= 1).',
+        example: '3',
+      },
+    ],
+    responses: [
+      { code: '200', description: '{ ok: true } — posição atualizada.' },
+      {
+        code: '400',
+        description:
+          'Nenhum campo enviado ou valores inválidos (menores que 1).',
+      },
+      { code: '404', description: 'Progresso não encontrado.' },
+      { code: '401', description: 'Não autenticado.' },
+    ],
+  },
+]
+
+const EXERCISE_ATTEMPT_ENDPOINTS: DocEndpoint[] = [
+  {
+    id: 'post-exercise-attempt',
+    method: 'POST',
+    path: '/exercise_attempts/',
+    title: 'Registrar tentativa de exercício',
+    description:
+      'Cria um registro em `exercise_attempts` para uma questão do tipo exercise. A API busca a questão em `trail_stage_questions`, copia `correct_option`, calcula `is_correct`, define `score` (1 ou 0) e incrementa `attempt_number` para a combinação student_id + trail_id + stage_number + question_number.',
+    auth: true,
+    bodyFields: [
+      {
+        name: 'student_id',
+        type: 'string',
+        required: true,
+        description: 'ID do aluno.',
+        example: 'stu_001',
+      },
+      {
+        name: 'institution_id',
+        type: 'string',
+        required: true,
+        description: 'ID da instituição do aluno.',
+        example: 'inst_001',
+      },
+      {
+        name: 'trail_id',
+        type: 'string',
+        required: true,
+        description: 'ID da trilha pedagógica.',
+        example: 'trail_001',
+      },
+      {
+        name: 'stage_number',
+        type: 'number (inteiro)',
+        required: true,
+        description: 'Stage onde está a questão (>= 1).',
+        example: '2',
+      },
+      {
+        name: 'question_number',
+        type: 'number (inteiro)',
+        required: true,
+        description: 'Número da questão dentro do stage (>= 1).',
+        example: '5',
+      },
+      {
+        name: 'student_answer',
+        type: 'string',
+        required: true,
+        description:
+          'Resposta enviada pelo aluno. Pode ser a letra da alternativa (ex.: "A") ou um valor aberto (ex.: "1/2").',
+        example: 'A',
+      },
+      {
+        name: 'feedback',
+        type: 'string | null',
+        required: false,
+        description:
+          'Mensagem de feedback opcional definida pelo backend/painel (ex.: "Resposta correta!", "Quase, revise o conceito de fração.").',
+      },
+    ],
+    bodyExample: `{
+  "student_id": "stu_001",
+  "institution_id": "inst_001",
+  "trail_id": "trail_001",
+  "stage_number": 2,
+  "question_number": 5,
+  "student_answer": "A",
+  "feedback": "Resposta correta!"
+}`,
+    responses: [
+      {
+        code: '201',
+        description:
+          'Tentativa registrada com sucesso. Retorna id, is_correct, score (1 ou 0) e attempt_number (número da tentativa).',
+      },
+      {
+        code: '400',
+        description: 'Payload inválido ou campos obrigatórios ausentes.',
+      },
+      {
+        code: '404',
+        description:
+          'Questão não encontrada em trail_stage_questions com os parâmetros informados.',
+      },
+      {
+        code: '409',
+        description:
+          'Questão não é do tipo exercise ou está sem correct_option configurado.',
+      },
+    ],
+  },
+  {
+    id: 'get-exercise-attempts-by-student',
+    method: 'GET',
+    path: '/exercise_attempts/?student_id={student_id}',
+    title: 'Listar tentativas por aluno',
+    description:
+      'Lista todas as tentativas de exercícios de um aluno (qualquer trilha/questão), ordenadas por attempted_at (mais antigas primeiro).',
+    auth: true,
+    queryParams: [
+      {
+        name: 'student_id',
+        type: 'string',
+        required: true,
+        description: 'ID do aluno.',
+      },
+    ],
+    responses: [
+      {
+        code: '200',
+        description:
+          'Array de documentos de exercise_attempts contendo histórico completo de tentativas do aluno.',
+      },
+      { code: '400', description: 'Parâmetros inválidos.' },
+      { code: '401', description: 'Não autenticado.' },
+    ],
+  },
+  {
+    id: 'get-exercise-attempts-by-question',
+    method: 'GET',
+    path: '/exercise_attempts/?trail_id={trail_id}&stage_number={stage_number}&question_number={question_number}',
+    title: 'Listar tentativas por questão',
+    description:
+      'Lista todas as tentativas registradas para uma questão específica (qualquer aluno), ordenadas por attempt_number (1, 2, 3, ...). Útil para análise pedagógica da questão.',
+    auth: true,
+    queryParams: [
+      {
+        name: 'trail_id',
+        type: 'string',
+        required: true,
+        description: 'ID da trilha.',
+      },
+      {
+        name: 'stage_number',
+        type: 'number (inteiro)',
+        required: true,
+        description: 'Stage da questão.',
+      },
+      {
+        name: 'question_number',
+        type: 'number (inteiro)',
+        required: true,
+        description: 'Número da questão dentro do stage.',
+      },
+    ],
+    responses: [
+      {
+        code: '200',
+        description:
+          'Array de exercise_attempts para a questão informada (cada item com student_id, is_correct, score, feedback, attempt_number, timestamps etc.).',
+      },
+      { code: '400', description: 'Parâmetros inválidos.' },
+      { code: '401', description: 'Não autenticado.' },
+    ],
+  },
+  {
+    id: 'get-exercise-attempt-count',
+    method: 'GET',
+    path: '/exercise_attempts/?action=count&student_id={student_id}&trail_id={trail_id}&stage_number={stage_number}&question_number={question_number}',
+    title: 'Contar tentativas de um aluno em uma questão',
+    description:
+      'Retorna quantas tentativas já foram registradas pelo aluno em uma questão específica. Útil para regras de limite de tentativas ou desbloqueio de avanço.',
+    auth: true,
+    queryParams: [
+      {
+        name: 'action',
+        type: 'string',
+        required: true,
+        description: 'Deve ser "count".',
+      },
+      {
+        name: 'student_id',
+        type: 'string',
+        required: true,
+        description: 'ID do aluno.',
+      },
+      {
+        name: 'trail_id',
+        type: 'string',
+        required: true,
+        description: 'ID da trilha.',
+      },
+      {
+        name: 'stage_number',
+        type: 'number (inteiro)',
+        required: true,
+        description: 'Stage da questão.',
+      },
+      {
+        name: 'question_number',
+        type: 'number (inteiro)',
+        required: true,
+        description: 'Número da questão.',
+      },
+    ],
+    responses: [
+      {
+        code: '200',
+        description:
+          'Objeto com attempt_count (inteiro) para os parâmetros informados.',
+      },
+      { code: '400', description: 'Parâmetros obrigatórios ausentes ou inválidos.' },
+      { code: '401', description: 'Não autenticado.' },
+    ],
+  },
+  {
+    id: 'get-exercise-attempt-last',
+    method: 'GET',
+    path: '/exercise_attempts/?action=last&student_id={student_id}&trail_id={trail_id}&stage_number={stage_number}&question_number={question_number}',
+    title: 'Obter última tentativa do aluno na questão',
+    description:
+      'Retorna apenas a tentativa mais recente (maior attempt_number) do aluno em uma questão específica. Útil para saber se o aluno acertou por último e qual feedback recebeu.',
+    auth: true,
+    queryParams: [
+      {
+        name: 'action',
+        type: 'string',
+        required: true,
+        description: 'Deve ser "last".',
+      },
+      {
+        name: 'student_id',
+        type: 'string',
+        required: true,
+        description: 'ID do aluno.',
+      },
+      {
+        name: 'trail_id',
+        type: 'string',
+        required: true,
+        description: 'ID da trilha.',
+      },
+      {
+        name: 'stage_number',
+        type: 'number (inteiro)',
+        required: true,
+        description: 'Stage da questão.',
+      },
+      {
+        name: 'question_number',
+        type: 'number (inteiro)',
+        required: true,
+        description: 'Número da questão.',
+      },
+    ],
+    responses: [
+      {
+        code: '200',
+        description:
+          'Documento único de exercise_attempts representando a última tentativa do aluno na questão.',
+      },
+      {
+        code: '404',
+        description:
+          'Nenhuma tentativa encontrada para a combinação informada.',
+      },
+      { code: '400', description: 'Parâmetros inválidos.' },
+      { code: '401', description: 'Não autenticado.' },
+    ],
+  },
+]
+
+const CONVERSATION_LOG_ENDPOINTS: DocEndpoint[] = [
+  {
+    id: 'post-conversation-log',
+    method: 'POST',
+    path: '/conversation_logs/',
+    title: 'Criar log de conversa',
+    description:
+      'Cria um registro de histórico na collection `conversation_logs` para cada mensagem trocada entre o sistema/chatbot e o aluno.',
+    auth: true,
+    bodyFields: [
+      {
+        name: 'student_id',
+        type: 'string',
+        required: true,
+        description: 'ID do aluno.',
+        example: 'stu_001',
+      },
+      {
+        name: 'trail_id',
+        type: 'string',
+        required: true,
+        description: 'ID da trilha pedagógica em que a interação ocorreu.',
+        example: 'trail_001',
+      },
+      {
+        name: 'stage_number',
+        type: 'number (inteiro)',
+        required: true,
+        description: 'Número do stage em que a interação ocorreu (>= 1).',
+        example: '1',
+      },
+      {
+        name: 'question_number',
+        type: 'number (inteiro)',
+        required: true,
+        description: 'Número da questão dentro do stage (>= 1).',
+        example: '2',
+      },
+      {
+        name: 'sender',
+        type: '"system" | "student"',
+        required: true,
+        description: 'Quem enviou a mensagem (sistema/chatbot ou aluno).',
+        example: 'system',
+      },
+      {
+        name: 'message_text',
+        type: 'string',
+        required: true,
+        description: 'Texto bruto da mensagem.',
+        example: 'Agora vamos para a introdução do conteúdo.',
+      },
+      {
+        name: 'institution_id',
+        type: 'string | null',
+        required: false,
+        description:
+          'ID da instituição, opcional, para facilitar filtros futuros (pode ser null).',
+        example: 'inst_001',
+      },
+      {
+        name: 'message_type',
+        type: '"text" | "instruction" | "exercise" | "feedback" | null',
+        required: false,
+        description:
+          'Classificação opcional da mensagem (texto genérico, instrução, exercício, feedback).',
+        example: 'instruction',
+      },
+      {
+        name: 'metadata',
+        type: 'object | null',
+        required: false,
+        description:
+          'Objeto opcional para metadados extras (ex.: nome do bloco de fluxo, canal, resultado de validação).',
+        example: '{ "flow_block": "enviar_introducao" }',
+      },
+    ],
+    bodyExample: `{
+  "student_id": "stu_001",
+  "trail_id": "trail_001",
+  "stage_number": 1,
+  "question_number": 2,
+  "sender": "system",
+  "message_text": "Agora vamos para a introdução do conteúdo.",
+  "institution_id": "inst_001",
+  "message_type": "instruction",
+  "metadata": {
+    "flow_block": "enviar_introducao"
+  }
+}`,
+    responses: [
+      {
+        code: '201',
+        description:
+          'Log criado com sucesso. A resposta traz o documento salvo (sem o timestamp resolvido em created_at).',
+      },
+      { code: '400', description: 'Payload inválido ou campos obrigatórios ausentes.' },
+      { code: '401', description: 'Não autenticado.' },
+    ],
+  },
+  {
+    id: 'get-conversation-log-by-id',
+    method: 'GET',
+    path: '/conversation_logs/{id}',
+    title: 'Buscar log de conversa por ID',
+    description: 'Obtém um único registro de conversa a partir do ID do documento.',
+    auth: true,
+    pathParams: [
+      {
+        name: 'id',
+        type: 'string',
+        description: 'ID do documento na collection `conversation_logs`.',
+      },
+    ],
+    responses: [
+      {
+        code: '200',
+        description:
+          'Objeto do log de conversa, incluindo timestamps e metadados (se existirem).',
+      },
+      { code: '404', description: 'Log não encontrado.' },
+      { code: '401', description: 'Não autenticado.' },
+    ],
+  },
+  {
+    id: 'get-conversation-logs-by-student',
+    method: 'GET',
+    path: '/conversation_logs/',
+    title: 'Listar histórico por aluno',
+    description:
+      'Retorna todos os logs de conversa de um aluno (todas as trilhas), ordenados por created_at ascendente.',
+    auth: true,
+    queryParams: [
+      {
+        name: 'student_id',
+        type: 'string',
+        required: true,
+        description: 'ID do aluno cujos logs serão listados.',
+      },
+    ],
+    responses: [
+      { code: '200', description: 'Array de logs em ordem cronológica.' },
+      { code: '400', description: 'Parâmetro student_id ausente.' },
+      { code: '401', description: 'Não autenticado.' },
+    ],
+  },
+  {
+    id: 'get-conversation-logs-by-student-and-trail',
+    method: 'GET',
+    path: '/conversation_logs/',
+    title: 'Listar histórico por aluno e trilha',
+    description:
+      'Retorna apenas os logs de conversa de um aluno dentro de uma trilha específica.',
+    auth: true,
+    queryParams: [
+      {
+        name: 'student_id',
+        type: 'string',
+        required: true,
+        description: 'ID do aluno.',
+      },
+      {
+        name: 'trail_id',
+        type: 'string',
+        required: true,
+        description: 'ID da trilha.',
+      },
+    ],
+    responses: [
+      { code: '200', description: 'Array de logs filtrados por aluno + trilha.' },
+      { code: '400', description: 'Parâmetros obrigatórios ausentes.' },
+      { code: '401', description: 'Não autenticado.' },
+    ],
+  },
+  {
+    id: 'get-conversation-logs-by-student-trail-stage',
+    method: 'GET',
+    path: '/conversation_logs/',
+    title: 'Listar histórico por aluno, trilha e stage',
+    description:
+      'Filtra o histórico de um aluno para uma trilha e um stage específicos (útil para auditoria de um trecho da jornada).',
+    auth: true,
+    queryParams: [
+      {
+        name: 'student_id',
+        type: 'string',
+        required: true,
+        description: 'ID do aluno.',
+      },
+      {
+        name: 'trail_id',
+        type: 'string',
+        required: true,
+        description: 'ID da trilha.',
+      },
+      {
+        name: 'stage_number',
+        type: 'number (inteiro)',
+        required: true,
+        description: 'Número do stage.',
+      },
+    ],
+    responses: [
+      { code: '200', description: 'Array de logs para o stage informado.' },
+      { code: '400', description: 'Parâmetros obrigatórios ausentes ou inválidos.' },
+      { code: '401', description: 'Não autenticado.' },
+    ],
+  },
+  {
+    id: 'get-conversation-logs-recent',
+    method: 'GET',
+    path: '/conversation_logs/',
+    title: 'Buscar histórico recente (últimas N mensagens)',
+    description:
+      'Retorna os últimos N registros de conversa de um aluno (opcionalmente filtrados por trilha), ordenados por created_at desc.',
+    auth: true,
+    queryParams: [
+      {
+        name: 'student_id',
+        type: 'string',
+        required: true,
+        description: 'ID do aluno.',
+      },
+      {
+        name: 'trail_id',
+        type: 'string',
+        required: false,
+        description:
+          'Opcional — se enviado, o filtro é feito também por essa trilha. Caso contrário, retorna de todas.',
+      },
+      {
+        name: 'recent',
+        type: 'string',
+        required: true,
+        description: 'Deve ser "1" para ativar o modo de histórico recente.',
+      },
+      {
+        name: 'limit',
+        type: 'number (inteiro)',
+        required: false,
+        description:
+          'Quantidade máxima de registros (default 100, máximo 500 quando enviado).',
+      },
+    ],
+    responses: [
+      {
+        code: '200',
+        description:
+          'Array com os últimos N registros, ordenados do mais recente para o mais antigo.',
+      },
+      { code: '400', description: 'Parâmetros inválidos ou ausentes.' },
+      { code: '401', description: 'Não autenticado.' },
+    ],
+  },
+]
+
 const METHOD_EXPLAIN: Record<HttpMethod, string> = {
   GET: 'Consulta — lê dados do servidor sem alterar o estado do recurso (idempotente).',
   POST: 'Criação — envia um corpo (body) para criar um novo recurso; gera um novo id no servidor.',
@@ -1250,8 +2168,11 @@ export function DocPage() {
         <p className="admin__lede">
           Referência dos endpoints REST dos recursos{' '}
           <strong>Institution</strong>, <strong>Student</strong>, <strong>Trails</strong>,{' '}
-          <strong>Trail stages</strong> e <strong>Trail stage questions</strong>{' '}
-          (instituições, alunos, trilhas, stages e questões/etapas por stage). Cada
+          <strong>Trail stages</strong>, <strong>Trail stage questions</strong>,{' '}
+          <strong>Student trails</strong>, <strong>Conversation logs</strong> e{' '}
+          <strong>Exercise attempts</strong>{' '}
+          (instituições, alunos, trilhas, stages, questões, progresso de trilhas,
+          histórico de conversa e tentativas de exercícios). Cada
           bloco indica o <strong>método HTTP</strong>, o <strong>caminho</strong>, o
           que a rota faz e os parâmetros ou corpo esperados.
         </p>
@@ -1305,6 +2226,164 @@ export function DocPage() {
 
         <div className="doc__endpoints">
           {INSTITUTION_ENDPOINTS.map((ep) => (
+            <details key={ep.id} className="doc-endpoint">
+              <summary className="doc-endpoint__summary">
+                <span
+                  className={`doc-method doc-method--${ep.method.toLowerCase()}`}
+                >
+                  {ep.method}
+                </span>
+                <code className="doc-endpoint__path">{ep.path}</code>
+                <span className="doc-endpoint__title">{ep.title}</span>
+                {ep.auth ? (
+                  <span
+                    className="doc-endpoint__lock"
+                    title="Pode exigir autenticação"
+                    aria-label="Autenticação"
+                  >
+                    <LockIcon />
+                  </span>
+                ) : null}
+              </summary>
+
+              <div className="doc-endpoint__body">
+                <p className="doc-endpoint__desc">{ep.description}</p>
+
+                <p className="doc-endpoint__fullurl">
+                  <span className="muted">URL completa de exemplo:</span>{' '}
+                  <code>
+                    {ep.method} {baseUrl}
+                    {ep.path.replace('{id}', '{id}')}
+                  </code>
+                </p>
+
+                {ep.pathParams?.length ? (
+                  <div className="doc-block">
+                    <h3 className="doc-block__title">Parâmetros de path</h3>
+                    <table className="doc-table">
+                      <thead>
+                        <tr>
+                          <th>Nome</th>
+                          <th>Tipo</th>
+                          <th>Descrição</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {ep.pathParams.map((p) => (
+                          <tr key={p.name}>
+                            <td>
+                              <code>{p.name}</code>
+                            </td>
+                            <td>{p.type}</td>
+                            <td>{p.description}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : null}
+
+                {ep.queryParams?.length ? (
+                  <div className="doc-block">
+                    <h3 className="doc-block__title">Query</h3>
+                    <table className="doc-table">
+                      <thead>
+                        <tr>
+                          <th>Nome</th>
+                          <th>Tipo</th>
+                          <th>Obrigatório</th>
+                          <th>Descrição</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {ep.queryParams.map((q) => (
+                          <tr key={q.name}>
+                            <td>
+                              <code>{q.name}</code>
+                            </td>
+                            <td>{q.type}</td>
+                            <td>{q.required ? 'Sim' : 'Não'}</td>
+                            <td>{q.description}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : null}
+
+                {ep.bodyFields?.length ? (
+                  <div className="doc-block">
+                    <h3 className="doc-block__title">Corpo da requisição (JSON)</h3>
+                    <table className="doc-table">
+                      <thead>
+                        <tr>
+                          <th>Campo</th>
+                          <th>Tipo</th>
+                          <th>Obrigatório</th>
+                          <th>Descrição</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {ep.bodyFields.map((f) => (
+                          <tr key={f.name}>
+                            <td>
+                              <code>{f.name}</code>
+                            </td>
+                            <td>{f.type}</td>
+                            <td>{f.required ? 'Sim' : 'Não'}</td>
+                            <td>
+                              {f.description}
+                              {f.example ? (
+                                <span className="doc-example">
+                                  {' '}
+                                  Ex.: <code>{f.example}</code>
+                                </span>
+                              ) : null}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    {ep.bodyExample ? (
+                      <pre className="doc-pre" tabIndex={0}>
+                        <code>{ep.bodyExample}</code>
+                      </pre>
+                    ) : null}
+                  </div>
+                ) : null}
+
+                <div className="doc-block">
+                  <h3 className="doc-block__title">Respostas</h3>
+                  <ul className="doc-responses">
+                    {ep.responses.map((r) => (
+                      <li key={r.code}>
+                        <span
+                          className={`doc-code doc-code--${r.code.startsWith('2') ? 'ok' : r.code.startsWith('4') ? 'client' : 'other'}`}
+                        >
+                          {r.code}
+                        </span>
+                        {r.description}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            </details>
+          ))}
+        </div>
+      </section>
+
+      <section className="panel doc__section">
+        <h2>Exercise attempts — endpoints</h2>
+        <p className="doc__section-intro muted">
+          Collection <code>exercise_attempts</code>: histórico de tentativas de resposta
+          dos alunos em questões do tipo <code>exercise</code> dentro das trilhas
+          pedagógicas. Cada tentativa é um documento independente — não há sobrescrita,
+          permitindo análise fina de acertos, erros, número de tentativas e evolução.
+        </p>
+
+        <div className="doc__endpoints">
+          {EXERCISE_ATTEMPT_ENDPOINTS.map((ep) => (
             <details key={ep.id} className="doc-endpoint">
               <summary className="doc-endpoint__summary">
                 <span
@@ -1915,6 +2994,317 @@ export function DocPage() {
 
         <div className="doc__endpoints">
           {TRAIL_STAGE_QUESTION_ENDPOINTS.map((ep) => (
+            <details key={ep.id} className="doc-endpoint">
+              <summary className="doc-endpoint__summary">
+                <span
+                  className={`doc-method doc-method--${ep.method.toLowerCase()}`}
+                >
+                  {ep.method}
+                </span>
+                <code className="doc-endpoint__path">{ep.path}</code>
+                <span className="doc-endpoint__title">{ep.title}</span>
+                {ep.auth ? (
+                  <span
+                    className="doc-endpoint__lock"
+                    title="Pode exigir autenticação"
+                    aria-label="Autenticação"
+                  >
+                    <LockIcon />
+                  </span>
+                ) : null}
+              </summary>
+
+              <div className="doc-endpoint__body">
+                <p className="doc-endpoint__desc">{ep.description}</p>
+
+                <p className="doc-endpoint__fullurl">
+                  <span className="muted">URL completa de exemplo:</span>{' '}
+                  <code>
+                    {ep.method} {baseUrl}
+                    {ep.path.replace('{id}', '{id}')}
+                  </code>
+                </p>
+
+                {ep.pathParams?.length ? (
+                  <div className="doc-block">
+                    <h3 className="doc-block__title">Parâmetros de path</h3>
+                    <table className="doc-table">
+                      <thead>
+                        <tr>
+                          <th>Nome</th>
+                          <th>Tipo</th>
+                          <th>Descrição</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {ep.pathParams.map((p) => (
+                          <tr key={p.name}>
+                            <td>
+                              <code>{p.name}</code>
+                            </td>
+                            <td>{p.type}</td>
+                            <td>{p.description}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : null}
+
+                {ep.queryParams?.length ? (
+                  <div className="doc-block">
+                    <h3 className="doc-block__title">Query</h3>
+                    <table className="doc-table">
+                      <thead>
+                        <tr>
+                          <th>Nome</th>
+                          <th>Tipo</th>
+                          <th>Obrigatório</th>
+                          <th>Descrição</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {ep.queryParams.map((q) => (
+                          <tr key={q.name}>
+                            <td>
+                              <code>{q.name}</code>
+                            </td>
+                            <td>{q.type}</td>
+                            <td>{q.required ? 'Sim' : 'Não'}</td>
+                            <td>{q.description}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : null}
+
+                {ep.bodyFields?.length ? (
+                  <div className="doc-block">
+                    <h3 className="doc-block__title">Corpo da requisição (JSON)</h3>
+                    <table className="doc-table">
+                      <thead>
+                        <tr>
+                          <th>Campo</th>
+                          <th>Tipo</th>
+                          <th>Obrigatório</th>
+                          <th>Descrição</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {ep.bodyFields.map((f) => (
+                          <tr key={f.name}>
+                            <td>
+                              <code>{f.name}</code>
+                            </td>
+                            <td>{f.type}</td>
+                            <td>{f.required ? 'Sim' : 'Não'}</td>
+                            <td>
+                              {f.description}
+                              {f.example ? (
+                                <span className="doc-example">
+                                  {' '}
+                                  Ex.: <code>{f.example}</code>
+                                </span>
+                              ) : null}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    {ep.bodyExample ? (
+                      <pre className="doc-pre" tabIndex={0}>
+                        <code>{ep.bodyExample}</code>
+                      </pre>
+                    ) : null}
+                  </div>
+                ) : null}
+
+                <div className="doc-block">
+                  <h3 className="doc-block__title">Respostas</h3>
+                  <ul className="doc-responses">
+                    {ep.responses.map((r) => (
+                      <li key={r.code}>
+                        <span
+                          className={`doc-code doc-code--${r.code.startsWith('2') ? 'ok' : r.code.startsWith('4') ? 'client' : 'other'}`}
+                        >
+                          {r.code}
+                        </span>
+                        {r.description}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            </details>
+          ))}
+        </div>
+      </section>
+
+      <section className="panel doc__section">
+        <h2>Student trails — endpoints</h2>
+        <p className="doc__section-intro muted">
+          Collection <code>student_trails</code>: estado atual do aluno em cada trilha
+          pedagógica (stage, questão e status). Esta collection é a fonte de verdade
+          para o chatbot saber onde continuar a jornada — o histórico detalhado de
+          conversa/exercícios fica em outras collections.
+        </p>
+
+        <div className="doc__endpoints">
+          {STUDENT_TRAIL_ENDPOINTS.map((ep) => (
+            <details key={ep.id} className="doc-endpoint">
+              <summary className="doc-endpoint__summary">
+                <span
+                  className={`doc-method doc-method--${ep.method.toLowerCase()}`}
+                >
+                  {ep.method}
+                </span>
+                <code className="doc-endpoint__path">{ep.path}</code>
+                <span className="doc-endpoint__title">{ep.title}</span>
+                {ep.auth ? (
+                  <span
+                    className="doc-endpoint__lock"
+                    title="Pode exigir autenticação"
+                    aria-label="Autenticação"
+                  >
+                    <LockIcon />
+                  </span>
+                ) : null}
+              </summary>
+
+              <div className="doc-endpoint__body">
+                <p className="doc-endpoint__desc">{ep.description}</p>
+
+                <p className="doc-endpoint__fullurl">
+                  <span className="muted">URL completa de exemplo:</span>{' '}
+                  <code>
+                    {ep.method} {baseUrl}
+                    {ep.path.replace('{id}', '{id}')}
+                  </code>
+                </p>
+
+                {ep.pathParams?.length ? (
+                  <div className="doc-block">
+                    <h3 className="doc-block__title">Parâmetros de path</h3>
+                    <table className="doc-table">
+                      <thead>
+                        <tr>
+                          <th>Nome</th>
+                          <th>Tipo</th>
+                          <th>Descrição</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {ep.pathParams.map((p) => (
+                          <tr key={p.name}>
+                            <td>
+                              <code>{p.name}</code>
+                            </td>
+                            <td>{p.type}</td>
+                            <td>{p.description}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : null}
+
+                {ep.queryParams?.length ? (
+                  <div className="doc-block">
+                    <h3 className="doc-block__title">Query</h3>
+                    <table className="doc-table">
+                      <thead>
+                        <tr>
+                          <th>Nome</th>
+                          <th>Tipo</th>
+                          <th>Obrigatório</th>
+                          <th>Descrição</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {ep.queryParams.map((q) => (
+                          <tr key={q.name}>
+                            <td>
+                              <code>{q.name}</code>
+                            </td>
+                            <td>{q.type}</td>
+                            <td>{q.required ? 'Sim' : 'Não'}</td>
+                            <td>{q.description}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : null}
+
+                {ep.bodyFields?.length ? (
+                  <div className="doc-block">
+                    <h3 className="doc-block__title">Corpo da requisição (JSON)</h3>
+                    <table className="doc-table">
+                      <thead>
+                        <tr>
+                          <th>Campo</th>
+                          <th>Tipo</th>
+                          <th>Obrigatório</th>
+                          <th>Descrição</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {ep.bodyFields.map((f) => (
+                          <tr key={f.name}>
+                            <td>
+                              <code>{f.name}</code>
+                            </td>
+                            <td>{f.type}</td>
+                            <td>{f.required ? 'Sim' : 'Não'}</td>
+                            <td>
+                              {f.description}
+                              {f.example ? (
+                                <span className="doc-example">
+                                  {' '}
+                                  Ex.: <code>{f.example}</code>
+                                </span>
+                              ) : null}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : null}
+
+                <div className="doc-block">
+                  <h3 className="doc-block__title">Respostas</h3>
+                  <ul className="doc-responses">
+                    {ep.responses.map((r) => (
+                      <li key={r.code}>
+                        <span
+                          className={`doc-code doc-code--${r.code.startsWith('2') ? 'ok' : r.code.startsWith('4') ? 'client' : 'other'}`}
+                        >
+                          {r.code}
+                        </span>
+                        {r.description}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            </details>
+          ))}
+        </div>
+      </section>
+
+      <section className="panel doc__section">
+        <h2>Conversation logs — endpoints</h2>
+        <p className="doc__section-intro muted">
+          Collection <code>conversation_logs</code>: histórico imutável das interações
+          entre o aluno e o sistema/chatbot (mensagens enviadas/recebidas, stage,
+          questão e metadados). Esta collection não guarda o estado atual da trilha —
+          apenas o histórico, para auditoria, debug e análises.
+        </p>
+
+        <div className="doc__endpoints">
+          {CONVERSATION_LOG_ENDPOINTS.map((ep) => (
             <details key={ep.id} className="doc-endpoint">
               <summary className="doc-endpoint__summary">
                 <span

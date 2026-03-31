@@ -1,4 +1,4 @@
-import { cert, getApps, initializeApp } from 'firebase-admin/app'
+import { cert, getApps, initializeApp, type ServiceAccount } from 'firebase-admin/app'
 import { FieldValue, getFirestore } from 'firebase-admin/firestore'
 
 type Json = Record<string, unknown>
@@ -50,12 +50,7 @@ function getDb() {
     )
   }
 
-  const serviceAccount = JSON.parse(saJson) as {
-    project_id?: string
-    client_email?: string
-    private_key?: string
-    [k: string]: unknown
-  }
+  const serviceAccount = JSON.parse(saJson) as ServiceAccount
 
   if (!getApps().length) {
     initializeApp({

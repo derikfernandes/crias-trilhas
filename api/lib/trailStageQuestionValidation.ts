@@ -75,12 +75,20 @@ export function normalizeExerciseFields(
       : sanitizeString(correctRaw)
 
   if (!correct_option) {
-    return { error: 'Campo "correct_option" é obrigatório para question_type "exercise"' }
+    return {
+      error: 'Campo "correct_option" é obrigatório para question_type "exercise"',
+      correct_option: null,
+      options: null,
+    }
   }
 
   const parsed = parseOptions(optionsRaw)
   if (parsed === 'invalid') {
-    return { error: 'Campo "options" deve ser um array de { key, text } ou null' }
+    return {
+      error: 'Campo "options" deve ser um array de { key, text } ou null',
+      correct_option: null,
+      options: null,
+    }
   }
 
   let options: TrailStageQuestionOption[] | null = parsed
@@ -91,11 +99,17 @@ export function normalizeExerciseFields(
   if (options && options.length > 0) {
     const keys = new Set(options.map((o) => o.key))
     if (keys.size !== options.length) {
-      return { error: 'Chaves em "options" devem ser únicas' }
+      return {
+        error: 'Chaves em "options" devem ser únicas',
+        correct_option: null,
+        options: null,
+      }
     }
     if (!keys.has(correct_option)) {
       return {
         error: `Campo "correct_option" deve corresponder a uma das chaves em "options" (recebido: "${correct_option}")`,
+        correct_option: null,
+        options: null,
       }
     }
   }
@@ -108,14 +122,26 @@ function normalizeNonExerciseFields(
   optionsRaw: unknown,
 ): { error?: string; correct_option: null; options: null } {
   if (correctRaw !== undefined && correctRaw !== null && sanitizeString(correctRaw) !== null) {
-    return { error: 'Campo "correct_option" deve ser null quando question_type não é "exercise"' }
+    return {
+      error: 'Campo "correct_option" deve ser null quando question_type não é "exercise"',
+      correct_option: null,
+      options: null,
+    }
   }
   const parsed = parseOptions(optionsRaw)
   if (parsed === 'invalid') {
-    return { error: 'Campo "options" inválido para tipo não-exercício' }
+    return {
+      error: 'Campo "options" inválido para tipo não-exercício',
+      correct_option: null,
+      options: null,
+    }
   }
   if (parsed && parsed.length > 0) {
-    return { error: 'Campo "options" deve ser null ou vazio quando question_type não é "exercise"' }
+    return {
+      error: 'Campo "options" deve ser null ou vazio quando question_type não é "exercise"',
+      correct_option: null,
+      options: null,
+    }
   }
   return { correct_option: null, options: null }
 }
