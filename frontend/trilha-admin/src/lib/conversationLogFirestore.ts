@@ -1,11 +1,25 @@
 import type {
   DocumentSnapshot,
   QueryDocumentSnapshot,
+  Timestamp,
 } from 'firebase/firestore'
 
 import type { ConversationLog } from '../types/conversationLog'
 
 export const CONVERSATION_LOGS_COLLECTION = 'conversation_logs'
+
+function asTimestampOrNull(value: unknown): Timestamp | null {
+  if (!value || typeof value !== 'object') return null
+  if (
+    'toDate' in value &&
+    typeof (value as { toDate?: unknown }).toDate === 'function' &&
+    'toMillis' in value &&
+    typeof (value as { toMillis?: unknown }).toMillis === 'function'
+  ) {
+    return value as Timestamp
+  }
+  return null
+}
 
 export function snapshotToConversationLog(
   d: DocumentSnapshot | QueryDocumentSnapshot,
@@ -84,7 +98,7 @@ export function snapshotToConversationLog(
         : null,
     message_type,
     metadata,
-    created_at: (data as Record<string, unknown>).created_at ?? null,
+    created_at: asTimestampOrNull((data as Record<string, unknown>).created_at),
   }
 }
 

@@ -1,10 +1,24 @@
 import type {
   DocumentSnapshot,
   QueryDocumentSnapshot,
+  Timestamp,
 } from 'firebase/firestore'
 import type { StudentTrail } from '../types/studentTrail'
 
 export const STUDENT_TRAILS_COLLECTION = 'student_trails'
+
+function asTimestampOrNull(value: unknown): Timestamp | null {
+  if (!value || typeof value !== 'object') return null
+  if (
+    'toDate' in value &&
+    typeof (value as { toDate?: unknown }).toDate === 'function' &&
+    'toMillis' in value &&
+    typeof (value as { toMillis?: unknown }).toMillis === 'function'
+  ) {
+    return value as Timestamp
+  }
+  return null
+}
 
 export function snapshotToStudentTrail(
   d: DocumentSnapshot | QueryDocumentSnapshot,
@@ -66,12 +80,15 @@ export function snapshotToStudentTrail(
     current_stage_number,
     current_question_number,
     status,
-    started_at: (data as Record<string, unknown>).started_at ?? null,
-    completed_at: (data as Record<string, unknown>).completed_at ?? null,
-    last_interaction_at:
-      (data as Record<string, unknown>).last_interaction_at ?? null,
-    created_at: (data as Record<string, unknown>).created_at ?? null,
-    updated_at: (data as Record<string, unknown>).updated_at ?? null,
+    started_at: asTimestampOrNull((data as Record<string, unknown>).started_at),
+    completed_at: asTimestampOrNull(
+      (data as Record<string, unknown>).completed_at,
+    ),
+    last_interaction_at: asTimestampOrNull(
+      (data as Record<string, unknown>).last_interaction_at,
+    ),
+    created_at: asTimestampOrNull((data as Record<string, unknown>).created_at),
+    updated_at: asTimestampOrNull((data as Record<string, unknown>).updated_at),
   }
 }
 
