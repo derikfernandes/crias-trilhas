@@ -87,6 +87,8 @@
       "source": "/trail_stage_questions/:id([A-Za-z0-9_.-]+)/",
       "destination": "/api/trail_stage_questions?id=:id"
     },
+    { "source": "/student_trails/", "destination": "/api/student_trails" },
+    { "source": "/student_trails", "destination": "/api/student_trails" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }
