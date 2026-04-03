@@ -239,6 +239,7 @@ async function handleRequest(request: Request): Promise<Response> {
   }
 
   const qTrailId = url.searchParams.get('trail_id')?.trim() || null
+  const qStageNumberRaw = url.searchParams.get('stage_number')
   const qStageActive = parseBoolean(url.searchParams.get('active') ?? '') ?? null
   const qIsReleased = parseBoolean(url.searchParams.get('is_released') ?? '') ?? null
 
@@ -248,6 +249,39 @@ async function handleRequest(request: Request): Promise<Response> {
         const snap = await db.collection(collection).doc(id).get()
         if (!snap.exists) return respond(404, { error: 'Not found' })
         const data = (snap.data() ?? {}) as Record<string, unknown>
+        return jsonResponse(toTrailStageOutput(data, snap.id, { simple }), {
+          status: 200,
+          headers: corsHeaders(),
+        })
+      }
+
+      // Busca única por trail_id + stage_number (mesmo JSON do GET por id)
+      if (url.searchParams.has('stage_number')) {
+        if (!qTrailId) {
+          return respond(400, {
+            error:
+              'Campo "trail_id" é obrigatório quando "stage_number" é informado',
+          })
+        }
+        const sn = parseIntLoose(qStageNumberRaw)
+        if (sn === null || sn < 1) {
+          return respond(400, {
+            error: 'Campo "stage_number" deve ser um inteiro >= 1',
+          })
+        }
+        const docId = stageDocId(qTrailId, sn)
+        const snap = await db.collection(collection).doc(docId).get()
+        if (!snap.exists) return respond(404, { error: 'Not found' })
+        const data = (snap.data() ?? {}) as Record<string, unknown>
+        const docTrail =
+          typeof data.trail_id === 'string' ? data.trail_id.trim() : ''
+        const docStage =
+          typeof data.stage_number === 'number' && Number.isFinite(data.stage_number)
+            ? data.stage_number
+            : null
+        if (docTrail !== qTrailId || docStage !== sn) {
+          return respond(404, { error: 'Not found' })
+        }
         return jsonResponse(toTrailStageOutput(data, snap.id, { simple }), {
           status: 200,
           headers: corsHeaders(),
