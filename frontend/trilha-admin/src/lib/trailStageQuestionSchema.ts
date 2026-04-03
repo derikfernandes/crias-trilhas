@@ -1,8 +1,10 @@
 import { z } from 'zod'
 
+import type { TrailStageType } from '../types/trailStage'
+
 /**
- * Schema Zod alinhado à API `trail_stage_questions` (criação).
- * Útil em formulários admin; a validação definitiva permanece no servidor.
+ * Schema Zod para POST `trail_stage_questions`.
+ * O tipo de etapa vem do stage (`trail_stages.stage_type`), não do body.
  */
 
 export const trailStageQuestionOptionSchema = z.object({
@@ -19,11 +21,10 @@ const baseFields = {
   explanation: z.string().nullable().optional(),
 }
 
-const exerciseSchema = z
+const exerciseShape = z
   .object({
     ...baseFields,
-    question_type: z.literal('exercise'),
-    correct_option: z.string().min(1, 'correct_option obrigatório em exercise'),
+    correct_option: z.string().min(1, 'correct_option obrigatório para stage exercise'),
     options: z.array(trailStageQuestionOptionSchema).nullable().optional(),
   })
   .superRefine((data, ctx) => {
@@ -46,25 +47,16 @@ const exerciseSchema = z
     }
   })
 
-export const trailStageQuestionCreateSchema = z.discriminatedUnion(
-  'question_type',
-  [
-    z.object({
-      ...baseFields,
-      question_type: z.literal('ai'),
-      correct_option: z.null(),
-      options: z.null(),
-    }),
-    z.object({
-      ...baseFields,
-      question_type: z.literal('fixed'),
-      correct_option: z.null(),
-      options: z.null(),
-    }),
-    exerciseSchema,
-  ],
-)
+const nonExerciseShape = z.object({
+  ...baseFields,
+  correct_option: z.null(),
+  options: z.null(),
+})
 
-export type TrailStageQuestionCreateInput = z.infer<
-  typeof trailStageQuestionCreateSchema
->
+export function trailStageQuestionCreateSchemaForStage(stageType: TrailStageType) {
+  if (stageType === 'exercise') return exerciseShape
+  return nonExerciseShape
+}
+
+export type TrailStageQuestionCreateInputExercise = z.infer<typeof exerciseShape>
+export type TrailStageQuestionCreateInputNonExercise = z.infer<typeof nonExerciseShape>

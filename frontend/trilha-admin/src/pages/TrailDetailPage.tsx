@@ -437,6 +437,8 @@ export function TrailDetailPage() {
                     <tr>
                       <th>#</th>
                       <th>Title</th>
+                      <th>Tipo</th>
+                      <th>Prompt</th>
                       <th>Ativo</th>
                       <th>Liberado</th>
                       <th>Atualizado</th>
@@ -446,7 +448,7 @@ export function TrailDetailPage() {
                   <tbody>
                     {stages.length === 0 ? (
                       <tr>
-                        <td colSpan={6} className="muted table__empty">
+                        <td colSpan={8} className="muted table__empty">
                           Nenhum stage cadastrado.
                         </td>
                       </tr>
@@ -455,6 +457,16 @@ export function TrailDetailPage() {
                         <tr key={s.id}>
                           <td>{s.stage_number}</td>
                           <td>{s.title || '—'}</td>
+                          <td>
+                            <code>{s.stage_type}</code>
+                          </td>
+                          <td className="table__text">
+                            {s.prompt
+                              ? s.prompt.length > 48
+                                ? `${s.prompt.slice(0, 48)}…`
+                                : s.prompt
+                              : '—'}
+                          </td>
                           <td>{s.active ? 'Sim' : 'Não'}</td>
                           <td>{s.is_released ? 'Sim' : 'Não'}</td>
                           <td>{formatTrailStageTs(s.updated_at ?? s.created_at)}</td>

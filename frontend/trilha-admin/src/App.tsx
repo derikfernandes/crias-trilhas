@@ -11,6 +11,7 @@ import { TrailStageQuestionsPage } from './pages/TrailStageQuestionsPage'
 import { TrailNewPage } from './pages/TrailNewPage'
 import { StudentDetailPage } from './pages/StudentDetailPage'
 import { StudentNewPage } from './pages/StudentNewPage'
+import { GerenciamentoPage } from './pages/GerenciamentoPage'
 import './App.css'
 
 const routerBasename =
@@ -34,6 +35,7 @@ function Layout({ children }: { children: ReactNode }) {
           ) : null}
           {firebaseOk ? <Link to="/alunos/novo">Novo aluno</Link> : null}
           {firebaseOk ? <Link to="/trilhas/novo">Nova trilha</Link> : null}
+          {firebaseOk ? <Link to="/gerenciamento">Gerenciamento</Link> : null}
           <Link to="/doc">API / Doc</Link>
         </div>
       </nav>
@@ -109,6 +111,14 @@ export default function App() {
             element={
               <FirebaseGate>
                 <StudentDetailPage />
+              </FirebaseGate>
+            }
+          />
+          <Route
+            path="/gerenciamento"
+            element={
+              <FirebaseGate>
+                <GerenciamentoPage />
               </FirebaseGate>
             }
           />

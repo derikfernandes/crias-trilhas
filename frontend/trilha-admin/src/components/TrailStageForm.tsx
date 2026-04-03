@@ -5,7 +5,12 @@ import {
   TRAIL_STAGES_COLLECTION,
   trailStageDocId,
 } from '../lib/trailStageFirestore'
+import {
+  trailStageCreateSchema,
+  trailStageUpdateSchema,
+} from '../lib/trailStageSchema'
 import type { TrailStage } from '../types/trailStage'
+import type { TrailStageType } from '../types/trailStage'
 
 type Props = {
   trailId: string
@@ -45,6 +50,8 @@ export function TrailStageForm({
     [stageNumber],
   )
   const [title, setTitle] = useState('')
+  const [stageType, setStageType] = useState<TrailStageType>('fixed')
+  const [prompt, setPrompt] = useState('')
   const [isReleased, setIsReleased] = useState(false)
   const [active, setActive] = useState(true)
 
@@ -54,11 +61,12 @@ export function TrailStageForm({
   useEffect(() => {
     if (isEdit) {
       if (!initial) {
-        // Mantém campos "vazios" até o pai passar o initial correto.
         return
       }
       setStageNumber(initial.stage_number)
       setTitle(initial.title)
+      setStageType(initial.stage_type)
+      setPrompt(initial.prompt ?? '')
       setIsReleased(initial.is_released)
       setActive(initial.active)
       return
@@ -66,6 +74,8 @@ export function TrailStageForm({
 
     setStageNumber(suggestedStageNumber ?? 1)
     setTitle('')
+    setStageType('fixed')
+    setPrompt('')
     setIsReleased(false)
     setActive(true)
   }, [isEdit, initial, suggestedStageNumber])
@@ -95,11 +105,31 @@ export function TrailStageForm({
         return
       }
 
+      const promptForStore =
+        stageType === 'ai' ? prompt.trim() : null
+      const updatePayload = {
+        title: trimmedTitle,
+        stage_type: stageType,
+        prompt: promptForStore,
+        is_released: isReleased,
+        active,
+      }
+
+      const parsed = trailStageUpdateSchema.safeParse(updatePayload)
+      if (!parsed.success) {
+        const msg =
+          parsed.error.issues[0]?.message ?? 'Dados inválidos.'
+        setFormError(msg)
+        return
+      }
+
       setSaving(true)
       setFormError(null)
       try {
         await updateDoc(doc(dbOk, TRAIL_STAGES_COLLECTION, docId), {
           title: trimmedTitle,
+          stage_type: stageType,
+          prompt: stageType === 'ai' ? prompt.trim() : null,
           is_released: isReleased,
           active,
           updated_at: serverTimestamp(),
@@ -113,11 +143,26 @@ export function TrailStageForm({
       return
     }
 
-    // Criação: segue a regra do contrato (starts sempre false/true).
     const stageNumberInput = String(stageNumber)
     const stageNumberInt = parseStageNumberInt(stageNumberInput)
     if (!stageNumberInt) {
       setFormError('stage_number inválido (inteiro >= 1).')
+      return
+    }
+
+    const promptForCreate = stageType === 'ai' ? prompt.trim() : null
+    const createPayload = {
+      trail_id: trailId,
+      stage_number: stageNumberInt,
+      title: trimmedTitle,
+      stage_type: stageType,
+      prompt: promptForCreate,
+    }
+
+    const created = trailStageCreateSchema.safeParse(createPayload)
+    if (!created.success) {
+      const msg = created.error.issues[0]?.message ?? 'Dados inválidos.'
+      setFormError(msg)
       return
     }
 
@@ -140,6 +185,8 @@ export function TrailStageForm({
           trail_id: trailId,
           stage_number: stageNumberInt,
           title: trimmedTitle,
+          stage_type: stageType,
+          prompt: stageType === 'ai' ? prompt.trim() : null,
           is_released: false,
           active: true,
           created_at: now,
@@ -179,7 +226,9 @@ export function TrailStageForm({
     <section className="panel">
       <h2>{isEdit ? 'Editar stage' : 'Novo stage'}</h2>
       <p className="admin__lede muted">
-        {isEdit ? stageNumberLabel : 'Campos liberados: title e stage_number.'}
+        {isEdit
+          ? stageNumberLabel
+          : 'Defina tipo e prompt conforme o chatbot vai processar este stage.'}
       </p>
 
       {formError ? (
@@ -209,6 +258,40 @@ export function TrailStageForm({
             onChange={(e) => setTitle(e.target.value)}
             placeholder="Ex.: Frações básicas"
           />
+        </label>
+
+        <label className="field">
+          <span>stage_type</span>
+          <select
+            value={stageType}
+            onChange={(e) => {
+              const v = e.target.value as TrailStageType
+              setStageType(v)
+              if (v !== 'ai') setPrompt('')
+            }}
+          >
+            <option value="ai">ai</option>
+            <option value="fixed">fixed</option>
+            <option value="exercise">exercise</option>
+          </select>
+        </label>
+
+        <label className="field">
+          <span>prompt</span>
+          <textarea
+            value={stageType === 'ai' ? prompt : ''}
+            onChange={(e) => setPrompt(e.target.value)}
+            disabled={stageType !== 'ai'}
+            rows={5}
+            placeholder={
+              stageType === 'ai'
+                ? 'Instrução base para o modelo…'
+                : 'Com fixed/exercise o prompt fica null no Firestore.'
+            }
+          />
+          {stageType !== 'ai' ? (
+            <span className="muted">null para fixed e exercise</span>
+          ) : null}
         </label>
 
         {isEdit ? (
@@ -274,4 +357,3 @@ export function TrailStageForm({
     </section>
   )
 }
-

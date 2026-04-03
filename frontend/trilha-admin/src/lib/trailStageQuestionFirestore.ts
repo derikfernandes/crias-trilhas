@@ -6,19 +6,9 @@ import type {
 import type {
   TrailStageQuestion,
   TrailStageQuestionOption,
-  TrailStageQuestionType,
 } from '../types/trailStageQuestion'
 
 export const TRAIL_STAGE_QUESTIONS_COLLECTION = 'trail_stage_questions'
-
-const QUESTION_TYPES: TrailStageQuestionType[] = ['ai', 'fixed', 'exercise']
-
-function readQuestionType(raw: unknown): TrailStageQuestionType {
-  if (typeof raw === 'string' && QUESTION_TYPES.includes(raw as TrailStageQuestionType)) {
-    return raw as TrailStageQuestionType
-  }
-  return 'ai'
-}
 
 function readOptions(raw: unknown): TrailStageQuestionOption[] | null {
   if (!Array.isArray(raw)) return null
@@ -50,7 +40,6 @@ export function snapshotToTrailStageQuestion(
       trail_id: '',
       stage_number: 1,
       question_number: 1,
-      question_type: 'ai',
       title: '',
       content: '',
       correct_option: null,
@@ -74,7 +63,6 @@ export function snapshotToTrailStageQuestion(
       Number.isFinite(data.question_number)
         ? data.question_number
         : 1,
-    question_type: readQuestionType(data.question_type),
     title: typeof data.title === 'string' ? data.title : '',
     content: typeof data.content === 'string' ? data.content : '',
     correct_option:

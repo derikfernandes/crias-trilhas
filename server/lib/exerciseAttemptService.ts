@@ -29,15 +29,11 @@ type QuestionDocData = {
   trail_id?: string
   stage_number?: number
   question_number?: number
-  question_type?: string
   correct_option?: string | null
 }
 
 function readQuestionData(snap: DocumentSnapshot): QuestionDocData {
   const raw = (snap.data() ?? {}) as Record<string, unknown>
-
-  const question_type =
-    typeof raw.question_type === 'string' ? raw.question_type : undefined
 
   let correct_option: string | null = null
   if (raw.correct_option !== undefined && raw.correct_option !== null) {
@@ -57,9 +53,15 @@ function readQuestionData(snap: DocumentSnapshot): QuestionDocData {
       Number.isFinite(raw.question_number)
         ? (raw.question_number as number)
         : undefined,
-    question_type,
     correct_option,
   }
+}
+
+function readStageTypeFromSnap(snap: DocumentSnapshot): string {
+  const raw = (snap.data() ?? {}) as Record<string, unknown>
+  const t =
+    typeof raw.stage_type === 'string' ? raw.stage_type.trim().toLowerCase() : ''
+  return t
 }
 
 export async function listExerciseAttemptsByStudent(
@@ -135,6 +137,7 @@ export async function createExerciseAttemptWithQuestionLookup(
   db: Firestore,
   attemptsCollection: string,
   questionsCollection: string,
+  stagesCollection: string,
   data: ExerciseAttemptCreatePayload,
 ): Promise<{
   id: string
@@ -144,10 +147,24 @@ export async function createExerciseAttemptWithQuestionLookup(
 }> {
   const questionsRef = db.collection(questionsCollection)
   const attemptsRef = db.collection(attemptsCollection)
+  const stagesRef = db.collection(stagesCollection)
 
   const now = FieldValue.serverTimestamp()
 
   const result = await db.runTransaction(async (tx) => {
+    const stageSnap = await tx.get(
+      stagesRef.doc(`${data.trail_id}_stage_${data.stage_number}`),
+    )
+    if (!stageSnap.exists) {
+      throw new Error('Stage não encontrado para registrar tentativa.')
+    }
+    const stage_type = readStageTypeFromSnap(stageSnap)
+    if (stage_type !== 'exercise') {
+      throw new Error(
+        `Apenas stages do tipo "exercise" permitem tentativas (definido em trail_stages). stage_type atual: "${stage_type || 'indefinido'}".`,
+      )
+    }
+
     const questionSnap = await tx.get(
       questionsRef.doc(
         `${data.trail_id}_stage_${data.stage_number}_q_${data.question_number}`,
@@ -159,12 +176,6 @@ export async function createExerciseAttemptWithQuestionLookup(
     }
 
     const q = readQuestionData(questionSnap)
-
-    if (q.question_type && q.question_type !== 'exercise') {
-      throw new Error(
-        `Apenas questões do tipo "exercise" podem registrar tentativas. Tipo atual: "${q.question_type}".`,
-      )
-    }
 
     if (!q.correct_option) {
       throw new Error(

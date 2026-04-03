@@ -32,7 +32,14 @@ export async function createTrailStageQuestion(
       )
     }
     tx.set(ref, {
-      ...data,
+      trail_id: data.trail_id,
+      stage_number: data.stage_number,
+      question_number: data.question_number,
+      title: data.title,
+      content: data.content,
+      correct_option: data.correct_option,
+      options: data.options,
+      explanation: data.explanation,
       active: true,
       created_at: now,
       updated_at: now,

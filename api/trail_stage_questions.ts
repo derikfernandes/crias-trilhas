@@ -1,5 +1,5 @@
 import { cert, getApps, initializeApp, type ServiceAccount } from 'firebase-admin/app'
-import { getFirestore } from 'firebase-admin/firestore'
+import { FieldValue, getFirestore } from 'firebase-admin/firestore'
 
 import {
   createTrailStageQuestion,
@@ -10,12 +10,13 @@ import {
   updateTrailStageQuestionFields,
 } from './lib/trailStageQuestionService'
 import {
-  isQuestionType,
+  parseOptionsFromDoc,
   parseTrailStageQuestionUpdatePayload,
   parseBoolean,
   parseIntLoose,
+  parseStageTypeFromFirestoreData,
+  pedagogicalStageDocId,
   validateTrailStageQuestionCreate,
-  type TrailStageQuestionType,
 } from './lib/trailStageQuestionValidation'
 
 type Json = Record<string, unknown>
@@ -78,26 +79,6 @@ function getDb() {
   return cachedDb
 }
 
-function parseOptionsFromDoc(
-  v: unknown,
-): { key: string; text: string }[] | null {
-  if (!Array.isArray(v)) return null
-  const out: { key: string; text: string }[] = []
-  for (const item of v) {
-    if (!item || typeof item !== 'object') return null
-    const o = item as Record<string, unknown>
-    if (typeof o.key !== 'string' || typeof o.text !== 'string') return null
-    out.push({ key: o.key, text: o.text })
-  }
-  return out.length ? out : null
-}
-
-function readQuestionType(data: Record<string, unknown>): TrailStageQuestionType {
-  const t = typeof data.question_type === 'string' ? data.question_type : ''
-  if (isQuestionType(t)) return t
-  return 'ai'
-}
-
 function toTrailStageQuestionOutput(
   data: Record<string, unknown>,
   id: string,
@@ -112,7 +93,6 @@ function toTrailStageQuestionOutput(
     typeof data.question_number === 'number' && Number.isFinite(data.question_number)
       ? data.question_number
       : 0
-  const question_type = readQuestionType(data)
   const title = typeof data.title === 'string' ? data.title : ''
   const content = typeof data.content === 'string' ? data.content : ''
   const active = typeof data.active === 'boolean' ? data.active : false
@@ -135,7 +115,6 @@ function toTrailStageQuestionOutput(
       trail_id,
       stage_number,
       question_number,
-      question_type,
       title,
       content,
       correct_option,
@@ -150,7 +129,6 @@ function toTrailStageQuestionOutput(
     trail_id,
     stage_number,
     question_number,
-    question_type,
     title,
     content,
     correct_option,
@@ -160,6 +138,32 @@ function toTrailStageQuestionOutput(
     created_at: serializeTs(data.created_at),
     updated_at: serializeTs(data.updated_at),
   }
+}
+
+async function loadStageTypeForQuestion(
+  db: ReturnType<typeof getFirestore>,
+  trailId: string,
+  stageNumber: number,
+): Promise<
+  | { ok: true; stageType: ReturnType<typeof parseStageTypeFromFirestoreData> }
+  | { ok: false; error: string }
+> {
+  const stagesCollection =
+    process.env.TRAIL_STAGES_COLLECTION ?? 'trail_stages'
+  const stageRef = db
+    .collection(stagesCollection)
+    .doc(pedagogicalStageDocId(trailId, stageNumber))
+  const snap = await stageRef.get()
+  if (!snap.exists) {
+    return {
+      ok: false,
+      error: `Stage não encontrado para trail_id "${trailId}" e stage_number ${stageNumber}. Cadastre o stage em trail_stages antes das questões.`,
+    }
+  }
+  const stageType = parseStageTypeFromFirestoreData(
+    (snap.data() ?? {}) as Record<string, unknown>,
+  )
+  return { ok: true, stageType }
 }
 
 async function handleRequest(request: Request): Promise<Response> {
@@ -264,7 +268,32 @@ async function handleRequest(request: Request): Promise<Response> {
         return respond(400, { error: 'JSON inválido' })
       }
 
-      const validated = validateTrailStageQuestionCreate(payload)
+      if (!payload || typeof payload !== 'object') {
+        return respond(400, { error: 'Payload inválido' })
+      }
+
+      const body = payload as Record<string, unknown>
+      const trail_id =
+        typeof body.trail_id === 'string' ? body.trail_id.trim() : ''
+      const stage_number = parseIntLoose(body.stage_number)
+      if (!trail_id || stage_number === null || stage_number < 1) {
+        return respond(400, {
+          error:
+            'Informe trail_id e stage_number válidos para localizar o stage em trail_stages.',
+        })
+      }
+
+      const stageResolved = await loadStageTypeForQuestion(
+        db,
+        trail_id,
+        stage_number,
+      )
+      if (!stageResolved.ok) return respond(400, { error: stageResolved.error })
+
+      const validated = validateTrailStageQuestionCreate(
+        payload,
+        stageResolved.stageType,
+      )
       if (validated.ok === false) return respond(400, { error: validated.error })
 
       try {
@@ -337,11 +366,17 @@ async function handleRequest(request: Request): Promise<Response> {
         })
       }
 
+      const stageResolved = await loadStageTypeForQuestion(
+        db,
+        existingTrailId,
+        existingStageNumber,
+      )
+      if (!stageResolved.ok) return respond(400, { error: stageResolved.error })
+
       const mergedForValidate = {
         trail_id: existingTrailId,
         stage_number: existingStageNumber,
         question_number: existingQuestionNumber,
-        question_type: updates.question_type ?? readQuestionType(existing),
         title: updates.title ?? (typeof existing.title === 'string' ? existing.title : ''),
         content: updates.content ?? (typeof existing.content === 'string' ? existing.content : ''),
         explanation: Object.prototype.hasOwnProperty.call(updates, 'explanation')
@@ -359,13 +394,13 @@ async function handleRequest(request: Request): Promise<Response> {
           : parseOptionsFromDoc(existing.options),
       }
 
-      const validated = validateTrailStageQuestionCreate(mergedForValidate)
+      const validated = validateTrailStageQuestionCreate(
+        mergedForValidate,
+        stageResolved.stageType,
+      )
       if (validated.ok === false) return respond(400, { error: validated.error })
 
       const patch: Record<string, unknown> = {}
-      if (updates.question_type !== undefined) {
-        patch.question_type = validated.data.question_type
-      }
       if (updates.title !== undefined) patch.title = validated.data.title
       if (updates.content !== undefined) patch.content = validated.data.content
       if (Object.prototype.hasOwnProperty.call(updates, 'explanation')) {
@@ -373,17 +408,16 @@ async function handleRequest(request: Request): Promise<Response> {
       }
       if (
         Object.prototype.hasOwnProperty.call(updates, 'correct_option') ||
-        Object.prototype.hasOwnProperty.call(updates, 'options') ||
-        updates.question_type !== undefined
+        Object.prototype.hasOwnProperty.call(updates, 'options')
       ) {
         patch.correct_option = validated.data.correct_option
         patch.options = validated.data.options
       }
       if (updates.active !== undefined) patch.active = updates.active
 
-      if (Object.keys(patch).length === 0) {
-        return respond(400, { error: 'Nenhum campo aplicável após validação' })
-      }
+      // Remove campos legados migrados para trail_stages (idempotente no Firestore)
+      patch.question_type = FieldValue.delete()
+      patch.prompt = FieldValue.delete()
 
       await updateTrailStageQuestionFields(db, collection, id, patch)
       return jsonResponse({ ok: true, id }, { status: 200, headers: corsHeaders() })
