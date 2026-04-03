@@ -40,6 +40,7 @@ export async function createTrailStageQuestion(
       correct_option: data.correct_option,
       options: data.options,
       explanation: data.explanation,
+      is_released: data.is_released,
       active: true,
       created_at: now,
       updated_at: now,

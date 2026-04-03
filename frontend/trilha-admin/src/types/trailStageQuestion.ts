@@ -19,6 +19,8 @@ export type TrailStageQuestion = {
   correct_option: string | null
   options: TrailStageQuestionOption[] | null
   explanation: string | null
+  /** Liberada para o aluno no fluxo (substitui controle só no stage). */
+  is_released: boolean
   active: boolean
   created_at: Timestamp | null
   updated_at: Timestamp | null

@@ -301,6 +301,7 @@ export function TrailStageQuestionsPage() {
                   <tr>
                     <th>#</th>
                     <th>Título</th>
+                    <th>Liberada</th>
                     <th>Ativa</th>
                     <th>Atualizado</th>
                     <th></th>
@@ -309,7 +310,7 @@ export function TrailStageQuestionsPage() {
                 <tbody>
                   {questions.length === 0 ? (
                     <tr>
-                      <td colSpan={5} className="muted table__empty">
+                      <td colSpan={6} className="muted table__empty">
                         Nenhuma questão neste stage. Link direto desta tela:{' '}
                         <code>{listPath}</code>
                       </td>
@@ -319,6 +320,7 @@ export function TrailStageQuestionsPage() {
                       <tr key={q.id}>
                         <td>{q.question_number}</td>
                         <td>{q.title || '—'}</td>
+                        <td>{q.is_released ? 'Sim' : 'Não'}</td>
                         <td>{q.active ? 'Sim' : 'Não'}</td>
                         <td>
                           {formatTrailStageQuestionTs(q.updated_at ?? q.created_at)}

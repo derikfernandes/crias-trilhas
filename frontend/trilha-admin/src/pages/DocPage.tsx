@@ -1046,6 +1046,12 @@ const TRAIL_STAGE_QUESTION_ENDPOINTS: DocEndpoint[] = [
         description: 'Filtra apenas questões ativas ou inativas.',
       },
       {
+        name: 'is_released',
+        type: 'boolean',
+        required: false,
+        description: 'Filtra questões liberadas ou não liberadas para o aluno.',
+      },
+      {
         name: 'simple',
         type: 'string',
         required: false,
@@ -1059,7 +1065,7 @@ const TRAIL_STAGE_QUESTION_ENDPOINTS: DocEndpoint[] = [
       },
     ],
     responses: [
-      { code: '200', description: 'Lista ou um único objeto JSON.' },
+      { code: '200', description: 'Lista ou um único objeto JSON (sempre inclui is_released).' },
       { code: '400', description: 'Parâmetros insuficientes ou inválidos.' },
       { code: '404', description: 'Questão não encontrada.' },
       { code: '401', description: 'Não autenticado.' },
@@ -1108,7 +1114,7 @@ const TRAIL_STAGE_QUESTION_ENDPOINTS: DocEndpoint[] = [
     path: '/trail_stage_questions/',
     title: 'Criar questão / etapa',
     description:
-      '`active` inicia como `true`. O servidor localiza o stage em `trail_stages` e usa `stage_type` para validar: se o stage for `exercise`, `correct_option` é obrigatório; caso contrário, `correct_option` e `options` devem ser null. Não envie `question_type` nem `prompt` (ficam no stage).',
+      'Opcionalmente envie `is_released` (boolean). Se omitido, vale `true` só para `question_number === 1`, senão `false`. `active` inicia como `true`. O servidor usa `trail_stages.stage_type` para validar correção. Não envie `question_type` nem `prompt`.',
     auth: true,
     bodyFields: [
       {
@@ -1163,6 +1169,14 @@ const TRAIL_STAGE_QUESTION_ENDPOINTS: DocEndpoint[] = [
         required: false,
         description: 'Explicação opcional (ex.: feedback pós-resposta).',
       },
+      {
+        name: 'is_released',
+        type: 'boolean',
+        required: false,
+        description:
+          'Se omitido: true só quando question_number === 1; caso contrário false.',
+        example: 'true',
+      },
     ],
     bodyExample: `{
   "trail_id": "trail_001",
@@ -1175,7 +1189,8 @@ const TRAIL_STAGE_QUESTION_ENDPOINTS: DocEndpoint[] = [
     { "key": "A", "text": "1/2" },
     { "key": "B", "text": "1/3" }
   ],
-  "explanation": "Metade corresponde a 1/2."
+  "explanation": "Metade corresponde a 1/2.",
+  "is_released": true
 }`,
     responses: [
       { code: '201', description: 'Criado (corpo com dados da questão).' },
@@ -1235,9 +1250,15 @@ const TRAIL_STAGE_QUESTION_ENDPOINTS: DocEndpoint[] = [
         required: false,
         description: 'Use false para desativar sem apagar o documento.',
       },
+      {
+        name: 'is_released',
+        type: 'boolean',
+        required: false,
+        description: 'Liberação para o aluno acessar esta etapa.',
+      },
     ],
     responses: [
-      { code: '200', description: '{ ok: true, id }' },
+      { code: '200', description: '{ ok: true, id } — documento atualizado (is_released persistido).' },
       { code: '400', description: 'Payload inválido ou campos de identidade no body.' },
       { code: '404', description: 'Não encontrado.' },
     ],

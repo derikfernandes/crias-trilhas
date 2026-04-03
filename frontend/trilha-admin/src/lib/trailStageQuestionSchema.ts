@@ -19,6 +19,8 @@ const baseFields = {
   title: z.string().min(1, 'title obrigatório'),
   content: z.string().min(1, 'content obrigatório'),
   explanation: z.string().nullable().optional(),
+  /** Se omitido na API, o padrão é `true` só para `question_number === 1`. */
+  is_released: z.boolean().optional(),
 }
 
 const exerciseShape = z
