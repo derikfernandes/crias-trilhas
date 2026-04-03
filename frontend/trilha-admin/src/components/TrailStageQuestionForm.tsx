@@ -67,6 +67,7 @@ export function TrailStageQuestionForm({
   const [explanation, setExplanation] = useState('')
   const [correctOption, setCorrectOption] = useState('')
   const [optionRows, setOptionRows] = useState<OptionRow[]>([])
+  const [isReleased, setIsReleased] = useState(false)
   const [active, setActive] = useState(true)
 
   const [saving, setSaving] = useState(false)
@@ -88,18 +89,26 @@ export function TrailStageQuestionForm({
       setOptionRows(
         initial.options?.map((o) => ({ key: o.key, text: o.text })) ?? [],
       )
+      setIsReleased(initial.is_released)
       setActive(initial.active)
       return
     }
 
-    setQuestionNumber(suggestedQuestionNumber ?? 1)
+    const q0 = suggestedQuestionNumber ?? 1
+    setQuestionNumber(q0)
     setTitle('')
     setContent('')
     setExplanation('')
     setCorrectOption('')
     setOptionRows([])
+    setIsReleased(q0 === 1)
     setActive(true)
   }, [isEdit, initial, suggestedQuestionNumber])
+
+  useEffect(() => {
+    if (isEdit) return
+    setIsReleased(questionNumber === 1)
+  }, [isEdit, questionNumber])
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
@@ -154,6 +163,7 @@ export function TrailStageQuestionForm({
           explanation: expl,
           correct_option: correct,
           options: optionsPayload,
+          is_released: isReleased,
           active,
           updated_at: serverTimestamp(),
         })
@@ -203,6 +213,7 @@ export function TrailStageQuestionForm({
           correct_option: correct,
           options: optionsPayload,
           explanation: expl,
+          is_released: isReleased,
           active: true,
           created_at: now,
           updated_at: now,
@@ -346,6 +357,15 @@ export function TrailStageQuestionForm({
             </div>
           </>
         ) : null}
+
+        <label className="field field--inline">
+          <input
+            type="checkbox"
+            checked={isReleased}
+            onChange={(e) => setIsReleased(e.target.checked)}
+          />
+          <span>liberada para o aluno (is_released)</span>
+        </label>
 
         {isEdit ? (
           <label className="field field--inline">

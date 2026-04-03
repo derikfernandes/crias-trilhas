@@ -96,6 +96,12 @@ function toTrailStageQuestionOutput(
   const title = typeof data.title === 'string' ? data.title : ''
   const content = typeof data.content === 'string' ? data.content : ''
   const active = typeof data.active === 'boolean' ? data.active : false
+  const is_released =
+    typeof data.is_released === 'boolean'
+      ? data.is_released
+      : typeof data.question_number === 'number' &&
+          Number.isFinite(data.question_number) &&
+          data.question_number === 1
 
   let correct_option: string | null = null
   if (data.correct_option !== undefined && data.correct_option !== null) {
@@ -120,6 +126,7 @@ function toTrailStageQuestionOutput(
       correct_option,
       options,
       explanation,
+      is_released,
       active,
     }
   }
@@ -134,6 +141,7 @@ function toTrailStageQuestionOutput(
     correct_option,
     options,
     explanation,
+    is_released,
     active,
     created_at: serializeTs(data.created_at),
     updated_at: serializeTs(data.updated_at),
@@ -206,6 +214,8 @@ async function handleRequest(request: Request): Promise<Response> {
   const qStageNumber = parseIntLoose(url.searchParams.get('stage_number'))
   const qQuestionNumber = parseIntLoose(url.searchParams.get('question_number'))
   const qActive = parseBoolean(url.searchParams.get('active') ?? '') ?? null
+  const qIsReleased =
+    parseBoolean(url.searchParams.get('is_released') ?? '') ?? null
   const simple = url.searchParams.get('simple') === '1'
   const deactivateOnly = url.searchParams.get('deactivate') === '1'
 
@@ -248,6 +258,12 @@ async function handleRequest(request: Request): Promise<Response> {
           .filter((item) => {
             if (qActive === null) return true
             return typeof item.active === 'boolean' ? item.active === qActive : false
+          })
+          .filter((item) => {
+            if (qIsReleased === null) return true
+            return typeof item.is_released === 'boolean'
+              ? item.is_released === qIsReleased
+              : false
           })
         return jsonResponse(items as Json[], { status: 200, headers: corsHeaders() })
       }
@@ -392,6 +408,11 @@ async function handleRequest(request: Request): Promise<Response> {
         options: Object.prototype.hasOwnProperty.call(updates, 'options')
           ? updates.options
           : parseOptionsFromDoc(existing.options),
+        is_released: Object.prototype.hasOwnProperty.call(updates, 'is_released')
+          ? updates.is_released
+          : typeof existing.is_released === 'boolean'
+            ? existing.is_released
+            : existingQuestionNumber === 1,
       }
 
       const validated = validateTrailStageQuestionCreate(
@@ -414,6 +435,7 @@ async function handleRequest(request: Request): Promise<Response> {
         patch.options = validated.data.options
       }
       if (updates.active !== undefined) patch.active = updates.active
+      patch.is_released = validated.data.is_released
 
       // Remove campos legados migrados para trail_stages (idempotente no Firestore)
       patch.question_type = FieldValue.delete()

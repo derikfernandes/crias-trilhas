@@ -45,6 +45,7 @@ export function snapshotToTrailStageQuestion(
       correct_option: null,
       options: null,
       explanation: null,
+      is_released: false,
       active: false,
       created_at: null,
       updated_at: null,
@@ -74,6 +75,12 @@ export function snapshotToTrailStageQuestion(
         : data.explanation === null
           ? null
           : null,
+    is_released:
+      typeof data.is_released === 'boolean'
+        ? data.is_released
+        : typeof data.question_number === 'number' &&
+            Number.isFinite(data.question_number) &&
+            data.question_number === 1,
     active: typeof data.active === 'boolean' ? data.active : false,
     created_at: data.created_at ?? null,
     updated_at: data.updated_at ?? null,

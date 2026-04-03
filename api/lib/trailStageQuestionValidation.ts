@@ -19,6 +19,28 @@ export type TrailStageQuestionCreatePayload = {
   correct_option: string | null
   options: TrailStageQuestionOption[] | null
   explanation: string | null
+  /** Liberada para o aluno no fluxo (chatbot). */
+  is_released: boolean
+}
+
+/**
+ * Se `is_released` vier no body, usa o valor; senão `true` só para `question_number === 1`, caso contrário `false`.
+ */
+export function resolveIsReleasedForCreate(
+  body: Record<string, unknown>,
+  question_number: number,
+): { ok: true; value: boolean } | { ok: false; error: string } {
+  if (
+    Object.prototype.hasOwnProperty.call(body, 'is_released') &&
+    body.is_released !== undefined
+  ) {
+    const b = parseBoolean(body.is_released)
+    if (b === null) {
+      return { ok: false, error: 'Campo "is_released" deve ser boolean' }
+    }
+    return { ok: true, value: b }
+  }
+  return { ok: true, value: question_number === 1 }
 }
 
 export function isTrailPedagogicalStageType(
@@ -227,6 +249,10 @@ export function validateTrailStageQuestionCreate(
   if (!title) return { ok: false, error: 'Campo "title" é obrigatório' }
   if (!content) return { ok: false, error: 'Campo "content" é obrigatório' }
 
+  const resolvedReleased = resolveIsReleasedForCreate(body, question_number)
+  if (!resolvedReleased.ok) return { ok: false, error: resolvedReleased.error }
+  const is_released = resolvedReleased.value
+
   let explanation: string | null = null
   if (body.explanation !== undefined) {
     if (body.explanation === null) {
@@ -250,6 +276,7 @@ export function validateTrailStageQuestionCreate(
         correct_option: ex.correct_option,
         options: ex.options,
         explanation,
+        is_released,
       },
     }
   }
@@ -267,6 +294,7 @@ export function validateTrailStageQuestionCreate(
       correct_option: nx.correct_option,
       options: nx.options,
       explanation,
+      is_released,
     },
   }
 }
@@ -278,6 +306,7 @@ export type TrailStageQuestionUpdateFields = Partial<{
   options: TrailStageQuestionOption[] | null
   explanation: string | null
   active: boolean
+  is_released: boolean
 }>
 
 export function parseTrailStageQuestionUpdatePayload(payload: unknown):
@@ -319,6 +348,14 @@ export function parseTrailStageQuestionUpdatePayload(payload: unknown):
     const active = parseBoolean(body.active)
     if (active === null) return { ok: false, error: 'Campo "active" deve ser boolean' }
     updates.active = active
+  }
+
+  if ('is_released' in body && body.is_released !== undefined) {
+    const rel = parseBoolean(body.is_released)
+    if (rel === null) {
+      return { ok: false, error: 'Campo "is_released" deve ser boolean' }
+    }
+    updates.is_released = rel
   }
 
   if ('correct_option' in body) {
