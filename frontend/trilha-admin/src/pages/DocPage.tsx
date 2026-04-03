@@ -15,7 +15,13 @@ type DocEndpoint = {
   description: string
   auth: boolean
   pathParams?: { name: string; type: string; description: string }[]
-  queryParams?: { name: string; type: string; required: boolean; description: string }[]
+  queryParams?: {
+    name: string
+    type: string
+    required: boolean
+    description: string
+    example?: string
+  }[]
   bodyFields?: {
     name: string
     type: string
@@ -839,6 +845,37 @@ const TRAIL_STAGE_ENDPOINTS: DocEndpoint[] = [
     responses: [
       { code: '200', description: 'Objeto do stage encontrado.' },
       { code: '404', description: 'Stage não encontrado.' },
+      { code: '401', description: 'Não autenticado.' },
+    ],
+  },
+  {
+    id: 'get-trail-stage-by-trail-and-number',
+    method: 'GET',
+    path: '/trail_stages/',
+    title: 'Buscar stage por trail_id e stage_number',
+    description:
+      'Obtém um único stage quando ambos os query params estão presentes. Equivale ao documento com id determinístico `{trail_id}_stage_{stage_number}`. O parâmetro `simple=1` também se aplica.',
+    auth: true,
+    queryParams: [
+      {
+        name: 'trail_id',
+        type: 'string',
+        required: true,
+        description: 'ID da trilha.',
+        example: 'trail_001',
+      },
+      {
+        name: 'stage_number',
+        type: 'number (inteiro)',
+        required: true,
+        description: 'Número do stage (>= 1), único dentro da trilha.',
+        example: '1',
+      },
+    ],
+    responses: [
+      { code: '200', description: 'Objeto do stage (mesmo formato do GET por id).' },
+      { code: '400', description: 'trail_id ausente ou stage_number inválido.' },
+      { code: '404', description: 'Nenhum stage com esse par na trilha.' },
       { code: '401', description: 'Não autenticado.' },
     ],
   },
