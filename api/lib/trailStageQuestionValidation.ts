@@ -1,11 +1,12 @@
 /**
- * Validação e tipos para documentos da collection `trail_stage_questions`.
- * Regras alinhadas ao modelo pedagógico (sem campo de prompt).
+ * Validação para `trail_stage_questions`: só conteúdo sequencial.
+ * Comportamento (tipo / prompt) fica em `trail_stages` (`stage_type`, `prompt`).
  */
 
-export const TRAIL_STAGE_QUESTION_TYPES = ['ai', 'fixed', 'exercise'] as const
+export const TRAIL_PEDAGOGICAL_STAGE_TYPES = ['ai', 'fixed', 'exercise'] as const
 
-export type TrailStageQuestionType = (typeof TRAIL_STAGE_QUESTION_TYPES)[number]
+export type TrailPedagogicalStageType =
+  (typeof TRAIL_PEDAGOGICAL_STAGE_TYPES)[number]
 
 export type TrailStageQuestionOption = { key: string; text: string }
 
@@ -13,7 +14,6 @@ export type TrailStageQuestionCreatePayload = {
   trail_id: string
   stage_number: number
   question_number: number
-  question_type: TrailStageQuestionType
   title: string
   content: string
   correct_option: string | null
@@ -21,8 +21,26 @@ export type TrailStageQuestionCreatePayload = {
   explanation: string | null
 }
 
-export function isQuestionType(v: string): v is TrailStageQuestionType {
-  return (TRAIL_STAGE_QUESTION_TYPES as readonly string[]).includes(v)
+export function isTrailPedagogicalStageType(
+  v: string,
+): v is TrailPedagogicalStageType {
+  return (TRAIL_PEDAGOGICAL_STAGE_TYPES as readonly string[]).includes(v)
+}
+
+export function parseStageTypeFromFirestoreData(
+  data: Record<string, unknown>,
+): TrailPedagogicalStageType {
+  const s =
+    typeof data.stage_type === 'string' ? data.stage_type.trim() : ''
+  if (isTrailPedagogicalStageType(s)) return s
+  return 'fixed'
+}
+
+export function pedagogicalStageDocId(
+  trailId: string,
+  stageNumber: number,
+): string {
+  return `${trailId}_stage_${stageNumber}`
 }
 
 export function sanitizeString(v: unknown): string | null {
@@ -68,7 +86,11 @@ function parseOptions(v: unknown): TrailStageQuestionOption[] | null | 'invalid'
 export function normalizeExerciseFields(
   correctRaw: unknown,
   optionsRaw: unknown,
-): { error?: string; correct_option: string | null; options: TrailStageQuestionOption[] | null } {
+): {
+  error?: string
+  correct_option: string | null
+  options: TrailStageQuestionOption[] | null
+} {
   const correct_option =
     correctRaw === undefined || correctRaw === null
       ? null
@@ -76,7 +98,8 @@ export function normalizeExerciseFields(
 
   if (!correct_option) {
     return {
-      error: 'Campo "correct_option" é obrigatório para question_type "exercise"',
+      error:
+        'Campo "correct_option" é obrigatório quando o stage é do tipo "exercise" (definido em trail_stages).',
       correct_option: null,
       options: null,
     }
@@ -121,9 +144,14 @@ function normalizeNonExerciseFields(
   correctRaw: unknown,
   optionsRaw: unknown,
 ): { error?: string; correct_option: null; options: null } {
-  if (correctRaw !== undefined && correctRaw !== null && sanitizeString(correctRaw) !== null) {
+  if (
+    correctRaw !== undefined &&
+    correctRaw !== null &&
+    sanitizeString(correctRaw) !== null
+  ) {
     return {
-      error: 'Campo "correct_option" deve ser null quando question_type não é "exercise"',
+      error:
+        'Campo "correct_option" deve ser omissão ou null quando o stage não é "exercise".',
       correct_option: null,
       options: null,
     }
@@ -131,14 +159,15 @@ function normalizeNonExerciseFields(
   const parsed = parseOptions(optionsRaw)
   if (parsed === 'invalid') {
     return {
-      error: 'Campo "options" inválido para tipo não-exercício',
+      error: 'Campo "options" inválido para stage que não é "exercise"',
       correct_option: null,
       options: null,
     }
   }
   if (parsed && parsed.length > 0) {
     return {
-      error: 'Campo "options" deve ser null ou vazio quando question_type não é "exercise"',
+      error:
+        'Campo "options" deve ser null ou vazio quando o stage não é "exercise"',
       correct_option: null,
       options: null,
     }
@@ -146,21 +175,39 @@ function normalizeNonExerciseFields(
   return { correct_option: null, options: null }
 }
 
+/** Rejeita campos que migraram para `trail_stages`. */
+export function rejectDeprecatedQuestionBodyKeys(
+  body: Record<string, unknown>,
+): string | null {
+  if (Object.prototype.hasOwnProperty.call(body, 'question_type')) {
+    return 'Campo "question_type" não é permitido nesta API: use `stage_type` em trail_stages.'
+  }
+  if (Object.prototype.hasOwnProperty.call(body, 'prompt')) {
+    return 'Campo "prompt" não é permitido nesta API: use `prompt` em trail_stages.'
+  }
+  return null
+}
+
 /**
- * Valida payload de criação (POST). `active` não entra aqui — inicia sempre true no serviço.
+ * Valida criação (POST). `stageType` vem do documento `trail_stages` correspondente.
  */
 export function validateTrailStageQuestionCreate(
   payload: unknown,
-): { ok: true; data: TrailStageQuestionCreatePayload } | { ok: false; error: string } {
+  stageType: TrailPedagogicalStageType,
+):
+  | { ok: true; data: TrailStageQuestionCreatePayload }
+  | { ok: false; error: string } {
   if (!payload || typeof payload !== 'object') {
     return { ok: false, error: 'Payload inválido' }
   }
   const body = payload as Record<string, unknown>
 
+  const forbidden = rejectDeprecatedQuestionBodyKeys(body)
+  if (forbidden) return { ok: false, error: forbidden }
+
   const trail_id = sanitizeString(body.trail_id)
   const stage_number = parseIntLoose(body.stage_number)
   const question_number = parseIntLoose(body.question_number)
-  const qTypeRaw = sanitizeString(body.question_type)
   const title = sanitizeString(body.title)
   const content = sanitizeString(body.content)
 
@@ -177,12 +224,6 @@ export function validateTrailStageQuestionCreate(
   if (question_number < 1) {
     return { ok: false, error: 'Campo "question_number" deve ser >= 1' }
   }
-  if (!qTypeRaw || !isQuestionType(qTypeRaw)) {
-    return {
-      ok: false,
-      error: `Campo "question_type" deve ser um de: ${TRAIL_STAGE_QUESTION_TYPES.join(', ')}`,
-    }
-  }
   if (!title) return { ok: false, error: 'Campo "title" é obrigatório' }
   if (!content) return { ok: false, error: 'Campo "content" é obrigatório' }
 
@@ -195,7 +236,7 @@ export function validateTrailStageQuestionCreate(
     }
   }
 
-  if (qTypeRaw === 'exercise') {
+  if (stageType === 'exercise') {
     const ex = normalizeExerciseFields(body.correct_option, body.options)
     if (ex.error) return { ok: false, error: ex.error }
     return {
@@ -204,7 +245,6 @@ export function validateTrailStageQuestionCreate(
         trail_id,
         stage_number,
         question_number,
-        question_type: qTypeRaw,
         title,
         content,
         correct_option: ex.correct_option,
@@ -222,7 +262,6 @@ export function validateTrailStageQuestionCreate(
       trail_id,
       stage_number,
       question_number,
-      question_type: qTypeRaw,
       title,
       content,
       correct_option: nx.correct_option,
@@ -233,7 +272,6 @@ export function validateTrailStageQuestionCreate(
 }
 
 export type TrailStageQuestionUpdateFields = Partial<{
-  question_type: TrailStageQuestionType
   title: string
   content: string
   correct_option: string | null
@@ -242,9 +280,6 @@ export type TrailStageQuestionUpdateFields = Partial<{
   active: boolean
 }>
 
-/**
- * Extrai atualizações parciais do body (sem cruzar exercise com documento existente — isso fica no handler).
- */
 export function parseTrailStageQuestionUpdatePayload(payload: unknown):
   | { ok: true; data: TrailStageQuestionUpdateFields }
   | { ok: false; error: string } {
@@ -252,29 +287,22 @@ export function parseTrailStageQuestionUpdatePayload(payload: unknown):
     return { ok: false, error: 'Payload inválido' }
   }
   const body = payload as Record<string, unknown>
+
+  const forbidden = rejectDeprecatedQuestionBodyKeys(body)
+  if (forbidden) return { ok: false, error: forbidden }
+
   const updates: TrailStageQuestionUpdateFields = {}
 
-  if ('question_type' in body && body.question_type !== undefined) {
-    const s = sanitizeString(body.question_type)
-    if (!s || !isQuestionType(s)) {
-      return {
-        ok: false,
-        error: `Campo "question_type" deve ser um de: ${TRAIL_STAGE_QUESTION_TYPES.join(', ')}`,
-      }
-    }
-    updates.question_type = s
-  }
-
   if ('title' in body && body.title !== undefined) {
-    const title = sanitizeString(body.title)
-    if (!title) return { ok: false, error: 'Campo "title" deve ser uma string não vazia' }
-    updates.title = title
+    const t = sanitizeString(body.title)
+    if (!t) return { ok: false, error: 'Campo "title" deve ser uma string não vazia' }
+    updates.title = t
   }
 
   if ('content' in body && body.content !== undefined) {
-    const content = sanitizeString(body.content)
-    if (!content) return { ok: false, error: 'Campo "content" deve ser uma string não vazia' }
-    updates.content = content
+    const c = sanitizeString(body.content)
+    if (!c) return { ok: false, error: 'Campo "content" deve ser uma string não vazia' }
+    updates.content = c
   }
 
   if ('explanation' in body) {
@@ -312,7 +340,10 @@ export function parseTrailStageQuestionUpdatePayload(payload: unknown):
     } else {
       const parsed = parseOptions(body.options)
       if (parsed === 'invalid') {
-        return { ok: false, error: 'Campo "options" deve ser um array de { key, text } ou null' }
+        return {
+          ok: false,
+          error: 'Campo "options" deve ser um array de { key, text } ou null',
+        }
       }
       updates.options = parsed && parsed.length > 0 ? parsed : null
     }
@@ -323,4 +354,18 @@ export function parseTrailStageQuestionUpdatePayload(payload: unknown):
   }
 
   return { ok: true, data: updates }
+}
+
+export function parseOptionsFromDoc(
+  v: unknown,
+): TrailStageQuestionOption[] | null {
+  if (!Array.isArray(v)) return null
+  const out: TrailStageQuestionOption[] = []
+  for (const item of v) {
+    if (!item || typeof item !== 'object') return null
+    const o = item as Record<string, unknown>
+    if (typeof o.key !== 'string' || typeof o.text !== 'string') return null
+    out.push({ key: o.key, text: o.text })
+  }
+  return out.length ? out : null
 }

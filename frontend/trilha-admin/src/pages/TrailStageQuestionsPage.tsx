@@ -10,6 +10,11 @@ import {
 import { db } from '../lib/firebase'
 import { snapshotToTrail, TRAILS_COLLECTION } from '../lib/trailFirestore'
 import {
+  TRAIL_STAGES_COLLECTION,
+  snapshotToTrailStage,
+  trailStageDocId,
+} from '../lib/trailStageFirestore'
+import {
   TRAIL_STAGE_QUESTIONS_COLLECTION,
   formatTrailStageQuestionTs,
   snapshotToTrailStageQuestion,
@@ -17,6 +22,7 @@ import {
 import { trailPath, trailStageQuestionsPath } from '../lib/paths'
 import { TrailStageQuestionForm } from '../components/TrailStageQuestionForm'
 import type { Trail } from '../types/trail'
+import type { TrailStage } from '../types/trailStage'
 import type { TrailStageQuestion } from '../types/trailStageQuestion'
 
 export function TrailStageQuestionsPage() {
@@ -34,6 +40,10 @@ export function TrailStageQuestionsPage() {
   const [trail, setTrail] = useState<Trail | null>(null)
   const [trailError, setTrailError] = useState<string | null>(null)
   const [loadingTrail, setLoadingTrail] = useState(true)
+
+  const [trailStage, setTrailStage] = useState<TrailStage | null>(null)
+  const [stageError, setStageError] = useState<string | null>(null)
+  const [loadingStage, setLoadingStage] = useState(true)
 
   const [questions, setQuestions] = useState<TrailStageQuestion[]>([])
   const [loadingQuestions, setLoadingQuestions] = useState(true)
@@ -76,6 +86,41 @@ export function TrailStageQuestionsPage() {
     )
     return () => unsub()
   }, [trailId])
+
+  useEffect(() => {
+    let unsub: (() => void) | null = null
+
+    async function run() {
+      if (!db || !trailId || !Number.isFinite(stageNumber)) return
+
+      const stageDoc = trailStageDocId(trailId, stageNumber)
+      setLoadingStage(true)
+      setStageError(null)
+
+      unsub = onSnapshot(
+        doc(db, TRAIL_STAGES_COLLECTION, stageDoc),
+        (snap) => {
+          if (!snap.exists()) {
+            setTrailStage(null)
+            setStageError(null)
+            setLoadingStage(false)
+            return
+          }
+          setTrailStage(snapshotToTrailStage(snap))
+          setStageError(null)
+          setLoadingStage(false)
+        },
+        (err) => {
+          setStageError(err.message)
+          setTrailStage(null)
+          setLoadingStage(false)
+        },
+      )
+    }
+
+    void run()
+    return () => unsub?.()
+  }, [trailId, stageNumber])
 
   useEffect(() => {
     if (!db || !trailId || !Number.isFinite(stageNumber)) return
@@ -159,121 +204,146 @@ export function TrailStageQuestionsPage() {
         <p className="admin__lede muted">
           Trilha <strong>{trail.name || trailId}</strong> · stage{' '}
           <strong>{stageNumber}</strong>
+          {trailStage ? (
+            <>
+              {' '}
+              · comportamento: <code>stage_type={trailStage.stage_type}</code>
+              {trailStage.stage_type === 'ai' ? (
+                <>
+                  {' '}
+                  (prompt no stage: {trailStage.prompt ? 'definido' : 'ausente'})
+                </>
+              ) : null}
+            </>
+          ) : null}
           <br />
           <span>
-            Collection Firestore: <code>trail_stage_questions</code> · filtros:{' '}
-            <code>trail_id</code> + <code>stage_number</code> (ordem{' '}
-            <code>question_number</code> no cliente).
+            Collection conteúdo: <code>trail_stage_questions</code> — sem{' '}
+            <code>question_type</code> nem <code>prompt</code>.
           </span>
         </p>
       )}
 
-      <section className="panel">
-        <div className="panel__head">
-          <h2>Etapas e exercícios</h2>
-          <p className="panel__actions">
-            <button
-              type="button"
-              className="btn btn--primary"
-              onClick={() => {
-                setEditDocId(null)
-                setShowForm(true)
-              }}
-            >
-              + Nova questão
-            </button>
-          </p>
-        </div>
+      {stageError ? (
+        <p className="banner banner--error" role="alert">
+          {stageError}
+        </p>
+      ) : null}
 
-        {showForm ? (
-          editDocId ? (
-            editing ? (
+      {loadingStage ? (
+        <p className="muted">Carregando stage…</p>
+      ) : !trailStage ? (
+        <p className="banner banner--error" role="alert">
+          Stage não encontrado. Cadastre-o na trilha antes das questões.
+        </p>
+      ) : (
+        <section className="panel">
+          <div className="panel__head">
+            <h2>Etapas e exercícios (conteúdo)</h2>
+            <p className="panel__actions">
+              <button
+                type="button"
+                className="btn btn--primary"
+                onClick={() => {
+                  setEditDocId(null)
+                  setShowForm(true)
+                }}
+              >
+                + Nova questão
+              </button>
+            </p>
+          </div>
+
+          {showForm && trailStage ? (
+            editDocId ? (
+              editing ? (
+                <TrailStageQuestionForm
+                  trailId={trailId}
+                  stageNumber={stageNumber}
+                  stageType={trailStage.stage_type}
+                  docId={editDocId}
+                  initial={editing}
+                  suggestedQuestionNumber={suggestedNextQuestionNumber}
+                  onCancel={() => {
+                    setShowForm(false)
+                    setEditDocId(null)
+                  }}
+                  onSaved={() => {
+                    setShowForm(false)
+                    setEditDocId(null)
+                  }}
+                />
+              ) : (
+                <p className="muted">Carregando questão…</p>
+              )
+            ) : (
               <TrailStageQuestionForm
                 trailId={trailId}
                 stageNumber={stageNumber}
-                docId={editDocId}
-                initial={editing}
+                stageType={trailStage.stage_type}
                 suggestedQuestionNumber={suggestedNextQuestionNumber}
-                onCancel={() => {
-                  setShowForm(false)
-                  setEditDocId(null)
-                }}
-                onSaved={() => {
-                  setShowForm(false)
-                  setEditDocId(null)
-                }}
+                onCancel={() => setShowForm(false)}
+                onSaved={() => setShowForm(false)}
               />
-            ) : (
-              <p className="muted">Carregando questão…</p>
             )
-          ) : (
-            <TrailStageQuestionForm
-              trailId={trailId}
-              stageNumber={stageNumber}
-              suggestedQuestionNumber={suggestedNextQuestionNumber}
-              onCancel={() => setShowForm(false)}
-              onSaved={() => setShowForm(false)}
-            />
-          )
-        ) : null}
+          ) : null}
 
-        {loadingQuestions ? (
-          <p className="muted">Carregando questões…</p>
-        ) : questionsError ? (
-          <p className="banner banner--error" role="alert">
-            {questionsError}
-          </p>
-        ) : (
-          <div className="table-wrap">
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>#</th>
-                  <th>Título</th>
-                  <th>Tipo</th>
-                  <th>Ativa</th>
-                  <th>Atualizado</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {questions.length === 0 ? (
+          {loadingQuestions ? (
+            <p className="muted">Carregando questões…</p>
+          ) : questionsError ? (
+            <p className="banner banner--error" role="alert">
+              {questionsError}
+            </p>
+          ) : (
+            <div className="table-wrap">
+              <table className="table">
+                <thead>
                   <tr>
-                    <td colSpan={6} className="muted table__empty">
-                      Nenhuma questão neste stage. Link direto desta tela:{' '}
-                      <code>{listPath}</code>
-                    </td>
+                    <th>#</th>
+                    <th>Título</th>
+                    <th>Ativa</th>
+                    <th>Atualizado</th>
+                    <th></th>
                   </tr>
-                ) : (
-                  questions.map((q) => (
-                    <tr key={q.id}>
-                      <td>{q.question_number}</td>
-                      <td>{q.title || '—'}</td>
-                      <td>
-                        <code>{q.question_type}</code>
-                      </td>
-                      <td>{q.active ? 'Sim' : 'Não'}</td>
-                      <td>{formatTrailStageQuestionTs(q.updated_at ?? q.created_at)}</td>
-                      <td className="table__actions">
-                        <button
-                          type="button"
-                          className="btn btn--small btn--ghost"
-                          onClick={() => {
-                            setEditDocId(q.id)
-                            setShowForm(true)
-                          }}
-                        >
-                          Editar
-                        </button>
+                </thead>
+                <tbody>
+                  {questions.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="muted table__empty">
+                        Nenhuma questão neste stage. Link direto desta tela:{' '}
+                        <code>{listPath}</code>
                       </td>
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
+                  ) : (
+                    questions.map((q) => (
+                      <tr key={q.id}>
+                        <td>{q.question_number}</td>
+                        <td>{q.title || '—'}</td>
+                        <td>{q.active ? 'Sim' : 'Não'}</td>
+                        <td>
+                          {formatTrailStageQuestionTs(q.updated_at ?? q.created_at)}
+                        </td>
+                        <td className="table__actions">
+                          <button
+                            type="button"
+                            className="btn btn--small btn--ghost"
+                            onClick={() => {
+                              setEditDocId(q.id)
+                              setShowForm(true)
+                            }}
+                          >
+                            Editar
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      )}
     </>
   )
 }

@@ -5,13 +5,16 @@ import {
   TRAIL_STAGE_QUESTIONS_COLLECTION,
   trailStageQuestionDocId,
 } from '../lib/trailStageQuestionFirestore'
-import type { TrailStageQuestion, TrailStageQuestionType } from '../types/trailStageQuestion'
+import type { TrailStageType } from '../types/trailStage'
+import type { TrailStageQuestion } from '../types/trailStageQuestion'
 
 type OptionRow = { key: string; text: string }
 
 type Props = {
   trailId: string
   stageNumber: number
+  /** Tipo do stage em `trail_stages` — define se há correção obrigatória. */
+  stageType: TrailStageType
   docId?: string
   initial?: TrailStageQuestion
   suggestedQuestionNumber?: number
@@ -48,6 +51,7 @@ function validateExerciseOptions(
 export function TrailStageQuestionForm({
   trailId,
   stageNumber,
+  stageType,
   docId,
   initial,
   suggestedQuestionNumber,
@@ -55,9 +59,9 @@ export function TrailStageQuestionForm({
   onSaved,
 }: Props) {
   const isEdit = Boolean(docId)
+  const isExerciseStage = stageType === 'exercise'
 
   const [questionNumber, setQuestionNumber] = useState(1)
-  const [questionType, setQuestionType] = useState<TrailStageQuestionType>('ai')
   const [title, setTitle] = useState('')
   const [content, setContent] = useState('')
   const [explanation, setExplanation] = useState('')
@@ -77,7 +81,6 @@ export function TrailStageQuestionForm({
     if (isEdit) {
       if (!initial) return
       setQuestionNumber(initial.question_number)
-      setQuestionType(initial.question_type)
       setTitle(initial.title)
       setContent(initial.content)
       setExplanation(initial.explanation ?? '')
@@ -90,7 +93,6 @@ export function TrailStageQuestionForm({
     }
 
     setQuestionNumber(suggestedQuestionNumber ?? 1)
-    setQuestionType('ai')
     setTitle('')
     setContent('')
     setExplanation('')
@@ -120,7 +122,7 @@ export function TrailStageQuestionForm({
 
     const expl = explanation.trim() ? explanation.trim() : null
 
-    if (questionType === 'exercise') {
+    if (isExerciseStage) {
       const optErr = validateExerciseOptions(optionRows, correctOption)
       if (optErr) {
         setFormError(optErr)
@@ -137,10 +139,9 @@ export function TrailStageQuestionForm({
       setSaving(true)
       setFormError(null)
       try {
-        const correct =
-          questionType === 'exercise' ? correctOption.trim() : null
+        const correct = isExerciseStage ? correctOption.trim() : null
         const optionsPayload =
-          questionType === 'exercise' && optionRows.length > 0
+          isExerciseStage && optionRows.length > 0
             ? optionRows.map((r) => ({
                 key: r.key.trim(),
                 text: r.text.trim(),
@@ -148,7 +149,6 @@ export function TrailStageQuestionForm({
             : null
 
         await updateDoc(doc(dbOk, TRAIL_STAGE_QUESTIONS_COLLECTION, docId), {
-          question_type: questionType,
           title: trimmedTitle,
           content: trimmedContent,
           explanation: expl,
@@ -174,9 +174,9 @@ export function TrailStageQuestionForm({
 
     const newDocId = trailStageQuestionDocId(trailId, stageNumber, qn)
     const now = serverTimestamp()
-    const correct = questionType === 'exercise' ? correctOption.trim() : null
+    const correct = isExerciseStage ? correctOption.trim() : null
     const optionsPayload =
-      questionType === 'exercise' && optionRows.length > 0
+      isExerciseStage && optionRows.length > 0
         ? optionRows.map((r) => ({
             key: r.key.trim(),
             text: r.text.trim(),
@@ -198,7 +198,6 @@ export function TrailStageQuestionForm({
           trail_id: trailId,
           stage_number: stageNumber,
           question_number: qn,
-          question_type: questionType,
           title: trimmedTitle,
           content: trimmedContent,
           correct_option: correct,
@@ -237,8 +236,8 @@ export function TrailStageQuestionForm({
       <h2>{heading}</h2>
       <p className="admin__lede muted">
         {isEdit
-          ? 'Altere tipo, conteúdo, resposta (exercício) e status. Identificadores fixos: trail, stage e ordem da questão.'
-          : `Stage ${stageNumber} · nova entrada na collection trail_stage_questions.`}
+          ? 'Altere conteúdo e resposta (se o stage for exercício). O tipo do stage e o prompt ficam em trail_stages.'
+          : `Stage ${stageNumber} (${stageType}) · apenas conteúdo sequencial.`}
       </p>
 
       {formError ? (
@@ -260,20 +259,6 @@ export function TrailStageQuestionForm({
             min={1}
             step={1}
           />
-        </label>
-
-        <label className="field">
-          <span>question_type</span>
-          <select
-            value={questionType}
-            onChange={(e) =>
-              setQuestionType(e.target.value as TrailStageQuestionType)
-            }
-          >
-            <option value="ai">ai — etapa com conteúdo para a IA interpretar</option>
-            <option value="fixed">fixed — conteúdo fixo (sem alternativas obrigatórias)</option>
-            <option value="exercise">exercise — exercício (resposta correta)</option>
-          </select>
         </label>
 
         <label className="field">
@@ -308,7 +293,7 @@ export function TrailStageQuestionForm({
           />
         </label>
 
-        {questionType === 'exercise' ? (
+        {isExerciseStage ? (
           <>
             <label className="field">
               <span>correct_option</span>

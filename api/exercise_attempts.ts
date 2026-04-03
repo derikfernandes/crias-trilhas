@@ -171,6 +171,8 @@ async function handleRequest(request: Request): Promise<Response> {
     process.env.EXERCISE_ATTEMPTS_COLLECTION ?? 'exercise_attempts'
   const questionsCollection =
     process.env.TRAIL_STAGE_QUESTIONS_COLLECTION ?? 'trail_stage_questions'
+  const stagesCollection =
+    process.env.TRAIL_STAGES_COLLECTION ?? 'trail_stages'
 
   const respond = (status: number, body: Json): Response => {
     return new Response(JSON.stringify(body), {
@@ -319,6 +321,7 @@ async function handleRequest(request: Request): Promise<Response> {
         db,
         attemptsCollection,
         questionsCollection,
+        stagesCollection,
         validated.data,
       )
 

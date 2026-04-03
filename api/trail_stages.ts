@@ -88,6 +88,63 @@ function parseIntLoose(v: unknown): number | null {
   return n
 }
 
+type StageType = 'ai' | 'fixed' | 'exercise'
+
+function parseStageType(v: unknown): StageType | null {
+  const s = sanitizeString(v)
+  if (!s) return null
+  if (s === 'ai' || s === 'fixed' || s === 'exercise') return s
+  return null
+}
+
+function existingStageType(data: Record<string, unknown>): StageType {
+  return parseStageType(data.stage_type) ?? 'fixed'
+}
+
+function existingPrompt(data: Record<string, unknown>): string | null {
+  const p = data.prompt
+  if (p === null || p === undefined) return null
+  if (typeof p !== 'string') return null
+  const s = p.trim()
+  return s.length ? s : null
+}
+
+/** Interpreta `prompt` no body: null explícito, string, ou ausência (para merge no PUT). */
+function parsePromptValue(
+  v: unknown,
+): 'omit' | { kind: 'null' } | { kind: 'string'; value: string } | { kind: 'error' } {
+  if (v === undefined) return 'omit'
+  if (v === null) return { kind: 'null' }
+  if (typeof v !== 'string') return { kind: 'error' }
+  const s = v.trim()
+  if (!s.length) return { kind: 'null' }
+  return { kind: 'string', value: s }
+}
+
+function validateStageTypeAndPrompt(
+  stage_type: StageType,
+  prompt: string | null,
+): { ok: true } | { ok: false; error: string } {
+  if (stage_type === 'ai') {
+    if (!prompt || !prompt.length) {
+      return {
+        ok: false,
+        error:
+          'Campo "prompt" é obrigatório (string não vazia) quando stage_type é "ai"',
+      }
+    }
+    return { ok: true }
+  }
+  if (prompt !== null) {
+    return {
+      ok: false,
+      error:
+        'Campo "prompt" deve ser null quando stage_type é "fixed" ou "exercise"',
+    }
+  }
+  return { ok: true }
+}
+
 function stageDocId(trail_id: string, stage_number: number): string {
   // Tornar determinístico simplifica a regra de unicidade:
   // `stage_number` é único dentro de cada `trail_id`.
@@ -105,6 +162,16 @@ function toTrailStageOutput(
       ? data.stage_number
       : 0
   const title = typeof data.title === 'string' ? data.title : ''
+  const stage_type = existingStageType(data)
+  const promptRaw = data.prompt
+  const prompt =
+    promptRaw === null || promptRaw === undefined
+      ? null
+      : typeof promptRaw === 'string'
+        ? promptRaw.trim().length
+          ? promptRaw.trim()
+          : null
+        : null
   const is_released = typeof data.is_released === 'boolean' ? data.is_released : false
   const active = typeof data.active === 'boolean' ? data.active : false
 
@@ -114,6 +181,8 @@ function toTrailStageOutput(
       trail_id,
       stage_number,
       title,
+      stage_type,
+      prompt: stage_type === 'ai' ? prompt : null,
       is_released,
       active,
     }
@@ -124,6 +193,8 @@ function toTrailStageOutput(
     trail_id,
     stage_number,
     title,
+    stage_type,
+    prompt: stage_type === 'ai' ? prompt : null,
     is_released,
     active,
     created_at: serializeTs(data.created_at),
@@ -188,16 +259,16 @@ async function handleRequest(request: Request): Promise<Response> {
       // - se não vier, devolve tudo (ordenado por updated_at desc)
       let snap
       if (qTrailId) {
+        // Sem `orderBy` + `where` em outro campo para evitar índice composto; ordena no servidor.
         snap = await db
           .collection(collection)
           .where('trail_id', '==', qTrailId)
-          .orderBy('stage_number', 'asc')
           .get()
       } else {
         snap = await db.collection(collection).orderBy('updated_at', 'desc').get()
       }
 
-      const items = snap.docs
+      let items = snap.docs
         .map((d) =>
           toTrailStageOutput((d.data() ?? {}) as Record<string, unknown>, d.id, {
             simple,
@@ -216,6 +287,20 @@ async function handleRequest(request: Request): Promise<Response> {
           if (qIsReleased === null) return true
           return typeof item.is_released === 'boolean' ? item.is_released === qIsReleased : false
         })
+
+      if (qTrailId) {
+        items = [...items].sort((a, b) => {
+          const na =
+            typeof (a as Json).stage_number === 'number'
+              ? ((a as Json).stage_number as number)
+              : 0
+          const nb =
+            typeof (b as Json).stage_number === 'number'
+              ? ((b as Json).stage_number as number)
+              : 0
+          return na - nb
+        })
+      }
 
       return jsonResponse(items as Json[], { status: 200, headers: corsHeaders() })
     }
@@ -249,6 +334,42 @@ async function handleRequest(request: Request): Promise<Response> {
       }
       if (!title) return respond(400, { error: 'Campo "title" é obrigatório' })
 
+      const stage_type = parseStageType(body.stage_type)
+      if (!stage_type) {
+        return respond(400, {
+          error:
+            'Campo "stage_type" é obrigatório e deve ser "ai", "fixed" ou "exercise"',
+        })
+      }
+
+      let promptForPost: string | null
+      if (stage_type === 'ai') {
+        const p = sanitizeString(body.prompt)
+        if (!p) {
+          return respond(400, {
+            error:
+              'Campo "prompt" é obrigatório (string não vazia) quando stage_type é "ai"',
+          })
+        }
+        promptForPost = p
+      } else {
+        if (body.prompt !== undefined && body.prompt !== null) {
+          if (typeof body.prompt === 'string' && body.prompt.trim() === '') {
+            promptForPost = null
+          } else {
+            return respond(400, {
+              error:
+                'Campo "prompt" deve ser null ou omitido quando stage_type é "fixed" ou "exercise"',
+            })
+          }
+        } else {
+          promptForPost = null
+        }
+      }
+
+      const valid = validateStageTypeAndPrompt(stage_type, promptForPost)
+      if (!valid.ok) return respond(400, { error: valid.error })
+
       const now = FieldValue.serverTimestamp()
       const docId = stageDocId(trail_id, stage_number)
       const docRef = db.collection(collection).doc(docId)
@@ -268,6 +389,8 @@ async function handleRequest(request: Request): Promise<Response> {
           trail_id,
           stage_number,
           title,
+          stage_type,
+          prompt: stage_type === 'ai' ? promptForPost : null,
           is_released: false,
           active: true,
           created_at: now,
@@ -281,6 +404,8 @@ async function handleRequest(request: Request): Promise<Response> {
           trail_id,
           stage_number,
           title,
+          stage_type,
+          prompt: stage_type === 'ai' ? promptForPost : null,
           is_released: false,
           active: true,
           created_at: null,
@@ -346,6 +471,53 @@ async function handleRequest(request: Request): Promise<Response> {
           if (!title) return respond(400, { error: 'Campo "title" deve ser uma string não vazia' })
           updates.title = title
         }
+      }
+
+      const exType = existingStageType(existing)
+      const exPrompt = existingPrompt(existing)
+
+      let nextType = exType
+      if ('stage_type' in body && body.stage_type !== undefined) {
+        const st = parseStageType(body.stage_type)
+        if (!st) {
+          return respond(400, {
+            error:
+              'Campo "stage_type" deve ser "ai", "fixed" ou "exercise"',
+          })
+        }
+        nextType = st
+      }
+
+      let nextPrompt = exPrompt
+      if ('prompt' in body) {
+        const parsed = parsePromptValue(body.prompt)
+        if (parsed.kind === 'error') {
+          return respond(400, { error: 'Campo "prompt" inválido' })
+        }
+        if (parsed === 'omit') {
+          // não altera (não deve ocorrer com chave presente)
+        } else if (parsed.kind === 'null') {
+          nextPrompt = null
+        } else {
+          nextPrompt = parsed.value
+        }
+      }
+
+      if (nextType !== 'ai') {
+        nextPrompt = null
+      }
+
+      const pairOk = validateStageTypeAndPrompt(nextType, nextPrompt)
+      if (!pairOk.ok) return respond(400, { error: pairOk.error })
+
+      if ('stage_type' in body && body.stage_type !== undefined) {
+        updates.stage_type = nextType
+      }
+
+      const typeOrPromptTouched =
+        ('stage_type' in body && body.stage_type !== undefined) || 'prompt' in body
+      if (typeOrPromptTouched) {
+        updates.prompt = nextType === 'ai' ? nextPrompt : null
       }
 
       if ('is_released' in body && body.is_released !== undefined) {

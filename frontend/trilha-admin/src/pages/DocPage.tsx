@@ -872,6 +872,22 @@ const TRAIL_STAGE_ENDPOINTS: DocEndpoint[] = [
         description: 'Nome do stage.',
         example: 'Frações básicas',
       },
+      {
+        name: 'stage_type',
+        type: '"ai" | "fixed" | "exercise"',
+        required: true,
+        description:
+          'Tipo do stage (fluxo do chatbot). Com `fixed` ou `exercise`, `prompt` deve ser null ou omitido.',
+        example: 'ai',
+      },
+      {
+        name: 'prompt',
+        type: 'string | null',
+        required: true,
+        description:
+          'Prompt base. Obrigatório (string não vazia) quando `stage_type` é `ai`; deve ser `null` para `fixed` e `exercise`.',
+        example: 'Explique o conteúdo de forma simples…',
+      },
     ],
     responses: [
       { code: '201', description: 'Stage criado com sucesso.' },
@@ -899,6 +915,20 @@ const TRAIL_STAGE_ENDPOINTS: DocEndpoint[] = [
         type: 'string',
         required: false,
         description: 'Novo título do stage.',
+      },
+      {
+        name: 'stage_type',
+        type: '"ai" | "fixed" | "exercise"',
+        required: false,
+        description:
+          'Novo tipo do stage. Se mudar para `fixed` ou `exercise`, o servidor grava `prompt` como null.',
+      },
+      {
+        name: 'prompt',
+        type: 'string | null',
+        required: false,
+        description:
+          'Novo prompt. Com `stage_type` `ai` deve ser texto não vazio quando enviado; com `fixed`/`exercise` use null.',
       },
       {
         name: 'is_released',
@@ -1041,7 +1071,7 @@ const TRAIL_STAGE_QUESTION_ENDPOINTS: DocEndpoint[] = [
     path: '/trail_stage_questions/',
     title: 'Criar questão / etapa',
     description:
-      '`active` inicia como `true`. Não há campo de prompt: o contrato de IA fica no sistema por `question_number`. Documento identificado de forma única por trail_id + stage_number + question_number.',
+      '`active` inicia como `true`. O servidor localiza o stage em `trail_stages` e usa `stage_type` para validar: se o stage for `exercise`, `correct_option` é obrigatório; caso contrário, `correct_option` e `options` devem ser null. Não envie `question_type` nem `prompt` (ficam no stage).',
     auth: true,
     bodyFields: [
       {
@@ -1055,7 +1085,7 @@ const TRAIL_STAGE_QUESTION_ENDPOINTS: DocEndpoint[] = [
         name: 'stage_number',
         type: 'number (inteiro)',
         required: true,
-        description: 'Número do stage (>= 1).',
+        description: 'Número do stage (>= 1); o documento deve existir em trail_stages.',
         example: '1',
       },
       {
@@ -1064,13 +1094,6 @@ const TRAIL_STAGE_QUESTION_ENDPOINTS: DocEndpoint[] = [
         required: true,
         description: 'Ordem da questão dentro do stage (>= 1).',
         example: '5',
-      },
-      {
-        name: 'question_type',
-        type: 'string',
-        required: true,
-        description: 'Um de: ai, fixed, exercise.',
-        example: 'exercise',
       },
       {
         name: 'title',
@@ -1088,7 +1111,7 @@ const TRAIL_STAGE_QUESTION_ENDPOINTS: DocEndpoint[] = [
         name: 'correct_option',
         type: 'string | null',
         required: false,
-        description: 'Obrigatório para exercise; null para ai/fixed.',
+        description: 'Obrigatório (não-null) se trail_stages.stage_type for exercise; senão deve ser omitido ou null.',
         example: 'A',
       },
       {
@@ -1108,7 +1131,6 @@ const TRAIL_STAGE_QUESTION_ENDPOINTS: DocEndpoint[] = [
   "trail_id": "trail_001",
   "stage_number": 1,
   "question_number": 5,
-  "question_type": "exercise",
   "title": "Exercício 1",
   "content": "Qual fração representa metade de uma pizza?",
   "correct_option": "A",
@@ -1120,7 +1142,7 @@ const TRAIL_STAGE_QUESTION_ENDPOINTS: DocEndpoint[] = [
 }`,
     responses: [
       { code: '201', description: 'Criado (corpo com dados da questão).' },
-      { code: '400', description: 'Validação ou JSON inválido.' },
+      { code: '400', description: 'Stage ausente, validação ou JSON inválido.' },
       { code: '409', description: 'Conflito: question_number já existe no stage.' },
     ],
   },
@@ -1130,7 +1152,7 @@ const TRAIL_STAGE_QUESTION_ENDPOINTS: DocEndpoint[] = [
     path: '/trail_stage_questions/{id}',
     title: 'Atualizar questão',
     description:
-      'Atualização parcial. Não altere trail_id, stage_number nem question_number. O servidor revalida o documento inteiro após o merge.',
+      'Atualização parcial. Não altere trail_id, stage_number nem question_number. Revalida usando o `stage_type` atual do `trail_stages`. Remove campos legados `question_type` e `prompt` do documento se existirem.',
     auth: true,
     pathParams: [
       {
@@ -1140,12 +1162,6 @@ const TRAIL_STAGE_QUESTION_ENDPOINTS: DocEndpoint[] = [
       },
     ],
     bodyFields: [
-      {
-        name: 'question_type',
-        type: 'string',
-        required: false,
-        description: 'ai | fixed | exercise.',
-      },
       {
         name: 'title',
         type: 'string',
@@ -1162,7 +1178,7 @@ const TRAIL_STAGE_QUESTION_ENDPOINTS: DocEndpoint[] = [
         name: 'correct_option',
         type: 'string | null',
         required: false,
-        description: 'Para exercise; null se mudou para ai/fixed.',
+        description: 'Conforme trail_stages.stage_type (exercise vs demais).',
       },
       {
         name: 'options',
@@ -2987,9 +3003,10 @@ export function DocPage() {
       <section className="panel doc__section">
         <h2>Trail stage questions — endpoints</h2>
         <p className="doc__section-intro muted">
-          Collection <code>trail_stage_questions</code>: etapas sequenciais dentro de um
-          stage (contexto, exercícios, etc.). O prompt da IA não é gravado aqui — apenas
-          conteúdo, tipo e dados de correção quando for <code>exercise</code>.
+          Collection <code>trail_stage_questions</code>: só o conteúdo sequencial das
+          etapas (título, texto, correção quando o stage for exercício). Comportamento (
+          <code>stage_type</code>, <code>prompt</code>) fica em <code>trail_stages</code>.
+          A API valida contra o <code>stage_type</code> do stage referenciado.
         </p>
 
         <div className="doc__endpoints">
