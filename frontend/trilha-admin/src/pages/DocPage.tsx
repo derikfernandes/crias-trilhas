@@ -15,7 +15,13 @@ type DocEndpoint = {
   description: string
   auth: boolean
   pathParams?: { name: string; type: string; description: string }[]
-  queryParams?: { name: string; type: string; required: boolean; description: string }[]
+  queryParams?: {
+    name: string
+    type: string
+    required: boolean
+    description: string
+    example?: string
+  }[]
   bodyFields?: {
     name: string
     type: string
