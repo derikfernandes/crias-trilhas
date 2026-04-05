@@ -261,9 +261,16 @@ export async function advanceStudentTrailStage(
         ? stageRaw + 1
         : 2
 
+    const questionRaw = data.current_question_number
+    const current_question_number =
+      typeof questionRaw === 'number' &&
+      Number.isFinite(questionRaw) &&
+      questionRaw >= 1
+        ? questionRaw
+        : 1
+
     const patch: Record<string, unknown> = {
       current_stage_number: nextStage,
-      current_question_number: 1,
       last_interaction_at: now,
       updated_at: now,
     }
@@ -290,7 +297,7 @@ export async function advanceStudentTrailStage(
       institution_id,
       trail_id,
       current_stage_number: nextStage,
-      current_question_number: 1,
+      current_question_number,
       status: newStatus,
     }
     return pos

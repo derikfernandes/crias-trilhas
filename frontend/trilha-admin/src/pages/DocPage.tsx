@@ -1466,7 +1466,7 @@ const STUDENT_TRAIL_ENDPOINTS: DocEndpoint[] = [
     path: '/student_trails/?action=advance_stage',
     title: 'Avançar para o próximo stage',
     description:
-      'Incrementa `current_stage_number` e reseta `current_question_number` para 1. Mesma regra de status/started_at do avanço de questão.',
+      'Incrementa `current_stage_number` e mantém `current_question_number` como está. Mesma regra de status/started_at do avanço de questão.',
     auth: true,
     queryParams: [
       {
@@ -1492,7 +1492,7 @@ const STUDENT_TRAIL_ENDPOINTS: DocEndpoint[] = [
       {
         code: '200',
         description:
-          'Objeto com novo stage atual e questão 1. `last_interaction_at` é atualizado.',
+          'Objeto com novo stage atual; `current_question_number` inalterado. `last_interaction_at` é atualizado.',
       },
       {
         code: '400',
