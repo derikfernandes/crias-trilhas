@@ -277,9 +277,11 @@ export function StudentDetailPage() {
                 {logs.slice(0, 200).map((row) => (
                   <tr key={row.id}>
                     <td>
-                      {row.created_at?.toDate
-                        ? row.created_at.toDate().toLocaleString('pt-BR')
-                        : '—'}
+                      {row.created_at_brasilia
+                        ? row.created_at_brasilia
+                        : row.created_at?.toDate
+                          ? row.created_at.toDate().toLocaleString('pt-BR')
+                          : '—'}
                     </td>
                     <td>
                       <code>{row.trail_id}</code>

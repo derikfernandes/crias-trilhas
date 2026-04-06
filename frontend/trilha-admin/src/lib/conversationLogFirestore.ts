@@ -38,6 +38,7 @@ export function snapshotToConversationLog(
       message_type: null,
       metadata: null,
       created_at: null,
+      created_at_brasilia: null,
     }
   }
 
@@ -99,6 +100,10 @@ export function snapshotToConversationLog(
     message_type,
     metadata,
     created_at: asTimestampOrNull((data as Record<string, unknown>).created_at),
+    created_at_brasilia:
+      typeof (data as Record<string, unknown>).created_at_brasilia === 'string'
+        ? ((data as Record<string, unknown>).created_at_brasilia as string)
+        : null,
   }
 }
 

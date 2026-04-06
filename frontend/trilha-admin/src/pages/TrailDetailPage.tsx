@@ -344,9 +344,11 @@ export function TrailDetailPage() {
                     {sortedLogs.slice(0, 200).map((row) => (
                       <tr key={row.id}>
                         <td>
-                          {row.created_at?.toDate
-                            ? row.created_at.toDate().toLocaleString('pt-BR')
-                            : '—'}
+                          {row.created_at_brasilia
+                            ? row.created_at_brasilia
+                            : row.created_at?.toDate
+                              ? row.created_at.toDate().toLocaleString('pt-BR')
+                              : '—'}
                         </td>
                         <td>
                           <code>{row.student_id}</code>

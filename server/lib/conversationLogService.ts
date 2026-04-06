@@ -10,6 +10,7 @@ import type {
   ConversationLogSender,
   ConversationLogMessageType,
 } from './conversationLogValidation'
+import { formatDateTimeBrasilia } from './brasiliaDateTime'
 
 export type ConversationLogRuntime = {
   id: string
@@ -29,9 +30,10 @@ export async function createConversationLog(
   db: Firestore,
   collectionName: string,
   data: ConversationLogCreatePayload,
-): Promise<{ id: string }> {
+): Promise<{ id: string; created_at_brasilia: string }> {
   const ref = db.collection(collectionName).doc()
   const now = FieldValue.serverTimestamp()
+  const created_at_brasilia = formatDateTimeBrasilia()
 
   const doc: Record<string, unknown> = {
     student_id: data.student_id,
@@ -44,11 +46,12 @@ export async function createConversationLog(
     message_type: data.message_type ?? null,
     metadata: data.metadata ?? null,
     created_at: now,
+    created_at_brasilia,
   }
 
   await ref.set(doc)
 
-  return { id: ref.id }
+  return { id: ref.id, created_at_brasilia }
 }
 
 export async function getConversationLogById(
