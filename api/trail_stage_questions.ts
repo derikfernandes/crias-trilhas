@@ -216,11 +216,67 @@ async function handleRequest(request: Request): Promise<Response> {
   const qActive = parseBoolean(url.searchParams.get('active') ?? '') ?? null
   const qIsReleased =
     parseBoolean(url.searchParams.get('is_released') ?? '') ?? null
+  const action = url.searchParams.get('action')?.trim().toLowerCase() ?? null
   const simple = url.searchParams.get('simple') === '1'
   const deactivateOnly = url.searchParams.get('deactivate') === '1'
 
   try {
     if (request.method === 'GET') {
+      if (action === 'max') {
+        if (!qTrailId || qStageNumber === null) {
+          return respond(400, {
+            error:
+              'Para action=max, informe trail_id e stage_number válidos.',
+          })
+        }
+
+        const snap = await listTrailStageQuestionsForStage(
+          db,
+          collection,
+          qTrailId,
+          qStageNumber,
+        )
+
+        const filtered = snap.docs
+          .map((d) =>
+            toTrailStageQuestionOutput(
+              (d.data() ?? {}) as Record<string, unknown>,
+              d.id,
+              { simple: true },
+            ),
+          )
+          .filter((item) => {
+            if (qActive === null) return true
+            return typeof item.active === 'boolean'
+              ? item.active === qActive
+              : false
+          })
+          .filter((item) => {
+            if (qIsReleased === null) return true
+            return typeof item.is_released === 'boolean'
+              ? item.is_released === qIsReleased
+              : false
+          })
+
+        const last = filtered[filtered.length - 1] as Json | undefined
+        const max_question_number =
+          last && typeof last.question_number === 'number'
+            ? last.question_number
+            : null
+
+        return jsonResponse(
+          {
+            trail_id: qTrailId,
+            stage_number: qStageNumber,
+            max_question_number,
+            next_question_number:
+              max_question_number === null ? 1 : max_question_number + 1,
+            total_questions: filtered.length,
+          },
+          { status: 200, headers: corsHeaders() },
+        )
+      }
+
       if (id) {
         const snap = await getTrailStageQuestionById(db, collection, id)
         if (!snap.exists) return respond(404, { error: 'Not found' })

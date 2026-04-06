@@ -1011,6 +1011,57 @@ const TRAIL_STAGE_ENDPOINTS: DocEndpoint[] = [
 
 const TRAIL_STAGE_QUESTION_ENDPOINTS: DocEndpoint[] = [
   {
+    id: 'get-trail-stage-question-max',
+    method: 'GET',
+    path: '/trail_stage_questions/',
+    title: 'Obter maior question_number do stage',
+    description:
+      'Use `action=max` com `trail_id` e `stage_number`. Retorna `max_question_number`, `next_question_number` e `total_questions` (aceita filtros opcionais `active` e `is_released`).',
+    auth: true,
+    queryParams: [
+      {
+        name: 'action',
+        type: 'string',
+        required: true,
+        description: 'Valor fixo: `max`.',
+        example: 'max',
+      },
+      {
+        name: 'trail_id',
+        type: 'string',
+        required: true,
+        description: 'ID da trilha.',
+      },
+      {
+        name: 'stage_number',
+        type: 'number (inteiro)',
+        required: true,
+        description: 'Número do stage.',
+      },
+      {
+        name: 'active',
+        type: 'boolean',
+        required: false,
+        description: 'Opcional: calcula o maior apenas entre questões ativas/inativas.',
+      },
+      {
+        name: 'is_released',
+        type: 'boolean',
+        required: false,
+        description: 'Opcional: calcula o maior apenas entre questões liberadas/não liberadas.',
+      },
+    ],
+    responses: [
+      {
+        code: '200',
+        description:
+          'Ex.: `{ trail_id, stage_number, max_question_number, next_question_number, total_questions }`.',
+      },
+      { code: '400', description: 'trail_id ou stage_number ausentes/inválidos para action=max.' },
+      { code: '401', description: 'Não autenticado.' },
+    ],
+  },
+  {
     id: 'get-trail-stage-question-list',
     method: 'GET',
     path: '/trail_stage_questions/',
