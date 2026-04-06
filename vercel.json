@@ -89,6 +89,16 @@
     },
     { "source": "/student_trails/", "destination": "/api/student_trails" },
     { "source": "/student_trails", "destination": "/api/student_trails" },
+    { "source": "/conversation_logs/", "destination": "/api/conversation_logs" },
+    { "source": "/conversation_logs", "destination": "/api/conversation_logs" },
+    {
+      "source": "/conversation_logs/:id([A-Za-z0-9_-]+)",
+      "destination": "/api/conversation_logs?id=:id"
+    },
+    {
+      "source": "/conversation_logs/:id([A-Za-z0-9_-]+)/",
+      "destination": "/api/conversation_logs?id=:id"
+    },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }

@@ -119,6 +119,9 @@ function toConversationLogOutput(
       ? (data.metadata as Record<string, unknown>)
       : null
 
+  const created_at_brasilia =
+    typeof data.created_at_brasilia === 'string' ? data.created_at_brasilia : null
+
   return {
     id,
     student_id,
@@ -131,6 +134,7 @@ function toConversationLogOutput(
     message_type,
     metadata,
     created_at: serializeTs(data.created_at),
+    created_at_brasilia,
   }
 }
 
@@ -295,7 +299,7 @@ async function handleRequest(request: Request): Promise<Response> {
       const validated = validateConversationLogCreate(payload)
       if (validated.ok === false) return respond(400, { error: validated.error })
 
-      const { id: newId } = await createConversationLog(
+      const { id: newId, created_at_brasilia } = await createConversationLog(
         db,
         collection,
         validated.data,
@@ -314,6 +318,7 @@ async function handleRequest(request: Request): Promise<Response> {
           message_type: validated.data.message_type,
           metadata: validated.data.metadata,
           created_at: null,
+          created_at_brasilia,
         },
         { status: 201, headers: corsHeaders() },
       )

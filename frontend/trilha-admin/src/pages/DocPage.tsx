@@ -2027,7 +2027,7 @@ const CONVERSATION_LOG_ENDPOINTS: DocEndpoint[] = [
     path: '/conversation_logs/',
     title: 'Criar log de conversa',
     description:
-      'Cria um registro de histórico na collection `conversation_logs` para cada mensagem trocada entre o sistema/chatbot e o aluno.',
+      'Cria um registro de histórico na collection `conversation_logs` para cada mensagem trocada entre o sistema/chatbot e o aluno. No momento do POST, o servidor grava automaticamente `created_at` (timestamp do Firestore) e `created_at_brasilia` (string com data/hora atual em America/Sao_Paulo, formato `YYYY-MM-DDTHH:mm:ss`). Não é necessário (nem recomendado) enviar `created_at_brasilia` no body.',
     auth: true,
     bodyFields: [
       {
@@ -2114,7 +2114,7 @@ const CONVERSATION_LOG_ENDPOINTS: DocEndpoint[] = [
       {
         code: '201',
         description:
-          'Log criado com sucesso. A resposta traz o documento salvo (sem o timestamp resolvido em created_at).',
+          'Log criado com sucesso. A resposta inclui `created_at_brasilia` (já preenchido) e `created_at` null até o cliente ler o documento (server timestamp).',
       },
       { code: '400', description: 'Payload inválido ou campos obrigatórios ausentes.' },
       { code: '401', description: 'Não autenticado.' },

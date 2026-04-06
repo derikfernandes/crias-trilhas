@@ -20,5 +20,7 @@ export interface ConversationLog {
   message_type: ConversationLogMessageType | null
   metadata: Record<string, unknown> | null
   created_at: Timestamp | null
+  /** Preenchido no POST: data/hora de criação em America/Sao_Paulo (YYYY-MM-DDTHH:mm:ss). */
+  created_at_brasilia: string | null
 }
 
