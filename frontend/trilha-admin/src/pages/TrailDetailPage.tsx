@@ -5,6 +5,8 @@ import {
   doc,
   onSnapshot,
   query,
+  runTransaction,
+  serverTimestamp,
   where,
 } from 'firebase/firestore'
 import { db } from '../lib/firebase'
@@ -17,7 +19,12 @@ import {
 import {
   STUDENT_TRAILS_COLLECTION,
   snapshotToStudentTrail,
+  studentTrailDocId,
 } from '../lib/studentTrailFirestore'
+import {
+  snapshotToStudent,
+  STUDENTS_COLLECTION,
+} from '../lib/studentFirestore'
 import {
   CONVERSATION_LOGS_COLLECTION,
   snapshotToConversationLog,
@@ -28,7 +35,8 @@ import type { Trail } from '../types/trail'
 import type { TrailStage } from '../types/trailStage'
 import type { StudentTrail } from '../types/studentTrail'
 import type { ConversationLog } from '../types/conversationLog'
-import { trailStageQuestionsPath } from '../lib/paths'
+import type { Student } from '../types/student'
+import { studentPath, trailStageQuestionsPath } from '../lib/paths'
 
 export function TrailDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -43,6 +51,18 @@ export function TrailDetailPage() {
   const [studentTrails, setStudentTrails] = useState<StudentTrail[]>([])
   const [loadingStudentTrails, setLoadingStudentTrails] = useState(true)
   const [studentTrailsError, setStudentTrailsError] = useState<string | null>(null)
+
+  const [institutionStudents, setInstitutionStudents] = useState<Student[]>([])
+  const [loadingInstitutionStudents, setLoadingInstitutionStudents] =
+    useState(false)
+  const [institutionStudentsError, setInstitutionStudentsError] = useState<
+    string | null
+  >(null)
+
+  const [showAddStudentPicker, setShowAddStudentPicker] = useState(false)
+  const [studentPickerFilter, setStudentPickerFilter] = useState('')
+  const [addStudentError, setAddStudentError] = useState<string | null>(null)
+  const [addingStudentId, setAddingStudentId] = useState<string | null>(null)
 
   const [logs, setLogs] = useState<ConversationLog[]>([])
   const [loadingLogs, setLoadingLogs] = useState(true)
@@ -69,6 +89,37 @@ export function TrailDetailPage() {
       return mb - ma
     })
   }, [studentTrails])
+
+  const studentNameById = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const s of institutionStudents) {
+      m.set(s.id, s.name?.trim() || s.id)
+    }
+    return m
+  }, [institutionStudents])
+
+  const eligibleStudentsToAdd = useMemo(() => {
+    const inTrail = new Set(studentTrails.map((st) => st.student_id))
+    return institutionStudents
+      .filter((s) => s.institution_id && !inTrail.has(s.id))
+      .sort((a, b) =>
+        (a.name || a.id).localeCompare(b.name || b.id, 'pt-BR', {
+          sensitivity: 'base',
+        }),
+      )
+  }, [institutionStudents, studentTrails])
+
+  const filteredEligibleStudents = useMemo(() => {
+    const q = studentPickerFilter.trim().toLowerCase()
+    if (!q) return eligibleStudentsToAdd
+    const digits = studentPickerFilter.replace(/\D/g, '')
+    return eligibleStudentsToAdd.filter((s) => {
+      if (s.name.toLowerCase().includes(q)) return true
+      if (s.id.toLowerCase().includes(q)) return true
+      if (digits.length > 0 && s.phone_number.includes(digits)) return true
+      return false
+    })
+  }, [eligibleStudentsToAdd, studentPickerFilter])
 
   const sortedLogs = useMemo(() => {
     return [...logs].sort((a, b) => {
@@ -206,6 +257,94 @@ export function TrailDetailPage() {
     return () => unsub?.()
   }, [id])
 
+  useEffect(() => {
+    if (!db || !trail?.institution_id?.trim()) {
+      setInstitutionStudents([])
+      setInstitutionStudentsError(null)
+      setLoadingInstitutionStudents(false)
+      return
+    }
+
+    const instId = trail.institution_id.trim()
+    setLoadingInstitutionStudents(true)
+    setInstitutionStudentsError(null)
+
+    const q = query(
+      collection(db, STUDENTS_COLLECTION),
+      where('institution_id', '==', instId),
+    )
+
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        const next = snap.docs.map(snapshotToStudent)
+        next.sort((a, b) =>
+          (a.name || a.id).localeCompare(b.name || b.id, 'pt-BR', {
+            sensitivity: 'base',
+          }),
+        )
+        setInstitutionStudents(next)
+        setInstitutionStudentsError(null)
+        setLoadingInstitutionStudents(false)
+      },
+      (err) => {
+        setInstitutionStudentsError(err.message)
+        setInstitutionStudents([])
+        setLoadingInstitutionStudents(false)
+      },
+    )
+
+    return () => unsub()
+  }, [trail?.institution_id])
+
+  useEffect(() => {
+    if (!showAddStudentPicker) {
+      setStudentPickerFilter('')
+      setAddStudentError(null)
+    }
+  }, [showAddStudentPicker])
+
+  async function addStudentToTrail(studentId: string) {
+    if (!db || !id || !trail?.institution_id?.trim()) return
+    const instId = trail.institution_id.trim()
+    setAddStudentError(null)
+    setAddingStudentId(studentId)
+    const docRef = doc(
+      db,
+      STUDENT_TRAILS_COLLECTION,
+      studentTrailDocId(studentId, id),
+    )
+    try {
+      await runTransaction(db, async (transaction) => {
+        const snap = await transaction.get(docRef)
+        if (snap.exists()) {
+          throw new Error(
+            'Este aluno já possui registro nesta trilha (student_trails).',
+          )
+        }
+        transaction.set(docRef, {
+          student_id: studentId,
+          institution_id: instId,
+          trail_id: id,
+          current_stage_number: 1,
+          current_question_number: 1,
+          status: 'not_started',
+          started_at: null,
+          completed_at: null,
+          last_interaction_at: null,
+          created_at: serverTimestamp(),
+          updated_at: serverTimestamp(),
+        })
+      })
+    } catch (e) {
+      const msg =
+        e instanceof Error ? e.message : 'Não foi possível adicionar o aluno.'
+      setAddStudentError(msg)
+    } finally {
+      setAddingStudentId(null)
+    }
+  }
+
   if (!id) {
     return (
       <p className="banner banner--error" role="alert">
@@ -244,10 +383,101 @@ export function TrailDetailPage() {
           <section className="panel">
             <div className="panel__head">
               <h2>Alunos na trilha (student_trails)</h2>
-              {loadingStudentTrails ? (
-                <span className="muted">Carregando progresso…</span>
-              ) : null}
+              <div className="trail-panel-head__aside">
+                {loadingStudentTrails ? (
+                  <span className="muted">Carregando progresso…</span>
+                ) : null}
+                <button
+                  type="button"
+                  className="btn btn--primary btn--small"
+                  disabled={!trail.institution_id?.trim() || !db}
+                  onClick={() =>
+                    setShowAddStudentPicker((open) => !open)
+                  }
+                >
+                  {showAddStudentPicker ? 'Fechar' : 'Adicionar aluno'}
+                </button>
+              </div>
             </div>
+
+            {showAddStudentPicker ? (
+              <div className="trail-add-students">
+                {!trail.institution_id?.trim() ? (
+                  <p className="muted" role="status">
+                    Defina a instituição da trilha no formulário acima para listar
+                    alunos.
+                  </p>
+                ) : institutionStudentsError ? (
+                  <p className="banner banner--error" role="alert">
+                    {institutionStudentsError}
+                  </p>
+                ) : loadingInstitutionStudents ? (
+                  <p className="muted" role="status">
+                    Carregando alunos da instituição…
+                  </p>
+                ) : (
+                  <>
+                    <p className="muted" style={{ margin: '0 0 0.75rem' }}>
+                      Alunos da mesma instituição da trilha que ainda não têm registro
+                      em <code>student_trails</code>. A inclusão grava direto no
+                      Firestore (sem API nova).
+                    </p>
+                    <div className="trail-add-students__filter">
+                      <label className="muted" htmlFor="trail-add-student-filter">
+                        Filtrar por nome ou ID
+                      </label>
+                      <input
+                        id="trail-add-student-filter"
+                        type="search"
+                        autoComplete="off"
+                        placeholder="Ex.: nome ou parte do ID"
+                        value={studentPickerFilter}
+                        onChange={(e) => setStudentPickerFilter(e.target.value)}
+                      />
+                    </div>
+                    {addStudentError ? (
+                      <p className="banner banner--error" role="alert">
+                        {addStudentError}
+                      </p>
+                    ) : null}
+                    {eligibleStudentsToAdd.length === 0 ? (
+                      <p className="muted" role="status">
+                        {institutionStudents.length === 0
+                          ? 'Não há alunos cadastrados nesta instituição.'
+                          : 'Todos os alunos desta instituição já estão nesta trilha.'}
+                      </p>
+                    ) : filteredEligibleStudents.length === 0 ? (
+                      <p className="muted" role="status">
+                        Nenhum aluno corresponde ao filtro.
+                      </p>
+                    ) : (
+                      <ul className="trail-add-students__list">
+                        {filteredEligibleStudents.map((s) => (
+                          <li key={s.id}>
+                            <div className="trail-add-students__row">
+                              <span>
+                                <strong>{s.name || '—'}</strong>{' '}
+                                <code className="muted">{s.id}</code>
+                              </span>
+                              <button
+                                type="button"
+                                className="btn btn--small btn--ghost"
+                                disabled={addingStudentId !== null || !db}
+                                onClick={() => void addStudentToTrail(s.id)}
+                              >
+                                {addingStudentId === s.id
+                                  ? 'Adicionando…'
+                                  : 'Incluir na trilha'}
+                              </button>
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </>
+                )}
+              </div>
+            ) : null}
 
             {studentTrailsError ? (
               <p className="banner banner--error" role="alert">
@@ -257,9 +487,10 @@ export function TrailDetailPage() {
 
             {!loadingStudentTrails && sortedStudentTrails.length === 0 ? (
               <p className="muted">
-                Nenhum aluno com progresso registrado nesta trilha ainda. Os registros
-                em <code>student_trails</code> são atualizados pelo chatbot conforme os
-                alunos avançam.
+                Nenhum aluno com progresso registrado nesta trilha ainda. Use{' '}
+                <strong>Adicionar aluno</strong> para criar o vínculo ou aguarde o
+                chatbot criar/atualizar <code>student_trails</code> quando o aluno
+                avançar.
               </p>
             ) : null}
 
@@ -280,7 +511,14 @@ export function TrailDetailPage() {
                     {sortedStudentTrails.map((row) => (
                       <tr key={row.id}>
                         <td>
-                          <code>{row.student_id}</code>
+                          <Link
+                            className="table__name-link"
+                            to={studentPath(row.student_id)}
+                          >
+                            {studentNameById.get(row.student_id) ?? (
+                              <code>{row.student_id}</code>
+                            )}
+                          </Link>
                         </td>
                         <td>{row.current_stage_number}</td>
                         <td>{row.current_question_number}</td>

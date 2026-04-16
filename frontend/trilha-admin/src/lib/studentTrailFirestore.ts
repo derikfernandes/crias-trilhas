@@ -7,6 +7,11 @@ import type { StudentTrail } from '../types/studentTrail'
 
 export const STUDENT_TRAILS_COLLECTION = 'student_trails'
 
+/** Mesmo formato que `api/lib/studentTrailService.studentTrailDocId`. */
+export function studentTrailDocId(studentId: string, trailId: string): string {
+  return `${studentId}_trail_${trailId}`
+}
+
 function asTimestampOrNull(value: unknown): Timestamp | null {
   if (!value || typeof value !== 'object') return null
   if (
