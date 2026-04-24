@@ -7,13 +7,18 @@ import {
   query,
   runTransaction,
   serverTimestamp,
+  updateDoc,
   where,
 } from 'firebase/firestore'
 import { db } from '../lib/firebase'
-import { TRAILS_COLLECTION, snapshotToTrail } from '../lib/trailFirestore'
+import { INSTITUTIONS_COLLECTION } from '../lib/institutionFirestore'
+import {
+  formatTrailTs,
+  TRAILS_COLLECTION,
+  snapshotToTrail,
+} from '../lib/trailFirestore'
 import {
   TRAIL_STAGES_COLLECTION,
-  formatTrailStageTs,
   snapshotToTrailStage,
 } from '../lib/trailStageFirestore'
 import {
@@ -70,6 +75,14 @@ export function TrailDetailPage() {
 
   const [showStageForm, setShowStageForm] = useState(false)
   const [editStageId, setEditStageId] = useState<string | null>(null)
+  const [createStageNumber, setCreateStageNumber] = useState<number | null>(null)
+  const [showTrailForm, setShowTrailForm] = useState(false)
+  const [defaultStepsInput, setDefaultStepsInput] = useState('')
+  const [savingDefaultSteps, setSavingDefaultSteps] = useState(false)
+  const [defaultStepsError, setDefaultStepsError] = useState<string | null>(null)
+  const [institutions, setInstitutions] = useState<{ id: string; name: string }[]>([])
+  const [savingInstitutionId, setSavingInstitutionId] = useState(false)
+  const [institutionError, setInstitutionError] = useState<string | null>(null)
 
   const editingStage = useMemo(() => {
     if (!editStageId) return null
@@ -128,6 +141,49 @@ export function TrailDetailPage() {
       return mb - ma
     })
   }, [logs])
+
+  const stagesByNumber = useMemo(() => {
+    const map = new Map<number, TrailStage>()
+    for (const stage of stages) {
+      map.set(stage.stage_number, stage)
+    }
+    return map
+  }, [stages])
+
+  const phaseCountPreview = useMemo(() => {
+    const parsed = Number.parseInt(defaultStepsInput.trim(), 10)
+    if (Number.isFinite(parsed) && parsed >= 1) return parsed
+    const fallback = trail?.default_total_steps_per_stage ?? 1
+    return fallback >= 1 ? fallback : 1
+  }, [defaultStepsInput, trail?.default_total_steps_per_stage])
+
+  const flowPhases = useMemo(() => {
+    return Array.from({ length: phaseCountPreview }, (_, idx) => {
+      const number = idx + 1
+      const stage = stagesByNumber.get(number) ?? null
+      return { number, stage }
+    })
+  }, [phaseCountPreview, stagesByNumber])
+
+  const maxCreatedStageNumber = useMemo(() => {
+    if (stages.length === 0) return 0
+    return Math.max(...stages.map((s) => s.stage_number))
+  }, [stages])
+
+  const missingStageCount = useMemo(() => {
+    return flowPhases.filter((item) => item.stage === null).length
+  }, [flowPhases])
+
+  const parsedDefaultStepsInput = useMemo(() => {
+    const parsed = Number.parseInt(defaultStepsInput.trim(), 10)
+    if (!Number.isFinite(parsed) || !Number.isInteger(parsed)) return null
+    return parsed
+  }, [defaultStepsInput])
+
+  const reducingBelowCreated = useMemo(() => {
+    if (parsedDefaultStepsInput === null) return false
+    return parsedDefaultStepsInput < maxCreatedStageNumber
+  }, [parsedDefaultStepsInput, maxCreatedStageNumber])
 
   useEffect(() => {
     if (!db || !id) return
@@ -304,6 +360,32 @@ export function TrailDetailPage() {
     }
   }, [showAddStudentPicker])
 
+  useEffect(() => {
+    if (!db) return
+    const unsub = onSnapshot(collection(db, INSTITUTIONS_COLLECTION), (snap) => {
+      const next = snap.docs.map((d) => {
+        const data = d.data()
+        const nm =
+          typeof (data as Record<string, unknown>).name === 'string'
+            ? ((data as Record<string, unknown>).name as string)
+            : ''
+        return { id: d.id, name: nm }
+      })
+      next.sort((a, b) =>
+        (a.name || a.id).localeCompare(b.name || b.id, 'pt-BR', {
+          sensitivity: 'base',
+        }),
+      )
+      setInstitutions(next)
+    })
+    return () => unsub()
+  }, [])
+
+  useEffect(() => {
+    setDefaultStepsInput(String(trail?.default_total_steps_per_stage ?? 0))
+    setDefaultStepsError(null)
+  }, [trail?.default_total_steps_per_stage])
+
   async function addStudentToTrail(studentId: string) {
     if (!db || !id || !trail?.institution_id?.trim()) return
     const instId = trail.institution_id.trim()
@@ -345,6 +427,62 @@ export function TrailDetailPage() {
     }
   }
 
+  async function saveDefaultStepsPerStage() {
+    if (!db || !id) return
+    const trimmed = defaultStepsInput.trim()
+    const parsed = Number.parseInt(trimmed, 10)
+
+    if (!trimmed || !Number.isFinite(parsed) || !Number.isInteger(parsed)) {
+      setDefaultStepsError('Informe um número inteiro válido.')
+      return
+    }
+    if (parsed < 1) {
+      setDefaultStepsError('A quantidade de fases deve ser maior ou igual a 1.')
+      return
+    }
+    if (parsed < maxCreatedStageNumber) {
+      setDefaultStepsError(
+        `Você já possui fases criadas até a fase ${maxCreatedStageNumber}. Para reduzir para ${parsed}, exclua primeiro as fases excedentes.`,
+      )
+      return
+    }
+
+    setSavingDefaultSteps(true)
+    setDefaultStepsError(null)
+    try {
+      await updateDoc(doc(db, TRAILS_COLLECTION, id), {
+        default_total_steps_per_stage: parsed,
+        updated_at: serverTimestamp(),
+      })
+    } catch (e) {
+      setDefaultStepsError(
+        e instanceof Error ? e.message : 'Erro ao salvar quantidade de itens.',
+      )
+    } finally {
+      setSavingDefaultSteps(false)
+    }
+  }
+
+  async function handleInstitutionChange(nextInstitutionId: string) {
+    if (!db || !id || !nextInstitutionId) return
+    if (trail?.institution_id === nextInstitutionId) return
+
+    setSavingInstitutionId(true)
+    setInstitutionError(null)
+    try {
+      await updateDoc(doc(db, TRAILS_COLLECTION, id), {
+        institution_id: nextInstitutionId,
+        updated_at: serverTimestamp(),
+      })
+    } catch (e) {
+      setInstitutionError(
+        e instanceof Error ? e.message : 'Não foi possível atualizar a instituição.',
+      )
+    } finally {
+      setSavingInstitutionId(false)
+    }
+  }
+
   if (!id) {
     return (
       <p className="banner banner--error" role="alert">
@@ -357,12 +495,35 @@ export function TrailDetailPage() {
     <>
       <header className="admin__header">
         <h1>Trilha</h1>
-        <p className="admin__actions">
-          <Link className="btn btn--ghost" to="/">
-            ← Voltar ao início
+        <p className="admin__actions trail-header-actions">
+          <Link className="btn btn--ghost" to="/gerenciamento">
+            ← Gerenciamento
           </Link>
+          <label className="trail-header-select">
+            <span className="muted">Instituição</span>
+            <select
+              value={trail?.institution_id ?? ''}
+              onChange={(e) => void handleInstitutionChange(e.target.value)}
+              disabled={loading || !trail || savingInstitutionId || institutions.length === 0}
+            >
+              <option value="" disabled>
+                Selecione…
+              </option>
+              {institutions.map((inst) => (
+                <option key={inst.id} value={inst.id}>
+                  {inst.name ? `${inst.name} (${inst.id})` : inst.id}
+                </option>
+              ))}
+            </select>
+          </label>
         </p>
       </header>
+
+      {institutionError ? (
+        <p className="banner banner--error" role="alert">
+          {institutionError}
+        </p>
+      ) : null}
 
       {error ? (
         <p className="banner banner--error" role="alert">
@@ -378,7 +539,223 @@ export function TrailDetailPage() {
         </p>
       ) : (
         <>
-          <TrailForm docId={id} initial={trail} />
+          <section className="panel trail-cadastro-panel">
+            <div className="trail-cadastro-summary">
+              <div className="trail-cadastro-top">
+                <p className="trail-cadastro-title">
+                  {trail.name || 'Trilha'}{' '}
+                  <span className="muted trail-cadastro-id">({trail.id})</span>
+                </p>
+                <button
+                  type="button"
+                  className="btn btn--ghost btn--small"
+                  onClick={() => setShowTrailForm((open) => !open)}
+                >
+                  {showTrailForm ? 'Fechar cadastro' : 'Abrir cadastro'}
+                </button>
+              </div>
+              <dl className="trail-cadastro-details">
+                <div className="trail-cadastro-details__row">
+                  <dt>Matéria</dt>
+                  <dd>{trail.subject || '—'}</dd>
+                </div>
+                <div className="trail-cadastro-details__row">
+                  <dt>Descrição</dt>
+                  <dd
+                    className="trail-cadastro-ellipsis"
+                    title={trail.description || '—'}
+                  >
+                    {trail.description || '—'}
+                  </dd>
+                </div>
+                <div className="trail-cadastro-details__row">
+                  <dt>Ativa</dt>
+                  <dd>{trail.active ? 'Sim' : 'Não'}</dd>
+                </div>
+                <div className="trail-cadastro-details__row">
+                  <dt>Criada em</dt>
+                  <dd>{formatTrailTs(trail.created_at)}</dd>
+                </div>
+                <div className="trail-cadastro-details__row">
+                  <dt>Atualizada em</dt>
+                  <dd>{formatTrailTs(trail.updated_at)}</dd>
+                </div>
+              </dl>
+            </div>
+          </section>
+
+          {showTrailForm ? (
+            <TrailForm
+              docId={id}
+              initial={trail}
+              onSaved={() => setShowTrailForm(false)}
+            />
+          ) : null}
+
+          <section className="panel">
+              <div className="panel__head">
+                <h2>Estrutura da trilha</h2>
+              </div>
+
+              <div className="trail-structure-config">
+                <label className="field trail-structure-count">
+                  <span>Quantidade de fases (stages)</span>
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    min={1}
+                    step={1}
+                    value={defaultStepsInput}
+                    onChange={(e) => setDefaultStepsInput(e.target.value)}
+                  />
+                </label>
+                <button
+                  type="button"
+                  className="btn btn--primary"
+                  onClick={() => void saveDefaultStepsPerStage()}
+                  disabled={savingDefaultSteps || reducingBelowCreated}
+                >
+                  {savingDefaultSteps ? 'Salvando…' : 'Salvar quantidade'}
+                </button>
+              </div>
+
+              {reducingBelowCreated ? (
+                <p className="banner banner--error" role="alert">
+                  Você já possui fases criadas até a fase {maxCreatedStageNumber}.
+                  Para diminuir a quantidade, exclua primeiro as fases excedentes.
+                </p>
+              ) : null}
+
+              {defaultStepsError ? (
+                <p className="form__error" role="alert">
+                  {defaultStepsError}
+                </p>
+              ) : null}
+
+              {missingStageCount > 0 ? (
+                <p className="banner banner--error" role="alert">
+                  Existem {missingStageCount} fase(s) sem cadastro neste fluxo.
+                  Complete as fases marcadas como "Stage ainda não criado".
+                </p>
+              ) : null}
+
+              <div className="trail-flow" role="region" aria-label="Fluxo da estrutura da trilha">
+                <div className="trail-flow__etapa">Etapa</div>
+                <div className="trail-flow__stages">
+                  {flowPhases.map((item, idx) => (
+                    <div key={item.number}>
+                      <div className="trail-flow__row">
+                        <div className="trail-flow__stage-card">
+                          <strong>Fase {item.number}</strong>
+                          <span className="muted">
+                            {item.stage?.title?.trim() || 'Stage ainda não criado'}
+                          </span>
+                          {item.stage ? (
+                            <div className="trail-flow__actions">
+                              <Link
+                                className="btn btn--small btn--ghost"
+                                to={trailStageQuestionsPath(id, item.number)}
+                              >
+                                Questões
+                              </Link>
+                              <button
+                                type="button"
+                                className="btn btn--small btn--ghost"
+                                onClick={() => {
+                                  setCreateStageNumber(null)
+                                  setEditStageId(item.stage!.id)
+                                  setShowStageForm(true)
+                                }}
+                              >
+                                Editar
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="trail-flow__actions">
+                              <button
+                                type="button"
+                                className="btn btn--small btn--primary"
+                                onClick={() => {
+                                  setCreateStageNumber(item.number)
+                                  setEditStageId(null)
+                                  setShowStageForm(true)
+                                }}
+                              >
+                                Criar
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      {idx < flowPhases.length - 1 ? (
+                        <div className="trail-flow__down" aria-hidden>
+                          ↓
+                        </div>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="trail-structure-note" role="note">
+                <p>Defina quantas fases existem dentro de cada etapa da trilha.</p>
+                <p>
+                  Cada etapa seguirá essa mesma estrutura, garantindo um padrão de
+                  aprendizado (por exemplo: contexto, explicação, prática).
+                </p>
+                <p>
+                  <strong>⚠️ Esse número é fixo para toda a trilha.</strong>
+                </p>
+              </div>
+
+              {loadingStages ? (
+                <p className="muted">Carregando stages…</p>
+              ) : stagesError ? (
+                <p className="banner banner--error" role="alert">
+                  {stagesError}
+                </p>
+              ) : null}
+
+              {showStageForm ? (
+                editStageId ? (
+                  editingStage ? (
+                    <TrailStageForm
+                      trailId={id}
+                      docId={editStageId ?? undefined}
+                      initial={editingStage}
+                      suggestedStageNumber={createStageNumber ?? suggestedNextStageNumber}
+                      onCancel={() => {
+                        setShowStageForm(false)
+                        setEditStageId(null)
+                        setCreateStageNumber(null)
+                      }}
+                      onSaved={() => {
+                        setShowStageForm(false)
+                        setEditStageId(null)
+                        setCreateStageNumber(null)
+                      }}
+                    />
+                  ) : (
+                    <p className="muted">Carregando stage…</p>
+                  )
+                ) : (
+                  <TrailStageForm
+                    trailId={id}
+                    docId={undefined}
+                    initial={undefined}
+                    suggestedStageNumber={createStageNumber ?? suggestedNextStageNumber}
+                    onCancel={() => {
+                      setShowStageForm(false)
+                      setCreateStageNumber(null)
+                    }}
+                    onSaved={() => {
+                      setShowStageForm(false)
+                      setCreateStageNumber(null)
+                    }}
+                  />
+                )
+              ) : null}
+          </section>
 
           <section className="panel">
             <div className="panel__head">
@@ -610,132 +987,6 @@ export function TrailDetailPage() {
             ) : null}
           </section>
 
-          <section className="panel">
-            <div className="panel__head">
-              <h2>Stages</h2>
-              <p className="panel__actions">
-                <button
-                  type="button"
-                  className="btn btn--primary"
-                  onClick={() => {
-                    setEditStageId(null)
-                    setShowStageForm(true)
-                  }}
-                  disabled={!id}
-                >
-                  + Novo stage
-                </button>
-              </p>
-            </div>
-
-            {showStageForm ? (
-              editStageId ? (
-                editingStage ? (
-                  <TrailStageForm
-                    trailId={id}
-                    docId={editStageId ?? undefined}
-                    initial={editingStage}
-                    suggestedStageNumber={suggestedNextStageNumber}
-                    onCancel={() => {
-                      setShowStageForm(false)
-                      setEditStageId(null)
-                    }}
-                    onSaved={() => {
-                      setShowStageForm(false)
-                      setEditStageId(null)
-                    }}
-                  />
-                ) : (
-                  <p className="muted">Carregando stage…</p>
-                )
-              ) : (
-                <TrailStageForm
-                  trailId={id}
-                  docId={undefined}
-                  initial={undefined}
-                  suggestedStageNumber={suggestedNextStageNumber}
-                  onCancel={() => {
-                    setShowStageForm(false)
-                  }}
-                  onSaved={() => {
-                    setShowStageForm(false)
-                  }}
-                />
-              )
-            ) : null}
-
-            {loadingStages ? (
-              <p className="muted">Carregando stages…</p>
-            ) : stagesError ? (
-              <p className="banner banner--error" role="alert">
-                {stagesError}
-              </p>
-            ) : (
-              <div className="table-wrap">
-                <table className="table">
-                  <thead>
-                    <tr>
-                      <th>#</th>
-                      <th>Title</th>
-                      <th>Tipo</th>
-                      <th>Prompt</th>
-                      <th>Ativo</th>
-                      <th>Liberado</th>
-                      <th>Atualizado</th>
-                      <th></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {stages.length === 0 ? (
-                      <tr>
-                        <td colSpan={8} className="muted table__empty">
-                          Nenhum stage cadastrado.
-                        </td>
-                      </tr>
-                    ) : (
-                      stages.map((s) => (
-                        <tr key={s.id}>
-                          <td>{s.stage_number}</td>
-                          <td>{s.title || '—'}</td>
-                          <td>
-                            <code>{s.stage_type}</code>
-                          </td>
-                          <td className="table__text">
-                            {s.prompt
-                              ? s.prompt.length > 48
-                                ? `${s.prompt.slice(0, 48)}…`
-                                : s.prompt
-                              : '—'}
-                          </td>
-                          <td>{s.active ? 'Sim' : 'Não'}</td>
-                          <td>{s.is_released ? 'Sim' : 'Não'}</td>
-                          <td>{formatTrailStageTs(s.updated_at ?? s.created_at)}</td>
-                          <td className="table__actions">
-                            <Link
-                              className="btn btn--small btn--ghost"
-                              to={trailStageQuestionsPath(id, s.stage_number)}
-                            >
-                              Questões
-                            </Link>
-                            <button
-                              type="button"
-                              className="btn btn--small btn--ghost"
-                              onClick={() => {
-                                setEditStageId(s.id)
-                                setShowStageForm(true)
-                              }}
-                            >
-                              Editar
-                            </button>
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </section>
         </>
       )}
     </>

@@ -52,6 +52,11 @@ export function StudentDetailPage() {
   const [linkStatus, setLinkStatus] = useState<StudentTrailStatus>('not_started')
   const [linkBusy, setLinkBusy] = useState(false)
   const [linkError, setLinkError] = useState<string | null>(null)
+  const [editingTrailId, setEditingTrailId] = useState<string | null>(null)
+  const [editStage, setEditStage] = useState('')
+  const [editQuestion, setEditQuestion] = useState('')
+  const [editBusy, setEditBusy] = useState(false)
+  const [editError, setEditError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!db || !id) return
@@ -266,6 +271,62 @@ export function StudentDetailPage() {
     }
   }
 
+  function handleStartEditTrail(row: StudentTrail) {
+    setEditingTrailId(row.id)
+    setEditStage(String(row.current_stage_number))
+    setEditQuestion(String(row.current_question_number))
+    setEditError(null)
+  }
+
+  function handleCancelEditTrail() {
+    if (editBusy) return
+    setEditingTrailId(null)
+    setEditStage('')
+    setEditQuestion('')
+    setEditError(null)
+  }
+
+  function parsePositiveInteger(value: string, label: string): number {
+    const n = Number(value)
+    if (!Number.isInteger(n) || n < 1) {
+      throw new Error(`${label} deve ser um número inteiro maior ou igual a 1.`)
+    }
+    return n
+  }
+
+  async function handleSaveTrailPosition(row: StudentTrail) {
+    if (!db) return
+    setEditBusy(true)
+    setEditError(null)
+    try {
+      const nextStage = parsePositiveInteger(editStage, 'Stage atual')
+      const nextQuestion = parsePositiveInteger(editQuestion, 'Questão atual')
+      const firestore = db
+      await runTransaction(firestore, async (tx) => {
+        const ref = doc(firestore, STUDENT_TRAILS_COLLECTION, row.id)
+        const snap = await tx.get(ref)
+        if (!snap.exists()) {
+          throw new Error('Registro de trilha do aluno não encontrado.')
+        }
+        tx.update(ref, {
+          current_stage_number: nextStage,
+          current_question_number: nextQuestion,
+          updated_at: serverTimestamp(),
+          last_interaction_at: serverTimestamp(),
+        })
+      })
+      setEditingTrailId(null)
+      setEditStage('')
+      setEditQuestion('')
+    } catch (err) {
+      setEditError(
+        err instanceof Error ? err.message : 'Erro ao atualizar progresso da trilha.',
+      )
+    } finally {
+      setEditBusy(false)
+    }
+  }
+
   if (!id) {
     return (
       <p className="banner banner--error" role="alert">
@@ -319,6 +380,11 @@ export function StudentDetailPage() {
             {trailsError}
           </p>
         ) : null}
+        {editError ? (
+          <p className="banner banner--error" role="alert">
+            {editError}
+          </p>
+        ) : null}
 
         {!loadingTrails && sortedTrails.length === 0 ? (
           <p className="muted">
@@ -339,6 +405,7 @@ export function StudentDetailPage() {
                   <th>Status</th>
                   <th>Início</th>
                   <th>Última interação</th>
+                  <th>Ações</th>
                 </tr>
               </thead>
               <tbody>
@@ -347,6 +414,7 @@ export function StudentDetailPage() {
                   const label = meta?.name?.trim()
                     ? meta.name
                     : row.trail_id
+                  const isEditing = editingTrailId === row.id
                   return (
                     <tr key={row.id}>
                       <td>
@@ -358,8 +426,36 @@ export function StudentDetailPage() {
                           </div>
                         ) : null}
                       </td>
-                      <td>{row.current_stage_number}</td>
-                      <td>{row.current_question_number}</td>
+                      <td>
+                        {isEditing ? (
+                          <input
+                            type="number"
+                            min={1}
+                            step={1}
+                            value={editStage}
+                            onChange={(e) => setEditStage(e.target.value)}
+                            disabled={editBusy}
+                            style={{ width: '6.5rem' }}
+                          />
+                        ) : (
+                          row.current_stage_number
+                        )}
+                      </td>
+                      <td>
+                        {isEditing ? (
+                          <input
+                            type="number"
+                            min={1}
+                            step={1}
+                            value={editQuestion}
+                            onChange={(e) => setEditQuestion(e.target.value)}
+                            disabled={editBusy}
+                            style={{ width: '6.5rem' }}
+                          />
+                        ) : (
+                          row.current_question_number
+                        )}
+                      </td>
                       <td>
                         <code>{row.status}</code>
                       </td>
@@ -374,6 +470,39 @@ export function StudentDetailPage() {
                               .toDate()
                               .toLocaleString('pt-BR')
                           : '—'}
+                      </td>
+                      <td>
+                        <div className="table__actions">
+                          {isEditing ? (
+                            <>
+                              <button
+                                type="button"
+                                className="btn btn--small btn--primary"
+                                onClick={() => void handleSaveTrailPosition(row)}
+                                disabled={editBusy}
+                              >
+                                {editBusy ? 'Salvando…' : 'Salvar'}
+                              </button>
+                              <button
+                                type="button"
+                                className="btn btn--small btn--ghost"
+                                onClick={handleCancelEditTrail}
+                                disabled={editBusy}
+                              >
+                                Cancelar
+                              </button>
+                            </>
+                          ) : (
+                            <button
+                              type="button"
+                              className="btn btn--small btn--ghost"
+                              onClick={() => handleStartEditTrail(row)}
+                              disabled={editBusy}
+                            >
+                              Editar
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   )
