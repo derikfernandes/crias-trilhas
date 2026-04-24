@@ -11,8 +11,8 @@ export function InstitutionNewPage() {
           definitivo.
         </p>
         <p className="admin__actions">
-          <Link className="btn btn--ghost" to="/">
-            ← Voltar ao início
+          <Link className="btn btn--ghost" to="/gerenciamento">
+            ← Gerenciamento
           </Link>
         </p>
       </header>

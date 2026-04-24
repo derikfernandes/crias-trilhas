@@ -2,7 +2,8 @@ import type {
   DocumentSnapshot,
   QueryDocumentSnapshot,
 } from 'firebase/firestore'
-import type { Trail } from '../types/trail'
+import type { PhaseBlueprint, Trail } from '../types/trail'
+import type { TrailStageType } from '../types/trailStage'
 
 export const TRAILS_COLLECTION = 'trails'
 
@@ -15,6 +16,26 @@ function toIntLoose(v: unknown): number | null {
     if (Number.isFinite(n) && Number.isInteger(n)) return n
   }
   return null
+}
+
+function parseStageTypeLoose(v: unknown): TrailStageType | null {
+  return v === 'ai' || v === 'fixed' || v === 'exercise' ? v : null
+}
+
+function parsePhaseBlueprintLoose(raw: unknown): PhaseBlueprint | null {
+  if (!raw || typeof raw !== 'object') return null
+  const o = raw as Record<string, unknown>
+  const title = typeof o.title === 'string' ? o.title : ''
+  const stage_type = parseStageTypeLoose(o.stage_type)
+  if (!stage_type) return null
+  const promptRaw = o.prompt
+  const prompt =
+    promptRaw === null || promptRaw === undefined
+      ? null
+      : typeof promptRaw === 'string'
+        ? promptRaw
+        : null
+  return { title, stage_type, prompt }
 }
 
 export function snapshotToTrail(
@@ -40,6 +61,15 @@ export function snapshotToTrail(
   const rawSteps = toIntLoose(data.default_total_steps_per_stage)
   const steps = rawSteps === null ? defaultSteps : rawSteps
 
+  let phase_blueprint: PhaseBlueprint[] | null = null
+  const bpRaw = data.phase_blueprint
+  if (Array.isArray(bpRaw)) {
+    const parsed = bpRaw
+      .map(parsePhaseBlueprintLoose)
+      .filter((x): x is PhaseBlueprint => x !== null)
+    if (parsed.length > 0) phase_blueprint = parsed
+  }
+
   return {
     id: d.id,
     institution_id: typeof data.institution_id === 'string' ? data.institution_id : '',
@@ -50,6 +80,7 @@ export function snapshotToTrail(
     active: typeof data.active === 'boolean' ? data.active : false,
     created_at: data.created_at ?? null,
     updated_at: data.updated_at ?? null,
+    phase_blueprint,
   }
 }
 
