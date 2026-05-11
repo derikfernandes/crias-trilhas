@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   collection,
@@ -16,8 +16,20 @@ import {
   trailStageQuestionDocId,
 } from '../lib/trailStageQuestionFirestore'
 import { trailPath } from '../lib/paths'
+import { TrailStructureEditor } from './TrailStructureEditor'
+import { TrailContentEditor } from './TrailContentEditor'
+import {
+  buildQuestionFromStructure,
+  defaultEtapasFromStructure,
+  defaultStructurePhases,
+  newId,
+  newStructurePhase,
+  syncQuestionPhasesWithStructure,
+  type ContentEtapa,
+  type ContentPhase,
+  type StructurePhase,
+} from '../lib/trailEditor'
 import type { Trail } from '../types/trail'
-import type { TrailStageType } from '../types/trailStage'
 
 type Props = {
   /** Se ausente, modo criação. */
@@ -31,135 +43,6 @@ type Props = {
 }
 
 const DEFAULT_STEPS = 8
-const MENTOR_IMAGE_URL =
-  'https://i.ibb.co/Q3Cb3SYm/Chat-GPT-Image-21-de-abr-de-2026-11-28-13-removebg-preview.png'
-
-const PHASE_TYPE_LABELS: Record<TrailStageType, string> = {
-  ai: 'IA (conteúdo gerado)',
-  fixed: 'Texto fixo',
-  exercise: 'Exercício',
-}
-
-const PHASE_TYPE_META: Record<TrailStageType, { icon: string; desc: string }> = {
-  ai: { icon: '🧠', desc: 'A IA gera o conteúdo automaticamente' },
-  fixed: { icon: '📄', desc: 'Você escreve o conteúdo manualmente' },
-  exercise: { icon: '✏️', desc: 'Alunos respondem exercícios' },
-}
-
-/** Rótulos curtos no diagrama “fluxo de etapas”. */
-const FLOW_TYPE_SHORT: Record<TrailStageType, string> = {
-  ai: 'IA gera conteúdo',
-  fixed: 'Texto fixo',
-  exercise: 'Exercício',
-}
-
-const FLOW_DEMO_ETAPA_COUNT = 4
-
-type StructurePhase = {
-  id: string
-  title: string
-  stage_type: TrailStageType
-  /** Texto do “comando da IA”; obrigatório quando `stage_type === 'ai'`. */
-  prompt: string
-}
-
-type ContentPhase = {
-  phaseId: string
-  phaseTitle: string
-  phaseType: TrailStageType
-  aiPrompt: string
-  fixedText: string
-  exerciseQuestions: string[]
-}
-
-type ContentQuestion = {
-  id: string
-  title: string
-  phases: ContentPhase[]
-}
-
-type ContentEtapa = {
-  id: string
-  name: string
-  /** Quando true, todas as `trail_stage_questions` desta etapa ficam `is_released`. */
-  released: boolean
-  questions: ContentQuestion[]
-}
-
-function newStructurePhase(title: string, stage_type: TrailStageType): StructurePhase {
-  const id =
-    typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-      ? crypto.randomUUID()
-      : `p-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
-  return { id, title, stage_type, prompt: '' }
-}
-
-function defaultStructurePhases(): StructurePhase[] {
-  return [
-    newStructurePhase('Introdução', 'ai'),
-    newStructurePhase('Explicação', 'fixed'),
-    newStructurePhase('Prática', 'exercise'),
-  ]
-}
-
-function newId(prefix: string): string {
-  return typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-    ? `${prefix}-${crypto.randomUUID()}`
-    : `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
-}
-
-function buildQuestionFromStructure(
-  title: string,
-  phases: StructurePhase[],
-): ContentQuestion {
-  return {
-    id: newId('q'),
-    title,
-    phases: phases.map((phase) => ({
-      phaseId: phase.id,
-      phaseTitle: phase.title.trim() || 'Fase',
-      phaseType: phase.stage_type,
-      aiPrompt: phase.stage_type === 'ai' ? phase.prompt.trim() : '',
-      fixedText: '',
-      exerciseQuestions: [],
-    })),
-  }
-}
-
-function defaultEtapasFromStructure(_phases: StructurePhase[]): ContentEtapa[] {
-  const firstQuestion = buildQuestionFromStructure('Questão 1', _phases)
-  return [
-    {
-      id: newId('et'),
-      name: 'Etapa 1',
-      released: true,
-      questions: [firstQuestion],
-    },
-  ]
-}
-
-function syncQuestionPhasesWithStructure(
-  question: ContentQuestion,
-  structure: StructurePhase[],
-): ContentPhase[] {
-  return structure.map((phaseDef, idx) => {
-    const existing =
-      question.phases[idx] ??
-      question.phases.find((p) => p.phaseId === phaseDef.id) ??
-      null
-
-    return {
-      phaseId: phaseDef.id,
-      phaseTitle: phaseDef.title.trim() || `Fase ${idx + 1}`,
-      phaseType: phaseDef.stage_type,
-      aiPrompt:
-        existing?.aiPrompt ??
-        (phaseDef.stage_type === 'ai' ? phaseDef.prompt.trim() : ''),
-      fixedText: existing?.fixedText ?? '',
-      exerciseQuestions: existing?.exerciseQuestions ?? [],
-    }
-  })
-}
 
 function sanitizeStepsInt(v: string): number | null {
   const trimmed = v.trim()
@@ -209,23 +92,9 @@ export function TrailForm({ docId, fixedInstitutionId, initial, onSaved }: Props
     return trimmed.length > 140 ? `${trimmed.slice(0, 140)}...` : trimmed
   }, [description])
 
-  const structurePhaseRows = useMemo(() => {
-    const rows: StructurePhase[][] = []
-    for (let i = 0; i < structurePhases.length; i += 3) {
-      rows.push(structurePhases.slice(i, i + 3))
-    }
-    return rows
-  }, [structurePhases])
-
   const selectedEtapa = useMemo(
     () => contentEtapas.find((et) => et.id === selectedEtapaId) ?? null,
     [contentEtapas, selectedEtapaId],
-  )
-
-  const selectedQuestion = useMemo(
-    () =>
-      selectedEtapa?.questions.find((q) => q.id === selectedQuestionId) ?? null,
-    [selectedEtapa, selectedQuestionId],
   )
 
   useEffect(() => {
@@ -347,6 +216,22 @@ export function TrailForm({ docId, fixedInstitutionId, initial, onSaved }: Props
       setSelectedEtapaId(created.id)
       setSelectedQuestionId(autoQuestion.id)
       return [...prev, created]
+    })
+  }
+
+  function removeEtapa(etapaId: string) {
+    setContentEtapas((prev) => {
+      if (prev.length <= 1) {
+        setFormError('A trilha precisa de pelo menos 1 etapa.')
+        return prev
+      }
+      const removedIndex = prev.findIndex((et) => et.id === etapaId)
+      if (removedIndex < 0) return prev
+      const next = prev.filter((et) => et.id !== etapaId)
+      const nextSelected = next[Math.min(removedIndex, next.length - 1)] ?? null
+      setSelectedEtapaId(nextSelected?.id ?? null)
+      setSelectedQuestionId(nextSelected?.questions[0]?.id ?? null)
+      return next
     })
   }
 
@@ -770,294 +655,26 @@ export function TrailForm({ docId, fixedInstitutionId, initial, onSaved }: Props
       ) : null}
 
       {!isEdit && createStep === 3 && createdTrailId ? (
-        <div className="trail-content-editor">
-          <header className="trail-content-editor__header">
-            <div>
-              <h3>Conteúdos da trilha ✨</h3>
-              <p className="muted">
-                Crie as questões da etapa e o sistema aplicará cada uma delas em todas as fases da
-                trilha, seguindo a ordem definida na estrutura.
-              </p>
-            </div>
-            <aside className="trail-content-editor__tip">
-              <strong>🧩 Como funciona?</strong>
-              <p className="muted">
-                Cada questão percorre todas as fases da etapa. O CRIAS aplica o conteúdo em todas
-                elas, mantendo o fluxo consistente.
-              </p>
-            </aside>
-          </header>
-
-          {formError ? (
-            <p className="banner banner--error" role="alert">
-              {formError}
-            </p>
-          ) : null}
-
-          <div className="trail-content-editor__grid">
-            <section className="trail-content-editor__col">
-              <div className="trail-content-editor__col-head">
-                <h4>Etapas da trilha</h4>
-                <button type="button" className="btn btn--ghost btn--small" onClick={addEtapa}>
-                  + Nova etapa
-                </button>
-              </div>
-              <div className="trail-content-editor__list">
-                {contentEtapas.map((etapa, idx) => (
-                  <div key={etapa.id} className="trail-content-editor__item-row">
-                    <button
-                      type="button"
-                      className={`trail-content-editor__item ${selectedEtapaId === etapa.id ? 'is-active' : ''}`}
-                      onClick={() => setSelectedEtapaId(etapa.id)}
-                    >
-                      <div className="trail-content-editor__item-title">
-                        Etapa {idx + 1} — {etapa.name.trim() || `Etapa ${idx + 1}`}
-                      </div>
-                      <div className="muted">
-                        {etapa.questions.length} questão{etapa.questions.length === 1 ? '' : 'ões'}
-                      </div>
-                    </button>
-                    <button
-                      type="button"
-                      className={`trail-content-editor__etapa-release btn btn--small ${etapa.released ? 'is-released' : ''}`}
-                      aria-pressed={etapa.released}
-                      aria-label={
-                        etapa.released
-                          ? 'Etapa liberada para o aluno em todas as fases. Ativar para bloquear.'
-                          : 'Etapa bloqueada. Ativar para liberar todas as fases para o aluno.'
-                      }
-                      title={
-                        etapa.released
-                          ? 'Etapa liberada: todas as fases visíveis para o aluno. Clique para bloquear.'
-                          : 'Etapa bloqueada. Clique para liberar todas as fases para o aluno.'
-                      }
-                      onClick={(e) => {
-                        e.preventDefault()
-                        e.stopPropagation()
-                        toggleEtapaReleased(etapa.id)
-                      }}
-                    >
-                      <span className="trail-content-editor__etapa-release-icon" aria-hidden>
-                        {etapa.released ? '🔓' : '🔒'}
-                      </span>
-                      <span className="trail-content-editor__etapa-release-label">
-                        {etapa.released ? 'Liberada' : 'Bloqueada'}
-                      </span>
-                    </button>
-                  </div>
-                ))}
-              </div>
-              <p className="trail-content-editor__support muted">
-                💡 A estrutura (fases) é a mesma em todas as etapas. O conteúdo muda em cada
-                questão.
-              </p>
-            </section>
-
-            <section className="trail-content-editor__col trail-content-editor__col--editor">
-              {selectedEtapa ? (
-                <>
-                  <div className="trail-content-editor__col-head trail-content-editor__col-head--etapa">
-                    <h4>
-                      Conteúdo da etapa "{selectedEtapa.name.trim() || 'Sem nome'}"
-                    </h4>
-                    <button
-                      type="button"
-                      className={`trail-content-editor__etapa-release trail-content-editor__etapa-release--inline btn btn--small btn--ghost ${selectedEtapa.released ? 'is-released' : ''}`}
-                      aria-pressed={selectedEtapa.released}
-                      aria-label={
-                        selectedEtapa.released
-                          ? 'Etapa liberada em todas as fases. Ativar para bloquear.'
-                          : 'Liberar etapa para o aluno em todas as fases.'
-                      }
-                      title={
-                        selectedEtapa.released
-                          ? 'Etapa liberada (todas as fases). Clique para bloquear.'
-                          : 'Clique para liberar esta etapa (todas as fases) para o aluno.'
-                      }
-                      onClick={() => toggleEtapaReleased(selectedEtapa.id)}
-                    >
-                      <span className="trail-content-editor__etapa-release-icon" aria-hidden>
-                        {selectedEtapa.released ? '🔓' : '🔒'}
-                      </span>
-                      {selectedEtapa.released ? 'Liberada' : 'Liberar etapa'}
-                    </button>
-                  </div>
-                  <p className="muted">Cada questão percorre todas as fases da trilha.</p>
-                  <div className="trail-content-editor__list">
-                    {selectedEtapa.questions.length === 0 ? (
-                      <p className="muted">Nenhuma questão criada nesta etapa.</p>
-                    ) : (
-                      selectedEtapa.questions.map((question, qIdx) => (
-                        <div
-                          key={question.id}
-                          className={`trail-content-editor__question ${selectedQuestionId === question.id ? 'is-active' : ''}`}
-                        >
-                          <div
-                            className="trail-content-editor__question-main"
-                            onClick={() => setSelectedQuestionId(question.id)}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter' || e.key === ' ') {
-                                e.preventDefault()
-                                setSelectedQuestionId(question.id)
-                              }
-                            }}
-                            role="button"
-                            tabIndex={0}
-                          >
-                            <span className="trail-content-editor__question-index">{qIdx + 1}</span>
-                            <input
-                              type="text"
-                              value={question.title}
-                              onChange={(e) => updateQuestionTitle(question.id, e.target.value)}
-                              aria-label={`Título da questão ${qIdx + 1}`}
-                            />
-                          </div>
-                        </div>
-                      ))
-                    )}
-                  </div>
-
-                  {selectedQuestion ? (
-                    <>
-                  <h4>
-                    Editando: <span>"{selectedQuestion.title || 'Nova questão'}"</span>
-                  </h4>
-                  <div className="trail-content-editor__phases-flow">
-                    {selectedQuestion.phases.map((phase, idx) => (
-                      <Fragment key={`${selectedQuestion.id}-${phase.phaseId}`}>
-                        {idx > 0 ? (
-                          <span className="trail-content-editor__phase-arrow" aria-hidden>
-                            →
-                          </span>
-                        ) : null}
-                        <div className="trail-content-editor__phase-chip">
-                          <strong>Fase {idx + 1}</strong>
-                          <span>{phase.phaseTitle}</span>
-                          <small>
-                            {phase.phaseType === 'ai'
-                              ? 'IA'
-                              : phase.phaseType === 'fixed'
-                                ? 'Texto'
-                                : 'Exercício'}
-                          </small>
-                        </div>
-                      </Fragment>
-                    ))}
-                  </div>
-
-                  <div className="trail-content-editor__phase-editors">
-                    {selectedQuestion.phases.map((phase, idx) => (
-                      <article
-                        key={`editor-${selectedQuestion.id}-${phase.phaseId}`}
-                        className="trail-content-editor__phase-editor"
-                      >
-                        <h5>
-                          Fase {idx + 1} — {phase.phaseTitle}
-                        </h5>
-
-                        {phase.phaseType === 'ai' ? (
-                          <>
-                            <p className="trail-content-editor__phase-type">🧠 Conteúdo gerado por IA</p>
-                            <label className="field">
-                              <span>Conteúdo da fase</span>
-                              <textarea
-                                rows={6}
-                                value={phase.fixedText}
-                                onChange={(e) =>
-                                  updateQuestionPhase(selectedQuestion.id, phase.phaseId, {
-                                    fixedText: e.target.value,
-                                  })
-                                }
-                                placeholder="Texto-base desta fase para a IA trabalhar."
-                              />
-                            </label>
-                            <p className="muted">A IA usa o conteúdo desta fase como base.</p>
-                          </>
-                        ) : null}
-
-                        {phase.phaseType === 'fixed' ? (
-                          <>
-                            <p className="trail-content-editor__phase-type">📄 Texto fixo</p>
-                            <label className="field">
-                              <span>Conteúdo</span>
-                              <textarea
-                                rows={6}
-                                value={phase.fixedText}
-                                onChange={(e) =>
-                                  updateQuestionPhase(selectedQuestion.id, phase.phaseId, {
-                                    fixedText: e.target.value,
-                                  })
-                                }
-                              />
-                            </label>
-                          </>
-                        ) : null}
-
-                        {phase.phaseType === 'exercise' ? (
-                          <>
-                            <p className="trail-content-editor__phase-type">✏️ Exercício</p>
-                            <label className="field">
-                              <span>Pergunta do exercício</span>
-                              <textarea
-                                rows={4}
-                                value={phase.exerciseQuestions[0] ?? ''}
-                                onChange={(e) =>
-                                  updateQuestionPhase(selectedQuestion.id, phase.phaseId, {
-                                    exerciseQuestions: [e.target.value],
-                                  })
-                                }
-                                placeholder="Escreva a pergunta desta fase de exercício."
-                              />
-                            </label>
-                          </>
-                        ) : null}
-                        <div className="trail-content-editor__phase-save">
-                          <button
-                            type="button"
-                            className="btn btn--small btn--primary"
-                            onClick={() => markPhaseSaved(selectedQuestion.id, phase.phaseId)}
-                          >
-                            Salvar
-                          </button>
-                          {phaseSaved[`${selectedQuestion.id}:${phase.phaseId}`] ? (
-                            <span className="trail-content-editor__saved">
-                              ✅ Salvo
-                            </span>
-                          ) : null}
-                        </div>
-                      </article>
-                    ))}
-                  </div>
-                    </>
-                  ) : (
-                    <p className="muted">Selecione ou crie uma questão para editar os conteúdos por fase.</p>
-                  )}
-                </>
-              ) : (
-                <p className="muted">Selecione uma etapa para criar e editar as questões.</p>
-              )}
-            </section>
-          </div>
-
-          <footer className="trail-content-editor__footer">
-            <button
-              type="button"
-              className="btn btn--ghost"
-              onClick={() => setCreateStep(2)}
-              disabled={savingContentDraft}
-            >
-              ← Voltar
-            </button>
-            <button
-              type="button"
-              className="btn btn--primary"
-              onClick={handleSaveAndContinue}
-              disabled={savingContentDraft}
-            >
-              {savingContentDraft ? 'Salvando…' : 'Salvar e continuar →'}
-            </button>
-          </footer>
-        </div>
+        <TrailContentEditor
+          contentEtapas={contentEtapas}
+          selectedEtapaId={selectedEtapaId}
+          selectedQuestionId={selectedQuestionId}
+          phaseSaved={phaseSaved}
+          saving={savingContentDraft}
+          error={formError}
+          onAddEtapa={addEtapa}
+          onRemoveEtapa={removeEtapa}
+          onSelectEtapa={setSelectedEtapaId}
+          onSelectQuestion={setSelectedQuestionId}
+          onToggleEtapaReleased={toggleEtapaReleased}
+          onUpdateQuestionTitle={updateQuestionTitle}
+          onUpdateQuestionPhase={updateQuestionPhase}
+          onMarkPhaseSaved={markPhaseSaved}
+          onBack={() => setCreateStep(2)}
+          onSave={() => void handleSaveAndContinue()}
+          backLabel="← Voltar"
+          saveLabel="Salvar e continuar →"
+        />
       ) : (
         <form className="form trail-create-form" onSubmit={handleSubmit}>
         {isEdit || createStep === 1 ? (
@@ -1146,298 +763,17 @@ export function TrailForm({ docId, fixedInstitutionId, initial, onSaved }: Props
         {isEdit || createStep === 2 ? (
           <>
             {!isEdit ? (
-              <div className="trail-structure">
-                <header className="trail-structure__hero">
-                  <div>
-                    <h3>Como funciona o CRIAS ✨</h3>
-                    <p className="muted">
-                      Você define a estrutura da sua trilha do seu jeito. Essa estrutura será
-                      usada em todas as etapas, sendo repetida com novos conteúdos.
-                    </p>
-                  </div>
-                  <div className="trail-structure__hero-aside">
-                    <img src={MENTOR_IMAGE_URL} alt="Mentor CRIAS" />
-                    <div className="trail-structure__hero-note">
-                      Você tem total liberdade para criar a estrutura que fizer mais sentido
-                      para o seu conteúdo!
-                    </div>
-                  </div>
-                </header>
-
-                <section className="trail-structure__panel">
-                  <h4>
-                    <span>1</span> Você monta a estrutura da trilha
-                  </h4>
-                  <p className="muted">
-                    Defina quantas fases vão ter dentro de cada etapa da trilha e escolha o
-                    tipo de cada uma.
-                  </p>
-                  <div className="trail-structure__controls">
-                    <label className="field field--inline">
-                      <input
-                        type="checkbox"
-                        checked={active}
-                        onChange={(e) => setActive(e.target.checked)}
-                      />
-                      <span>Trilha ativa desde o início</span>
-                    </label>
-                  </div>
-                  <div className="trail-structure__builder">
-                    <div className="trail-structure__cards">
-                      {structurePhaseRows.map((row, rowIndex) => (
-                        <div
-                          className="trail-structure__cards-row"
-                          key={row.map((p) => p.id).join('-')}
-                        >
-                          {row.map((phase, colIndex) => {
-                            const index = rowIndex * 3 + colIndex
-                            return (
-                              <Fragment key={phase.id}>
-                                {colIndex > 0 ? (
-                                  <span
-                                    className="trail-structure__cards-chevron"
-                                    aria-hidden
-                                  >
-                                    ›
-                                  </span>
-                                ) : null}
-                                <article
-                                  className={`trail-structure__phase-card trail-structure__phase-card--i${index % 3}`}
-                                >
-                                  <div className="trail-structure__phase-card-head">
-                                    <div className="trail-structure__phase-head-main">
-                                      <span
-                                        className="trail-structure__phase-index"
-                                        aria-hidden
-                                      >
-                                        {index + 1}
-                                      </span>
-                                      <input
-                                        type="text"
-                                        className="trail-structure__phase-title"
-                                        value={phase.title}
-                                        onChange={(e) =>
-                                          updateStructurePhase(phase.id, {
-                                            title: e.target.value,
-                                          })
-                                        }
-                                        placeholder={`Fase ${index + 1}`}
-                                        autoComplete="off"
-                                        aria-label={`Nome da fase ${index + 1}`}
-                                      />
-                                    </div>
-                                    {structurePhases.length > 1 ? (
-                                      <button
-                                        type="button"
-                                        className="trail-structure__phase-remove"
-                                        onClick={() =>
-                                          removeStructurePhase(phase.id)
-                                        }
-                                        aria-label={`Remover fase ${index + 1}`}
-                                      >
-                                        ×
-                                      </button>
-                                    ) : null}
-                                  </div>
-                                  <div className="trail-structure__phase-type-box">
-                                    <span
-                                      className="trail-structure__phase-type-icon"
-                                      aria-hidden
-                                    >
-                                      {PHASE_TYPE_META[phase.stage_type].icon}
-                                    </span>
-                                    <select
-                                      className="trail-structure__phase-type-select"
-                                      value={phase.stage_type}
-                                      onChange={(e) => {
-                                        const next = e.target.value as TrailStageType
-                                        updateStructurePhase(phase.id, {
-                                          stage_type: next,
-                                          prompt: next === 'ai' ? phase.prompt : '',
-                                        })
-                                      }}
-                                      aria-label={`Tipo da fase ${index + 1}`}
-                                    >
-                                      {(
-                                        Object.keys(
-                                          PHASE_TYPE_LABELS,
-                                        ) as TrailStageType[]
-                                      ).map((t) => (
-                                        <option key={t} value={t}>
-                                          {PHASE_TYPE_LABELS[t]}
-                                        </option>
-                                      ))}
-                                    </select>
-                                  </div>
-                                  <p className="trail-structure__phase-desc">
-                                    {PHASE_TYPE_META[phase.stage_type].desc}
-                                  </p>
-                                  {phase.stage_type === 'ai' ? (
-                                    <label className="trail-structure__phase-prompt">
-                                      <span className="trail-structure__phase-prompt-label">
-                                        Comando da IA
-                                      </span>
-                                      <textarea
-                                        className="trail-structure__phase-prompt-input"
-                                        value={phase.prompt}
-                                        onChange={(e) =>
-                                          updateStructurePhase(phase.id, {
-                                            prompt: e.target.value,
-                                          })
-                                        }
-                                        rows={3}
-                                        placeholder="Descreva o que a IA deve gerar nesta fase…"
-                                        aria-label={`Comando da IA da fase ${index + 1}`}
-                                      />
-                                    </label>
-                                  ) : null}
-                                </article>
-                              </Fragment>
-                            )
-                          })}
-                          {rowIndex === structurePhaseRows.length - 1 ? (
-                            <>
-                              <span
-                                className="trail-structure__cards-chevron"
-                                aria-hidden
-                              >
-                                ›
-                              </span>
-                              <button
-                                type="button"
-                                className="trail-structure__add-card"
-                                onClick={addStructurePhase}
-                              >
-                                <strong aria-hidden>+</strong>
-                                <span className="muted">Adicionar fase</span>
-                              </button>
-                            </>
-                          ) : null}
-                        </div>
-                      ))}
-                    </div>
-                    <aside className="trail-structure__decision-box">
-                      <h5>Você decide:</h5>
-                      <ul>
-                        <li>Quantas fases terá cada etapa</li>
-                        <li>Qual o nome de cada fase</li>
-                        <li>Qual o tipo de cada fase</li>
-                        <li>O comando da IA nas fases com IA</li>
-                      </ul>
-                    </aside>
-                  </div>
-
-                  <div
-                    className="trail-structure__flow"
-                    aria-label="Visualização: sua estrutura fixa repetida em cada etapa"
-                  >
-                    <p className="trail-structure__flow-intro muted">
-                      Assim sua estrutura se aplica a cada etapa da trilha:
-                    </p>
-                    <div className="trail-structure__flow-main">
-                      <div className="trail-structure__flow-base">
-                        <div className="trail-structure__flow-base-head">
-                          <span className="trail-structure__flow-lock" aria-hidden>
-                            🔒
-                          </span>
-                          <strong>Sua estrutura (fixa)</strong>
-                        </div>
-                        <ul className="trail-structure__flow-base-list">
-                          {structurePhases.map((phase, i) => (
-                            <li
-                              key={phase.id}
-                              className={`trail-structure__flow-line trail-structure__flow-line--i${i % 3}`}
-                            >
-                              <span className="trail-structure__flow-badge">{i + 1}</span>
-                              <span className="trail-structure__flow-phase-title">
-                                {phase.title.trim() || `Fase ${i + 1}`}
-                              </span>
-                              <span className="trail-structure__flow-mini-type">
-                                <span aria-hidden>{PHASE_TYPE_META[phase.stage_type].icon}</span>
-                                <span>
-                                  {phase.stage_type === 'ai'
-                                    ? 'IA'
-                                    : phase.stage_type === 'fixed'
-                                      ? 'Texto'
-                                      : 'Exercício'}
-                                </span>
-                              </span>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-
-                      <span className="trail-structure__flow-arrow" aria-hidden>
-                        →
-                      </span>
-
-                      <div className="trail-structure__flow-etapas">
-                        <div className="trail-structure__flow-ribbon">
-                          <span className="trail-structure__flow-ribbon-line" aria-hidden />
-                          <span className="trail-structure__flow-ribbon-text">
-                            Repetido quantas vezes você quiser
-                          </span>
-                          <span className="trail-structure__flow-ribbon-line" aria-hidden />
-                        </div>
-                        <div className="trail-structure__flow-etapas-row">
-                          {Array.from({ length: FLOW_DEMO_ETAPA_COUNT }, (_, ei) => (
-                            <Fragment key={`flow-etapa-${ei}`}>
-                              {ei > 0 ? (
-                                <span className="trail-structure__flow-arrow trail-structure__flow-arrow--sm" aria-hidden>
-                                  →
-                                </span>
-                              ) : null}
-                              <div className="trail-structure__flow-etapa-card">
-                                <div className="trail-structure__flow-etapa-head">
-                                  <strong>Etapa {ei + 1}</strong>
-                                  <span className="muted">
-                                    Conteúdo {ei + 1}*
-                                  </span>
-                                </div>
-                                <ul className="trail-structure__flow-etapa-list">
-                                  {structurePhases.map((phase, i) => (
-                                    <li
-                                      key={`${phase.id}-${ei}`}
-                                      className={`trail-structure__flow-mini-line trail-structure__flow-line--i${i % 3}`}
-                                    >
-                                      <span className="trail-structure__flow-badge trail-structure__flow-badge--sm">
-                                        {i + 1}
-                                      </span>
-                                      <span aria-hidden>
-                                        {PHASE_TYPE_META[phase.stage_type].icon}
-                                      </span>
-                                      <span className="trail-structure__flow-short">
-                                        {FLOW_TYPE_SHORT[phase.stage_type]}
-                                      </span>
-                                    </li>
-                                  ))}
-                                </ul>
-                              </div>
-                            </Fragment>
-                          ))}
-                          <span className="trail-structure__flow-arrow trail-structure__flow-arrow--sm" aria-hidden>
-                            →
-                          </span>
-                          <div className="trail-structure__flow-more">
-                            <span aria-hidden>…</span>
-                            <span>E assim sucessivamente!</span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                    <p className="trail-structure__flow-footnote muted">
-                      *Os conteúdos serão definidos no próximo passo
-                    </p>
-                  </div>
-                </section>
-
-                <footer className="trail-structure__footer">
-                  <p className="muted">✨ Salvar trilha e seguir para a definição de conteúdos?</p>
-                  <button type="submit" className="btn btn--primary trail-structure__cta" disabled={saving}>
-                    {saving ? 'Salvando…' : 'Definir conteúdos →'}
-                  </button>
-                </footer>
-              </div>
+              <TrailStructureEditor
+                structurePhases={structurePhases}
+                active={active}
+                onToggleActive={setActive}
+                onAddPhase={addStructurePhase}
+                onRemovePhase={removeStructurePhase}
+                onUpdatePhase={updateStructurePhase}
+                submitLabel="Definir conteúdos →"
+                submitting={saving}
+                submitButtonType="submit"
+              />
             ) : (
               <div className="trail-create-card">
                 <div className="trail-create-card__intro">

@@ -2341,6 +2341,24 @@
   flex-wrap: wrap;
 }
 
+.trail-content-editor__etapa-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.trail-content-editor__etapa-delete {
+  border-color: color-mix(in srgb, #ef4444 30%, var(--border));
+  color: #9f1239;
+  background: color-mix(in srgb, #fff 92%, #fee2e2);
+}
+
+.trail-content-editor__etapa-delete:hover:not(:disabled) {
+  border-color: color-mix(in srgb, #ef4444 55%, var(--border));
+  background: color-mix(in srgb, #fff 85%, #fecaca);
+}
+
 .trail-content-editor__item {
   border: 1px solid #e5e7eb;
   border-radius: 10px;
