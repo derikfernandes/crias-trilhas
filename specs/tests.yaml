@@ -1,0 +1,136 @@
+institution:
+  - name: criar instituição com nome e tipo
+    input:
+      name: Instituto Sol
+      type: instituto
+      active: true
+    output:
+      active: true
+      has_public_link: true
+
+  - name: erro ao criar instituição sem nome
+    input:
+      name: ""
+      type: instituto
+      active: true
+    error: true
+
+student:
+  - name: criar aluno com student_level explícito
+    input:
+      institution_id: inst_1
+      name: João
+      phone_number: "+55 (12) 99999-0000"
+      school_level: fundamental
+      school_grade: 7º ano
+      student_level: 1
+      active: true
+    output:
+      phone_number: "5512999990000"
+      student_level: 1
+
+  - name: criar aluno sem student_level usa default 2
+    input:
+      institution_id: inst_1
+      name: Maria
+      phone_number: "12988880000"
+      school_level: fundamental
+      school_grade: 7º ano
+      active: true
+    output:
+      student_level: 2
+
+trail:
+  - name: criar trilha com estrutura de 8 fases
+    input:
+      institution_id: inst_1
+      name: Matemática Básica
+      subject: Matemática
+      description: Operações básicas
+      phases:
+        - title: Contexto
+          stage_type: fixed
+        - title: Introdução
+          stage_type: ai
+          prompt: Explique de forma simples.
+        - title: Exemplo
+          stage_type: fixed
+        - title: Saiba Mais
+          stage_type: fixed
+        - title: Exercício 1
+          stage_type: exercise
+        - title: Exercício 2
+          stage_type: exercise
+        - title: Exercício 3
+          stage_type: exercise
+        - title: Final
+          stage_type: fixed
+    output:
+      default_total_steps_per_stage: 8
+      created_stages: 8
+
+  - name: erro quando fase IA não tem prompt
+    input:
+      institution_id: inst_1
+      name: História
+      subject: História
+      description: Brasil Colônia
+      phases:
+        - title: Introdução
+          stage_type: ai
+          prompt: ""
+    error: true
+
+trail_progression:
+  - name: avançar stage quando ainda não chegou ao último
+    input:
+      current_stage_number: 3
+      current_question_number: 1
+      total_stages: 8
+      total_questions: 10
+    output:
+      next_stage_number: 4
+      next_question_number: 1
+      completed: false
+
+  - name: resetar stage e avançar questão ao final da etapa
+    input:
+      current_stage_number: 8
+      current_question_number: 1
+      total_stages: 8
+      total_questions: 10
+    output:
+      next_stage_number: 1
+      next_question_number: 2
+      completed: false
+
+  - name: marcar concluído quando acaba última questão
+    input:
+      current_stage_number: 8
+      current_question_number: 10
+      total_stages: 8
+      total_questions: 10
+    output:
+      completed: true
+
+chatis:
+  - name: buscar próximo conteúdo liberado
+    input:
+      student_id: s1
+      trail_id: t1
+      current_stage_number: 1
+      current_question_number: 1
+      is_released: true
+    output:
+      status: ok
+      next_action: deliver_content
+
+  - name: bloquear conteúdo não liberado
+    input:
+      student_id: s1
+      trail_id: t1
+      current_stage_number: 1
+      current_question_number: 1
+      is_released: false
+    output:
+      status: blocked
