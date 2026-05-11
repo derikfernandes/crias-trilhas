@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
+import * as XLSX from 'xlsx'
 import {
   collection,
   doc,
@@ -8,6 +9,7 @@ import {
   runTransaction,
   serverTimestamp,
   updateDoc,
+  writeBatch,
   where,
 } from 'firebase/firestore'
 import { db } from '../lib/firebase'
@@ -19,8 +21,14 @@ import {
 } from '../lib/trailFirestore'
 import {
   TRAIL_STAGES_COLLECTION,
+  trailStageDocId,
   snapshotToTrailStage,
 } from '../lib/trailStageFirestore'
+import {
+  TRAIL_STAGE_QUESTIONS_COLLECTION,
+  snapshotToTrailStageQuestion,
+  trailStageQuestionDocId,
+} from '../lib/trailStageQuestionFirestore'
 import {
   STUDENT_TRAILS_COLLECTION,
   snapshotToStudentTrail,
@@ -35,13 +43,30 @@ import {
   snapshotToConversationLog,
 } from '../lib/conversationLogFirestore'
 import { TrailForm } from '../components/TrailForm'
-import { TrailStageForm } from '../components/TrailStageForm'
+import { TrailStructureEditor } from '../components/TrailStructureEditor'
+import { TrailContentEditor } from '../components/TrailContentEditor'
 import type { Trail } from '../types/trail'
 import type { TrailStage } from '../types/trailStage'
 import type { StudentTrail } from '../types/studentTrail'
 import type { ConversationLog } from '../types/conversationLog'
 import type { Student } from '../types/student'
-import { studentPath, trailStageQuestionsPath } from '../lib/paths'
+import type { TrailStageQuestion } from '../types/trailStageQuestion'
+import { studentPath } from '../lib/paths'
+import {
+  buildBulkInstructionsRows,
+  buildBulkTemplateRows,
+  bulkTemplateHeadersForStructure,
+  buildQuestionFromStructure,
+  contentEtapasFromTrailStageQuestions,
+  defaultEtapasFromStructure,
+  parseBulkTemplateRows,
+  structurePhasesFromTrailData,
+  syncQuestionPhasesWithStructure,
+  type BulkImportPreview,
+  type ContentEtapa,
+  type ContentPhase,
+  type StructurePhase,
+} from '../lib/trailEditor'
 
 export function TrailDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -73,27 +98,28 @@ export function TrailDetailPage() {
   const [loadingLogs, setLoadingLogs] = useState(true)
   const [logsError, setLogsError] = useState<string | null>(null)
 
-  const [showStageForm, setShowStageForm] = useState(false)
-  const [editStageId, setEditStageId] = useState<string | null>(null)
-  const [createStageNumber, setCreateStageNumber] = useState<number | null>(null)
   const [showTrailForm, setShowTrailForm] = useState(false)
-  const [defaultStepsInput, setDefaultStepsInput] = useState('')
-  const [savingDefaultSteps, setSavingDefaultSteps] = useState(false)
-  const [defaultStepsError, setDefaultStepsError] = useState<string | null>(null)
+  const [structurePhases, setStructurePhases] = useState<StructurePhase[]>([])
+  const [savingStructure, setSavingStructure] = useState(false)
+  const [structureError, setStructureError] = useState<string | null>(null)
+  const [structureDirty, setStructureDirty] = useState(false)
+  const [trailActiveDraft, setTrailActiveDraft] = useState(true)
+  const [contentEtapas, setContentEtapas] = useState<ContentEtapa[]>([])
+  const [selectedEtapaId, setSelectedEtapaId] = useState<string | null>(null)
+  const [selectedQuestionId, setSelectedQuestionId] = useState<string | null>(null)
+  const [phaseSaved, setPhaseSaved] = useState<Record<string, boolean>>({})
+  const [stageQuestions, setStageQuestions] = useState<TrailStageQuestion[]>([])
+  const [loadingStageQuestions, setLoadingStageQuestions] = useState(true)
+  const [stageQuestionsError, setStageQuestionsError] = useState<string | null>(null)
+  const [savingContentDraft, setSavingContentDraft] = useState(false)
+  const [contentError, setContentError] = useState<string | null>(null)
+  const [contentDirty, setContentDirty] = useState(false)
+  const [bulkPreview, setBulkPreview] = useState<BulkImportPreview | null>(null)
+  const [pendingBulkContent, setPendingBulkContent] = useState<ContentEtapa[] | null>(null)
+  const [importingBulk, setImportingBulk] = useState(false)
   const [institutions, setInstitutions] = useState<{ id: string; name: string }[]>([])
   const [savingInstitutionId, setSavingInstitutionId] = useState(false)
   const [institutionError, setInstitutionError] = useState<string | null>(null)
-
-  const editingStage = useMemo(() => {
-    if (!editStageId) return null
-    return stages.find((s) => s.id === editStageId) ?? null
-  }, [editStageId, stages])
-
-  const suggestedNextStageNumber = useMemo(() => {
-    if (stages.length === 0) return 1
-    const max = Math.max(...stages.map((s) => s.stage_number))
-    return max + 1
-  }, [stages])
 
   const sortedStudentTrails = useMemo(() => {
     return [...studentTrails].sort((a, b) => {
@@ -142,48 +168,15 @@ export function TrailDetailPage() {
     })
   }, [logs])
 
-  const stagesByNumber = useMemo(() => {
-    const map = new Map<number, TrailStage>()
-    for (const stage of stages) {
-      map.set(stage.stage_number, stage)
-    }
-    return map
-  }, [stages])
-
-  const phaseCountPreview = useMemo(() => {
-    const parsed = Number.parseInt(defaultStepsInput.trim(), 10)
-    if (Number.isFinite(parsed) && parsed >= 1) return parsed
-    const fallback = trail?.default_total_steps_per_stage ?? 1
-    return fallback >= 1 ? fallback : 1
-  }, [defaultStepsInput, trail?.default_total_steps_per_stage])
-
-  const flowPhases = useMemo(() => {
-    return Array.from({ length: phaseCountPreview }, (_, idx) => {
-      const number = idx + 1
-      const stage = stagesByNumber.get(number) ?? null
-      return { number, stage }
-    })
-  }, [phaseCountPreview, stagesByNumber])
-
   const maxCreatedStageNumber = useMemo(() => {
     if (stages.length === 0) return 0
     return Math.max(...stages.map((s) => s.stage_number))
   }, [stages])
 
-  const missingStageCount = useMemo(() => {
-    return flowPhases.filter((item) => item.stage === null).length
-  }, [flowPhases])
-
-  const parsedDefaultStepsInput = useMemo(() => {
-    const parsed = Number.parseInt(defaultStepsInput.trim(), 10)
-    if (!Number.isFinite(parsed) || !Number.isInteger(parsed)) return null
-    return parsed
-  }, [defaultStepsInput])
-
-  const reducingBelowCreated = useMemo(() => {
-    if (parsedDefaultStepsInput === null) return false
-    return parsedDefaultStepsInput < maxCreatedStageNumber
-  }, [parsedDefaultStepsInput, maxCreatedStageNumber])
+  const selectedEtapa = useMemo(
+    () => contentEtapas.find((et) => et.id === selectedEtapaId) ?? null,
+    [contentEtapas, selectedEtapaId],
+  )
 
   useEffect(() => {
     if (!db || !id) return
@@ -382,9 +375,84 @@ export function TrailDetailPage() {
   }, [])
 
   useEffect(() => {
-    setDefaultStepsInput(String(trail?.default_total_steps_per_stage ?? 0))
-    setDefaultStepsError(null)
-  }, [trail?.default_total_steps_per_stage])
+    if (!db || !id) return
+    const dbOk = db
+    let unsub: (() => void) | null = null
+
+    async function run() {
+      setLoadingStageQuestions(true)
+      setStageQuestionsError(null)
+
+      const q = query(
+        collection(dbOk, TRAIL_STAGE_QUESTIONS_COLLECTION),
+        where('trail_id', '==', id),
+      )
+
+      unsub = onSnapshot(
+        q,
+        (snap) => {
+          const next = snap.docs.map(snapshotToTrailStageQuestion)
+          setStageQuestions(next)
+          setStageQuestionsError(null)
+          setLoadingStageQuestions(false)
+        },
+        (err) => {
+          setStageQuestionsError(err.message)
+          setStageQuestions([])
+          setLoadingStageQuestions(false)
+        },
+      )
+    }
+
+    void run()
+    return () => unsub?.()
+  }, [id])
+
+  useEffect(() => {
+    if (!trail || structureDirty) return
+    setStructurePhases(structurePhasesFromTrailData(trail.phase_blueprint, stages))
+    setTrailActiveDraft(trail.active)
+    setStructureError(null)
+  }, [trail, stages, structureDirty])
+
+  useEffect(() => {
+    if (structurePhases.length === 0) return
+    if (contentDirty) return
+    const built = contentEtapasFromTrailStageQuestions(stageQuestions, structurePhases)
+    setContentEtapas(built)
+    setSelectedEtapaId(built[0]?.id ?? null)
+    setSelectedQuestionId(built[0]?.questions[0]?.id ?? null)
+    setContentError(null)
+  }, [contentDirty, stageQuestions, structurePhases])
+
+  useEffect(() => {
+    if (!selectedEtapa) return
+    if (!selectedQuestionId) {
+      setSelectedQuestionId(selectedEtapa.questions[0]?.id ?? null)
+      return
+    }
+    if (!selectedEtapa.questions.some((q) => q.id === selectedQuestionId)) {
+      setSelectedQuestionId(selectedEtapa.questions[0]?.id ?? null)
+    }
+  }, [selectedEtapa, selectedQuestionId])
+
+  useEffect(() => {
+    if (contentEtapas.length === 0) return
+    setContentEtapas((prev) =>
+      prev.map((et) => ({
+        ...et,
+        questions: et.questions.map((q) => ({
+          ...q,
+          phases: syncQuestionPhasesWithStructure(q, structurePhases),
+        })),
+      })),
+    )
+  }, [structurePhases])
+
+  useEffect(() => {
+    setBulkPreview(null)
+    setPendingBulkContent(null)
+  }, [structurePhases, id])
 
   async function addStudentToTrail(studentId: string) {
     if (!db || !id || !trail?.institution_id?.trim()) return
@@ -427,39 +495,424 @@ export function TrailDetailPage() {
     }
   }
 
-  async function saveDefaultStepsPerStage() {
-    if (!db || !id) return
-    const trimmed = defaultStepsInput.trim()
-    const parsed = Number.parseInt(trimmed, 10)
+  function addStructurePhase() {
+    setStructurePhases((prev) => [
+      ...prev,
+      { id: `local-${Date.now()}-${prev.length + 1}`, title: `Fase ${prev.length + 1}`, stage_type: 'fixed', prompt: '' },
+    ])
+    setStructureDirty(true)
+  }
 
-    if (!trimmed || !Number.isFinite(parsed) || !Number.isInteger(parsed)) {
-      setDefaultStepsError('Informe um número inteiro válido.')
-      return
-    }
-    if (parsed < 1) {
-      setDefaultStepsError('A quantidade de fases deve ser maior ou igual a 1.')
-      return
-    }
-    if (parsed < maxCreatedStageNumber) {
-      setDefaultStepsError(
-        `Você já possui fases criadas até a fase ${maxCreatedStageNumber}. Para reduzir para ${parsed}, exclua primeiro as fases excedentes.`,
-      )
-      return
-    }
+  function removeStructurePhase(phaseId: string) {
+    setStructurePhases((prev) =>
+      prev.length <= 1 ? prev : prev.filter((p) => p.id !== phaseId),
+    )
+    setStructureDirty(true)
+  }
 
-    setSavingDefaultSteps(true)
-    setDefaultStepsError(null)
+  function updateStructurePhase(
+    phaseId: string,
+    patch: Partial<Pick<StructurePhase, 'title' | 'stage_type' | 'prompt'>>,
+  ) {
+    setStructurePhases((prev) =>
+      prev.map((phase) => (phase.id === phaseId ? { ...phase, ...patch } : phase)),
+    )
+    setStructureDirty(true)
+  }
+
+  function addEtapa() {
+    setContentEtapas((prev) => {
+      const autoQuestion = buildQuestionFromStructure('Questão 1', structurePhases)
+      const created = {
+        id: `local-et-${Date.now()}-${prev.length + 1}`,
+        name: `Etapa ${prev.length + 1}`,
+        released: false,
+        questions: [autoQuestion],
+      }
+      setSelectedEtapaId(created.id)
+      setSelectedQuestionId(autoQuestion.id)
+      return [...prev, created]
+    })
+    setContentDirty(true)
+  }
+
+  function removeEtapa(etapaId: string) {
+    setContentEtapas((prev) => {
+      if (prev.length <= 1) {
+        setContentError('A trilha precisa de pelo menos 1 etapa.')
+        return prev
+      }
+      const removedIndex = prev.findIndex((et) => et.id === etapaId)
+      if (removedIndex < 0) return prev
+      const next = prev.filter((et) => et.id !== etapaId)
+      const nextSelected = next[Math.min(removedIndex, next.length - 1)] ?? null
+      setSelectedEtapaId(nextSelected?.id ?? null)
+      setSelectedQuestionId(nextSelected?.questions[0]?.id ?? null)
+      setContentDirty(true)
+      return next
+    })
+  }
+
+  function updateQuestionTitle(questionId: string, value: string) {
+    setContentEtapas((prev) =>
+      prev.map((et) => ({
+        ...et,
+        questions: et.questions.map((q) =>
+          q.id === questionId ? { ...q, title: value } : q,
+        ),
+      })),
+    )
+    setContentDirty(true)
+  }
+
+  function updateQuestionPhase(
+    questionId: string,
+    phaseId: string,
+    patch: Partial<Pick<ContentPhase, 'aiPrompt' | 'fixedText' | 'exerciseQuestions'>>,
+  ) {
+    setContentEtapas((prev) =>
+      prev.map((et) => ({
+        ...et,
+        questions: et.questions.map((q) =>
+          q.id === questionId
+            ? {
+                ...q,
+                phases: q.phases.map((p) =>
+                  p.phaseId === phaseId ? { ...p, ...patch } : p,
+                ),
+              }
+            : q,
+        ),
+      })),
+    )
+    setPhaseSaved((prev) => ({
+      ...prev,
+      [`${questionId}:${phaseId}`]: false,
+    }))
+    setContentDirty(true)
+  }
+
+  function markPhaseSaved(questionId: string, phaseId: string) {
+    setPhaseSaved((prev) => ({
+      ...prev,
+      [`${questionId}:${phaseId}`]: true,
+    }))
+  }
+
+  function toggleEtapaReleased(etapaId: string) {
+    setContentEtapas((prev) =>
+      prev.map((et) =>
+        et.id === etapaId ? { ...et, released: !et.released } : et,
+      ),
+    )
+    setContentDirty(true)
+  }
+
+  function downloadBulkTemplate() {
+    if (!id || structurePhases.length === 0) return
+    const workbook = XLSX.utils.book_new()
+    const instructions = buildBulkInstructionsRows(structurePhases)
+    const templateHeaders = bulkTemplateHeadersForStructure(structurePhases)
+    const templateRows = buildBulkTemplateRows(structurePhases, 5)
+    const templateAoA = [
+      templateHeaders,
+      ...templateRows.map((row) => templateHeaders.map((header) => row[header] ?? '')),
+    ]
+
+    XLSX.utils.book_append_sheet(
+      workbook,
+      XLSX.utils.aoa_to_sheet(instructions),
+      'Instrucoes',
+    )
+    XLSX.utils.book_append_sheet(
+      workbook,
+      XLSX.utils.aoa_to_sheet(templateAoA),
+      'ConteudosModelo',
+    )
+    XLSX.writeFile(workbook, `modelo-conteudos-${id}.xlsx`)
+  }
+
+  async function importBulkTemplate(file: File) {
+    if (structurePhases.length === 0) return
+    setImportingBulk(true)
+    setContentError(null)
     try {
-      await updateDoc(doc(db, TRAILS_COLLECTION, id), {
-        default_total_steps_per_stage: parsed,
-        updated_at: serverTimestamp(),
+      const buf = await file.arrayBuffer()
+      const workbook = XLSX.read(buf, { type: 'array' })
+      const sheet = workbook.Sheets.ConteudosModelo
+      if (!sheet) {
+        setContentError('A planilha precisa conter a aba "ConteudosModelo".')
+        setBulkPreview(null)
+        setPendingBulkContent(null)
+        return
+      }
+
+      const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, {
+        defval: '',
       })
+      const preview = parseBulkTemplateRows(rows, structurePhases)
+      setBulkPreview(preview)
+      setPendingBulkContent(preview.validRows > 0 ? preview.nextContentEtapas : null)
+      if (preview.validRows === 0) {
+        setContentError(
+          'Nenhuma linha válida encontrada na planilha. Corrija os erros e importe novamente.',
+        )
+      }
+    } catch (err) {
+      setContentError(
+        err instanceof Error ? err.message : 'Falha ao ler arquivo da planilha.',
+      )
+      setBulkPreview(null)
+      setPendingBulkContent(null)
+    } finally {
+      setImportingBulk(false)
+    }
+  }
+
+  function applyBulkImport() {
+    if (!pendingBulkContent || pendingBulkContent.length === 0) return
+    setContentEtapas(pendingBulkContent)
+    setSelectedEtapaId(pendingBulkContent[0]?.id ?? null)
+    setSelectedQuestionId(pendingBulkContent[0]?.questions[0]?.id ?? null)
+    setPhaseSaved({})
+    setContentDirty(true)
+    setBulkPreview(null)
+    setPendingBulkContent(null)
+  }
+
+  async function saveStructureAndContinueToContent() {
+    if (!db || !id || !trail) return
+    const dbOk = db
+    if (structurePhases.length < 1) {
+      setStructureError('Inclua pelo menos uma fase na estrutura.')
+      return
+    }
+    for (let i = 0; i < structurePhases.length; i++) {
+      const phase = structurePhases[i]
+      if (!phase.title.trim()) {
+        setStructureError('Cada fase precisa de um nome.')
+        return
+      }
+      if (phase.stage_type === 'ai' && !phase.prompt.trim()) {
+        const label = phase.title.trim() || `Fase ${i + 1}`
+        setStructureError(
+          `A fase "${label}" usa IA e precisa de um comando da IA (instrução para o modelo).`,
+        )
+        return
+      }
+    }
+
+    setSavingStructure(true)
+    setStructureError(null)
+    try {
+      await runTransaction(dbOk, async (tx) => {
+        const trailRef = doc(dbOk, TRAILS_COLLECTION, id)
+        const previousTrailSnap = await tx.get(trailRef)
+        const previousData = previousTrailSnap.exists()
+          ? (previousTrailSnap.data() as { default_total_steps_per_stage?: unknown })
+          : {}
+        const previousStepsRaw = previousData.default_total_steps_per_stage
+        const previousSteps =
+          typeof previousStepsRaw === 'number' &&
+          Number.isFinite(previousStepsRaw) &&
+          previousStepsRaw >= 0
+            ? Math.floor(previousStepsRaw)
+            : 0
+        const stepsToSave = structurePhases.length
+
+        const stageSnapshots = new Map<number, Record<string, unknown> | null>()
+        for (let i = 0; i < structurePhases.length; i++) {
+          const stageNumber = i + 1
+          const stageRef = doc(
+            dbOk,
+            TRAIL_STAGES_COLLECTION,
+            trailStageDocId(id, stageNumber),
+          )
+          const stageSnap = await tx.get(stageRef)
+          stageSnapshots.set(
+            stageNumber,
+            stageSnap.exists() ? (stageSnap.data() as Record<string, unknown>) : null,
+          )
+        }
+
+        tx.set(
+          trailRef,
+          {
+            default_total_steps_per_stage: stepsToSave,
+            phase_blueprint: structurePhases.map((phase) => ({
+              title: phase.title.trim(),
+              stage_type: phase.stage_type,
+              prompt: phase.stage_type === 'ai' ? phase.prompt.trim() : null,
+            })),
+            active: trailActiveDraft,
+            updated_at: serverTimestamp(),
+          },
+          { merge: true },
+        )
+
+        for (let i = 0; i < structurePhases.length; i++) {
+          const phase = structurePhases[i]
+          const stageNumber = i + 1
+          const stageRef = doc(
+            dbOk,
+            TRAIL_STAGES_COLLECTION,
+            trailStageDocId(id, stageNumber),
+          )
+          const previousStage = stageSnapshots.get(stageNumber) ?? null
+          tx.set(
+            stageRef,
+            {
+              trail_id: id,
+              stage_number: stageNumber,
+              title: phase.title.trim(),
+              stage_type: phase.stage_type,
+              prompt: phase.stage_type === 'ai' ? phase.prompt.trim() : null,
+              is_released: typeof previousStage?.is_released === 'boolean' ? previousStage.is_released : false,
+              active: typeof previousStage?.active === 'boolean' ? previousStage.active : true,
+              created_at: previousStage?.created_at ?? serverTimestamp(),
+              updated_at: serverTimestamp(),
+            },
+            { merge: true },
+          )
+        }
+
+        const deleteFrom = stepsToSave + 1
+        const deleteTo = Math.max(previousSteps, maxCreatedStageNumber)
+        for (let stageNumber = deleteFrom; stageNumber <= deleteTo; stageNumber++) {
+          const stageRef = doc(
+            dbOk,
+            TRAIL_STAGES_COLLECTION,
+            trailStageDocId(id, stageNumber),
+          )
+          tx.delete(stageRef)
+        }
+      })
+
+      setStructureDirty(false)
+      if (contentEtapas.length === 0) {
+        const defaults = defaultEtapasFromStructure(structurePhases)
+        setContentEtapas(defaults)
+        setSelectedEtapaId(defaults[0]?.id ?? null)
+        setSelectedQuestionId(defaults[0]?.questions[0]?.id ?? null)
+      }
+      setContentError(null)
     } catch (e) {
-      setDefaultStepsError(
-        e instanceof Error ? e.message : 'Erro ao salvar quantidade de itens.',
+      setStructureError(
+        e instanceof Error ? e.message : 'Erro ao salvar estrutura da trilha.',
       )
     } finally {
-      setSavingDefaultSteps(false)
+      setSavingStructure(false)
+    }
+  }
+
+  async function saveTrailContents() {
+    if (!db || !id) return
+    const dbOk = db
+    if (contentEtapas.length === 0) {
+      setContentError('Crie pelo menos uma etapa antes de salvar.')
+      return
+    }
+    if (contentEtapas.some((etapa) => etapa.questions.length !== 1)) {
+      setContentError(
+        'Cada etapa deve ter exatamente 1 questão. Crie novos conteúdos adicionando uma nova etapa.',
+      )
+      return
+    }
+
+    const incomplete = contentEtapas.find((etapa) => {
+      const question = etapa.questions[0]
+      if (!question) return true
+      return question.phases.some((phase) => {
+        if (phase.phaseType === 'ai') return !phase.fixedText.trim()
+        if (phase.phaseType === 'fixed') return !phase.fixedText.trim()
+        const validExerciseItems = phase.exerciseQuestions.filter((item) =>
+          Boolean(item.trim()),
+        )
+        return validExerciseItems.length === 0
+      })
+    })
+    if (incomplete) {
+      setContentError(
+        `Preencha as questões da etapa "${incomplete.name.trim() || 'Sem nome'}" em todas as fases antes de salvar.`,
+      )
+      return
+    }
+
+    setSavingContentDraft(true)
+    setContentError(null)
+    try {
+      const writes: Array<{
+        refPath: string
+        payload: Record<string, unknown>
+      }> = []
+      const expectedDocIds = new Set<string>()
+
+      contentEtapas.forEach((etapa, etapaIdx) => {
+        const question = etapa.questions[0]
+        if (!question) return
+        const questionNumber = etapaIdx + 1
+        question.phases.forEach((phase, phaseIdx) => {
+          const stageNumber = phaseIdx + 1
+          const etapaLabel = etapa.name.trim() || `Etapa ${etapaIdx + 1}`
+          const questionLabel = question.title.trim() || `Questão ${questionNumber}`
+          const exerciseLines = phase.exerciseQuestions.map((item) => item.trim()).filter(Boolean)
+          const contentValue =
+            phase.phaseType === 'exercise'
+              ? exerciseLines.map((item, idx) => `${idx + 1}. ${item}`).join('\n')
+              : phase.fixedText.trim()
+
+          writes.push({
+            refPath: trailStageQuestionDocId(id, stageNumber, questionNumber),
+            payload: {
+              trail_id: id,
+              stage_number: stageNumber,
+              question_number: questionNumber,
+              title: `${etapaLabel} — ${questionLabel}`,
+              content: contentValue,
+              correct_option: null,
+              options: null,
+              explanation: null,
+              is_released: etapa.released,
+              active: true,
+              created_at: serverTimestamp(),
+              updated_at: serverTimestamp(),
+            },
+          })
+          expectedDocIds.add(trailStageQuestionDocId(id, stageNumber, questionNumber))
+        })
+      })
+
+      const deleteDocIds = stageQuestions
+        .map((row) => row.id)
+        .filter((docId) => !expectedDocIds.has(docId))
+
+      const operations: Array<
+        | { type: 'set'; refPath: string; payload: Record<string, unknown> }
+        | { type: 'delete'; refPath: string }
+      > = [
+        ...writes.map((item) => ({ type: 'set' as const, ...item })),
+        ...deleteDocIds.map((docId) => ({ type: 'delete' as const, refPath: docId })),
+      ]
+
+      const chunkSize = 400
+      for (let start = 0; start < operations.length; start += chunkSize) {
+        const chunk = operations.slice(start, start + chunkSize)
+        const batch = writeBatch(dbOk)
+        for (const op of chunk) {
+          const ref = doc(dbOk, TRAIL_STAGE_QUESTIONS_COLLECTION, op.refPath)
+          if (op.type === 'set') {
+            batch.set(ref, op.payload, { merge: true })
+          } else {
+            batch.delete(ref)
+          }
+        }
+        await batch.commit()
+      }
+      setContentDirty(false)
+    } catch (e) {
+      setContentError(e instanceof Error ? e.message : 'Erro ao salvar os conteúdos.')
+    } finally {
+      setSavingContentDraft(false)
     }
   }
 
@@ -593,168 +1046,74 @@ export function TrailDetailPage() {
           ) : null}
 
           <section className="panel">
-              <div className="panel__head">
-                <h2>Estrutura da trilha</h2>
-              </div>
+            {loadingStages ? <p className="muted">Carregando estrutura…</p> : null}
+            {stagesError ? (
+              <p className="banner banner--error" role="alert">
+                {stagesError}
+              </p>
+            ) : null}
+            {structureError ? (
+              <p className="banner banner--error" role="alert">
+                {structureError}
+              </p>
+            ) : null}
 
-              <div className="trail-structure-config">
-                <label className="field trail-structure-count">
-                  <span>Quantidade de fases (stages)</span>
-                  <input
-                    type="number"
-                    inputMode="numeric"
-                    min={1}
-                    step={1}
-                    value={defaultStepsInput}
-                    onChange={(e) => setDefaultStepsInput(e.target.value)}
-                  />
-                </label>
-                <button
-                  type="button"
-                  className="btn btn--primary"
-                  onClick={() => void saveDefaultStepsPerStage()}
-                  disabled={savingDefaultSteps || reducingBelowCreated}
-                >
-                  {savingDefaultSteps ? 'Salvando…' : 'Salvar quantidade'}
-                </button>
-              </div>
+            <TrailStructureEditor
+              structurePhases={structurePhases}
+              active={trailActiveDraft}
+              onToggleActive={(next) => {
+                setTrailActiveDraft(next)
+                setStructureDirty(true)
+              }}
+              onAddPhase={addStructurePhase}
+              onRemovePhase={removeStructurePhase}
+              onUpdatePhase={updateStructurePhase}
+              onSubmit={() => void saveStructureAndContinueToContent()}
+              submitLabel="Salvar estrutura"
+              submitting={savingStructure}
+              footerPrompt="Salvar alterações da estrutura da trilha?"
+            />
+          </section>
 
-              {reducingBelowCreated ? (
-                <p className="banner banner--error" role="alert">
-                  Você já possui fases criadas até a fase {maxCreatedStageNumber}.
-                  Para diminuir a quantidade, exclua primeiro as fases excedentes.
-                </p>
-              ) : null}
-
-              {defaultStepsError ? (
-                <p className="form__error" role="alert">
-                  {defaultStepsError}
-                </p>
-              ) : null}
-
-              {missingStageCount > 0 ? (
-                <p className="banner banner--error" role="alert">
-                  Existem {missingStageCount} fase(s) sem cadastro neste fluxo.
-                  Complete as fases marcadas como "Stage ainda não criado".
-                </p>
-              ) : null}
-
-              <div className="trail-flow" role="region" aria-label="Fluxo da estrutura da trilha">
-                <div className="trail-flow__etapa">Etapa</div>
-                <div className="trail-flow__stages">
-                  {flowPhases.map((item, idx) => (
-                    <div key={item.number}>
-                      <div className="trail-flow__row">
-                        <div className="trail-flow__stage-card">
-                          <strong>Fase {item.number}</strong>
-                          <span className="muted">
-                            {item.stage?.title?.trim() || 'Stage ainda não criado'}
-                          </span>
-                          {item.stage ? (
-                            <div className="trail-flow__actions">
-                              <Link
-                                className="btn btn--small btn--ghost"
-                                to={trailStageQuestionsPath(id, item.number)}
-                              >
-                                Questões
-                              </Link>
-                              <button
-                                type="button"
-                                className="btn btn--small btn--ghost"
-                                onClick={() => {
-                                  setCreateStageNumber(null)
-                                  setEditStageId(item.stage!.id)
-                                  setShowStageForm(true)
-                                }}
-                              >
-                                Editar
-                              </button>
-                            </div>
-                          ) : (
-                            <div className="trail-flow__actions">
-                              <button
-                                type="button"
-                                className="btn btn--small btn--primary"
-                                onClick={() => {
-                                  setCreateStageNumber(item.number)
-                                  setEditStageId(null)
-                                  setShowStageForm(true)
-                                }}
-                              >
-                                Criar
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                      {idx < flowPhases.length - 1 ? (
-                        <div className="trail-flow__down" aria-hidden>
-                          ↓
-                        </div>
-                      ) : null}
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="trail-structure-note" role="note">
-                <p>Defina quantas fases existem dentro de cada etapa da trilha.</p>
-                <p>
-                  Cada etapa seguirá essa mesma estrutura, garantindo um padrão de
-                  aprendizado (por exemplo: contexto, explicação, prática).
-                </p>
-                <p>
-                  <strong>⚠️ Esse número é fixo para toda a trilha.</strong>
-                </p>
-              </div>
-
-              {loadingStages ? (
-                <p className="muted">Carregando stages…</p>
-              ) : stagesError ? (
-                <p className="banner banner--error" role="alert">
-                  {stagesError}
-                </p>
-              ) : null}
-
-              {showStageForm ? (
-                editStageId ? (
-                  editingStage ? (
-                    <TrailStageForm
-                      trailId={id}
-                      docId={editStageId ?? undefined}
-                      initial={editingStage}
-                      suggestedStageNumber={createStageNumber ?? suggestedNextStageNumber}
-                      onCancel={() => {
-                        setShowStageForm(false)
-                        setEditStageId(null)
-                        setCreateStageNumber(null)
-                      }}
-                      onSaved={() => {
-                        setShowStageForm(false)
-                        setEditStageId(null)
-                        setCreateStageNumber(null)
-                      }}
-                    />
-                  ) : (
-                    <p className="muted">Carregando stage…</p>
-                  )
-                ) : (
-                  <TrailStageForm
-                    trailId={id}
-                    docId={undefined}
-                    initial={undefined}
-                    suggestedStageNumber={createStageNumber ?? suggestedNextStageNumber}
-                    onCancel={() => {
-                      setShowStageForm(false)
-                      setCreateStageNumber(null)
-                    }}
-                    onSaved={() => {
-                      setShowStageForm(false)
-                      setCreateStageNumber(null)
-                    }}
-                  />
-                )
-              ) : null}
+          <section className="panel">
+            {loadingStageQuestions ? (
+              <p className="muted">Carregando conteúdos…</p>
+            ) : null}
+            {stageQuestionsError ? (
+              <p className="banner banner--error" role="alert">
+                {stageQuestionsError}
+              </p>
+            ) : null}
+            <TrailContentEditor
+              contentEtapas={contentEtapas}
+              selectedEtapaId={selectedEtapaId}
+              selectedQuestionId={selectedQuestionId}
+              phaseSaved={phaseSaved}
+              saving={savingContentDraft}
+              error={contentError}
+              bulkPreview={bulkPreview}
+              importingBulk={importingBulk}
+              hasPendingImportedContent={Boolean(pendingBulkContent?.length)}
+              onDownloadTemplate={downloadBulkTemplate}
+              onImportFile={(file) => {
+                void importBulkTemplate(file)
+              }}
+              onApplyImportedContent={applyBulkImport}
+              onAddEtapa={addEtapa}
+              onRemoveEtapa={removeEtapa}
+              onSelectEtapa={setSelectedEtapaId}
+              onSelectQuestion={setSelectedQuestionId}
+              onToggleEtapaReleased={toggleEtapaReleased}
+              onUpdateQuestionTitle={updateQuestionTitle}
+              onUpdateQuestionPhase={updateQuestionPhase}
+              onMarkPhaseSaved={markPhaseSaved}
+              onBack={() => {
+                setStructureDirty(false)
+              }}
+              onSave={() => void saveTrailContents()}
+              backLabel="Estrutura salva"
+              saveLabel="Salvar conteúdos"
+            />
           </section>
 
           <section className="panel">
