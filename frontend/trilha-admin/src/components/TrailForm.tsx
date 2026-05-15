@@ -309,10 +309,7 @@ export function TrailForm({ docId, fixedInstitutionId, initial, onSaved }: Props
       return question.phases.some((phase) => {
         if (phase.phaseType === 'ai') return !trimRequiredString(phase.fixedText)
         if (phase.phaseType === 'fixed') return !trimRequiredString(phase.fixedText)
-        const validExerciseItems = phase.exerciseQuestions.filter((item) =>
-          Boolean(trimRequiredString(item)),
-        )
-        return validExerciseItems.length === 0
+        return !trimRequiredString(phase.fixedText)
       })
     })
 
@@ -341,18 +338,13 @@ export function TrailForm({ docId, fixedInstitutionId, initial, onSaved }: Props
 
               const etapaLabel = etapa.name.trim() || `Etapa ${etapaIdx + 1}`
               const questionLabel = question.title.trim() || `Questão ${questionNumber}`
-              const exerciseLines = phase.exerciseQuestions
-                .map((item) => item.trim())
-                .filter(Boolean)
 
               const contentValue =
                 phase.phaseType === 'ai'
                   ? phase.fixedText.trim()
                   : phase.phaseType === 'fixed'
                     ? phase.fixedText.trim()
-                    : exerciseLines
-                        .map((item, idx) => `${idx + 1}. ${item}`)
-                        .join('\n')
+                    : phase.fixedText
 
               tx.set(ref, {
                 trail_id: createdTrailId,
