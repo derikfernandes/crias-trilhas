@@ -825,10 +825,7 @@ export function TrailDetailPage() {
       return question.phases.some((phase) => {
         if (phase.phaseType === 'ai') return !phase.fixedText.trim()
         if (phase.phaseType === 'fixed') return !phase.fixedText.trim()
-        const validExerciseItems = phase.exerciseQuestions.filter((item) =>
-          Boolean(item.trim()),
-        )
-        return validExerciseItems.length === 0
+        return !phase.fixedText.trim()
       })
     })
     if (incomplete) {
@@ -855,10 +852,9 @@ export function TrailDetailPage() {
           const stageNumber = phaseIdx + 1
           const etapaLabel = etapa.name.trim() || `Etapa ${etapaIdx + 1}`
           const questionLabel = question.title.trim() || `Questão ${questionNumber}`
-          const exerciseLines = phase.exerciseQuestions.map((item) => item.trim()).filter(Boolean)
           const contentValue =
             phase.phaseType === 'exercise'
-              ? exerciseLines.map((item, idx) => `${idx + 1}. ${item}`).join('\n')
+              ? phase.fixedText
               : phase.fixedText.trim()
 
           writes.push({

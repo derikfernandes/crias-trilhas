@@ -336,10 +336,10 @@ export function TrailContentEditor({
                               <span>Pergunta do exercício</span>
                               <textarea
                                 rows={4}
-                                value={phase.exerciseQuestions[0] ?? ''}
+                                value={phase.fixedText}
                                 onChange={(e) =>
                                   onUpdateQuestionPhase(selectedQuestion.id, phase.phaseId, {
-                                    exerciseQuestions: [e.target.value],
+                                    fixedText: e.target.value,
                                   })
                                 }
                                 placeholder="Escreva a pergunta desta fase de exercício."

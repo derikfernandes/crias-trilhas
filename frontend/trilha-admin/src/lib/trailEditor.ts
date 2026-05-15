@@ -123,15 +123,6 @@ export function syncQuestionPhasesWithStructure(
   })
 }
 
-function parseExerciseLines(raw: string): string[] {
-  return raw
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => line.replace(/^\d+\.\s*/, '').trim())
-    .filter(Boolean)
-}
-
 function normalizeCell(raw: unknown): string {
   if (raw === null || raw === undefined) return ''
   if (typeof raw === 'string') return raw.trim()
@@ -210,12 +201,8 @@ export function contentEtapasFromTrailStageQuestions(
           phaseTitle: phase.title.trim() || `Fase ${stageNumber}`,
           phaseType: phase.stage_type,
           aiPrompt: phase.stage_type === 'ai' ? phase.prompt.trim() : '',
-          fixedText:
-            phase.stage_type === 'exercise'
-              ? ''
-              : contentRaw,
-          exerciseQuestions:
-            phase.stage_type === 'exercise' ? parseExerciseLines(contentRaw) : [],
+          fixedText: contentRaw,
+          exerciseQuestions: [],
         }
       }),
     }
@@ -329,12 +316,11 @@ export function parseBulkTemplateRows(
       const legacyRaw = normalizeCell(row[legacyField])
       const contentValue = contentRaw || legacyRaw
       if (phase.stage_type === 'exercise') {
-        const items = parseExerciseLines(contentValue)
-        if (items.length === 0) {
+        if (!contentValue.trim()) {
           errors.push({
             rowNumber,
             field: contentField,
-            message: `fase ${phaseNumber} (exercise) exige pelo menos 1 item.`,
+            message: `fase ${phaseNumber} (exercise) exige conteudo.`,
           })
           phaseError = true
         }
@@ -343,8 +329,8 @@ export function parseBulkTemplateRows(
           phaseTitle: phase.title.trim() || `Fase ${phaseNumber}`,
           phaseType: phase.stage_type,
           aiPrompt: '',
-          fixedText: '',
-          exerciseQuestions: items,
+          fixedText: contentValue,
+          exerciseQuestions: [],
         })
       } else {
         if (!contentValue) {
