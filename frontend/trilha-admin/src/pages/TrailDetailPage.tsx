@@ -137,6 +137,15 @@ export function TrailDetailPage() {
     return m
   }, [institutionStudents])
 
+  const studentPhoneById = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const s of institutionStudents) {
+      const phone = s.phone_number?.trim?.() ?? ''
+      if (phone) m.set(s.id, phone)
+    }
+    return m
+  }, [institutionStudents])
+
   const eligibleStudentsToAdd = useMemo(() => {
     const inTrail = new Set(studentTrails.map((st) => st.student_id))
     return institutionStudents
@@ -612,6 +621,7 @@ export function TrailDetailPage() {
     if (sortedStudentTrails.length === 0) return
     const rows = sortedStudentTrails.map((row) => ({
       Aluno: studentNameById.get(row.student_id) ?? row.student_id,
+      Telefone: studentPhoneById.get(row.student_id) ?? '',
       'ID do aluno': row.student_id,
       'Stage atual': row.current_stage_number,
       'Questão atual': row.current_question_number,
@@ -1280,6 +1290,11 @@ export function TrailDetailPage() {
                               <code>{row.student_id}</code>
                             )}
                           </Link>
+                          {studentPhoneById.get(row.student_id) ? (
+                            <div className="muted table__subtext">
+                              {studentPhoneById.get(row.student_id)}
+                            </div>
+                          ) : null}
                         </td>
                         <td>{row.current_stage_number}</td>
                         <td>{row.current_question_number}</td>
