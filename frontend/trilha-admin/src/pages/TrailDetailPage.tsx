@@ -608,6 +608,27 @@ export function TrailDetailPage() {
     setContentDirty(true)
   }
 
+  function exportStudentTrailsXlsx() {
+    if (sortedStudentTrails.length === 0) return
+    const rows = sortedStudentTrails.map((row) => ({
+      Aluno: studentNameById.get(row.student_id) ?? row.student_id,
+      'ID do aluno': row.student_id,
+      'Stage atual': row.current_stage_number,
+      'Questão atual': row.current_question_number,
+      Status: row.status,
+      Início: row.started_at?.toDate
+        ? row.started_at.toDate().toLocaleString('pt-BR')
+        : '',
+      'Última interação': row.last_interaction_at?.toDate
+        ? row.last_interaction_at.toDate().toLocaleString('pt-BR')
+        : '',
+    }))
+    const worksheet = XLSX.utils.json_to_sheet(rows)
+    const workbook = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Alunos')
+    XLSX.writeFile(workbook, `alunos-trilha-${id}.xlsx`)
+  }
+
   function downloadBulkTemplate() {
     if (!id || structurePhases.length === 0) return
     const workbook = XLSX.utils.book_new()
@@ -1119,6 +1140,14 @@ export function TrailDetailPage() {
                 {loadingStudentTrails ? (
                   <span className="muted">Carregando progresso…</span>
                 ) : null}
+                <button
+                  type="button"
+                  className="btn btn--ghost btn--small"
+                  disabled={sortedStudentTrails.length === 0}
+                  onClick={exportStudentTrailsXlsx}
+                >
+                  Exportar XLSX
+                </button>
                 <button
                   type="button"
                   className="btn btn--primary btn--small"
