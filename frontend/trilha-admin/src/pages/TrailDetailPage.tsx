@@ -94,6 +94,18 @@ export function TrailDetailPage() {
   const [addStudentError, setAddStudentError] = useState<string | null>(null)
   const [addingStudentId, setAddingStudentId] = useState<string | null>(null)
 
+  const [showBulkEditor, setShowBulkEditor] = useState(false)
+  const [selectedStudentTrailIds, setSelectedStudentTrailIds] = useState<
+    Set<string>
+  >(new Set())
+  const [bulkStage, setBulkStage] = useState('')
+  const [bulkQuestion, setBulkQuestion] = useState('')
+  const [bulkBusy, setBulkBusy] = useState(false)
+  const [bulkError, setBulkError] = useState<string | null>(null)
+  const [bulkSuccess, setBulkSuccess] = useState<string | null>(null)
+  const [filterStage, setFilterStage] = useState('')
+  const [filterQuestion, setFilterQuestion] = useState('')
+
   const [logs, setLogs] = useState<ConversationLog[]>([])
   const [loadingLogs, setLoadingLogs] = useState(true)
   const [logsError, setLogsError] = useState<string | null>(null)
@@ -186,6 +198,53 @@ export function TrailDetailPage() {
     () => contentEtapas.find((et) => et.id === selectedEtapaId) ?? null,
     [contentEtapas, selectedEtapaId],
   )
+
+  const stageOptions = useMemo(() => {
+    const numbers = new Set<number>()
+    for (const s of stages) {
+      if (Number.isFinite(s.stage_number) && s.stage_number >= 1) {
+        numbers.add(s.stage_number)
+      }
+    }
+    for (const q of stageQuestions) {
+      if (Number.isFinite(q.stage_number) && q.stage_number >= 1) {
+        numbers.add(q.stage_number)
+      }
+    }
+    return [...numbers].sort((a, b) => a - b)
+  }, [stages, stageQuestions])
+
+  const questionOptions = useMemo(() => {
+    const numbers = new Set<number>()
+    for (const q of stageQuestions) {
+      if (Number.isFinite(q.question_number) && q.question_number >= 1) {
+        numbers.add(q.question_number)
+      }
+    }
+    if (numbers.size === 0) {
+      for (let i = 1; i <= contentEtapas.length; i++) numbers.add(i)
+    }
+    return [...numbers].sort((a, b) => a - b)
+  }, [stageQuestions, contentEtapas])
+
+  const filteredStudentTrails = useMemo(() => {
+    return sortedStudentTrails.filter((row) => {
+      if (filterStage && row.current_stage_number !== Number(filterStage)) {
+        return false
+      }
+      if (
+        filterQuestion &&
+        row.current_question_number !== Number(filterQuestion)
+      ) {
+        return false
+      }
+      return true
+    })
+  }, [sortedStudentTrails, filterStage, filterQuestion])
+
+  const allStudentTrailsSelected =
+    filteredStudentTrails.length > 0 &&
+    filteredStudentTrails.every((row) => selectedStudentTrailIds.has(row.id))
 
   useEffect(() => {
     if (!db || !id) return
@@ -363,6 +422,37 @@ export function TrailDetailPage() {
   }, [showAddStudentPicker])
 
   useEffect(() => {
+    if (!showBulkEditor) {
+      setSelectedStudentTrailIds(new Set())
+      setBulkStage('')
+      setBulkQuestion('')
+      setBulkError(null)
+      setBulkSuccess(null)
+      setFilterStage('')
+      setFilterQuestion('')
+    }
+  }, [showBulkEditor])
+
+  useEffect(() => {
+    setSelectedStudentTrailIds(new Set())
+    setBulkSuccess(null)
+  }, [filterStage, filterQuestion])
+
+  useEffect(() => {
+    setSelectedStudentTrailIds((prev) => {
+      if (prev.size === 0) return prev
+      const existing = new Set(studentTrails.map((row) => row.id))
+      let changed = false
+      const next = new Set<string>()
+      for (const rowId of prev) {
+        if (existing.has(rowId)) next.add(rowId)
+        else changed = true
+      }
+      return changed ? next : prev
+    })
+  }, [studentTrails])
+
+  useEffect(() => {
     if (!db) return
     const unsub = onSnapshot(collection(db, INSTITUTIONS_COLLECTION), (snap) => {
       const next = snap.docs.map((d) => {
@@ -501,6 +591,84 @@ export function TrailDetailPage() {
       setAddStudentError(msg)
     } finally {
       setAddingStudentId(null)
+    }
+  }
+
+  function toggleStudentTrailSelection(rowId: string) {
+    setSelectedStudentTrailIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(rowId)) next.delete(rowId)
+      else next.add(rowId)
+      return next
+    })
+    setBulkSuccess(null)
+  }
+
+  function toggleSelectAllStudentTrails() {
+    setSelectedStudentTrailIds((prev) => {
+      const allSelected =
+        filteredStudentTrails.length > 0 &&
+        filteredStudentTrails.every((row) => prev.has(row.id))
+      const next = new Set(prev)
+      if (allSelected) {
+        filteredStudentTrails.forEach((row) => next.delete(row.id))
+      } else {
+        filteredStudentTrails.forEach((row) => next.add(row.id))
+      }
+      return next
+    })
+    setBulkSuccess(null)
+  }
+
+  async function applyBulkPosition() {
+    if (!db) return
+    setBulkError(null)
+    setBulkSuccess(null)
+
+    if (selectedStudentTrailIds.size === 0) {
+      setBulkError('Selecione ao menos um aluno para alterar em lote.')
+      return
+    }
+    const nextStage = Number(bulkStage)
+    const nextQuestion = Number(bulkQuestion)
+    if (!Number.isInteger(nextStage) || nextStage < 1) {
+      setBulkError('Escolha um stage válido.')
+      return
+    }
+    if (!Number.isInteger(nextQuestion) || nextQuestion < 1) {
+      setBulkError('Escolha uma questão válida.')
+      return
+    }
+
+    const dbOk = db
+    const ids = [...selectedStudentTrailIds]
+    setBulkBusy(true)
+    try {
+      const chunkSize = 400
+      for (let start = 0; start < ids.length; start += chunkSize) {
+        const chunk = ids.slice(start, start + chunkSize)
+        const batch = writeBatch(dbOk)
+        for (const rowId of chunk) {
+          const ref = doc(dbOk, STUDENT_TRAILS_COLLECTION, rowId)
+          batch.update(ref, {
+            current_stage_number: nextStage,
+            current_question_number: nextQuestion,
+            updated_at: serverTimestamp(),
+            last_interaction_at: serverTimestamp(),
+          })
+        }
+        await batch.commit()
+      }
+      setBulkSuccess(
+        `${ids.length} aluno(s) movido(s) para stage ${nextStage}, questão ${nextQuestion}.`,
+      )
+      setSelectedStudentTrailIds(new Set())
+    } catch (e) {
+      setBulkError(
+        e instanceof Error ? e.message : 'Erro ao alterar alunos em lote.',
+      )
+    } finally {
+      setBulkBusy(false)
     }
   }
 
@@ -1160,6 +1328,16 @@ export function TrailDetailPage() {
                 </button>
                 <button
                   type="button"
+                  className="btn btn--ghost btn--small"
+                  disabled={sortedStudentTrails.length === 0 || !db}
+                  onClick={() => setShowBulkEditor((open) => !open)}
+                >
+                  {showBulkEditor
+                    ? 'Fechar alteração em lote'
+                    : 'Alterar em lote stage e questão'}
+                </button>
+                <button
+                  type="button"
                   className="btn btn--primary btn--small"
                   disabled={!trail.institution_id?.trim() || !db}
                   onClick={() =>
@@ -1250,6 +1428,81 @@ export function TrailDetailPage() {
               </div>
             ) : null}
 
+            {showBulkEditor ? (
+              <div className="trail-add-students">
+                <p className="muted" style={{ margin: '0 0 0.75rem' }}>
+                  Use os filtros da tabela e marque os alunos desejados. Em seguida
+                  escolha o stage e a questão de destino e aplique. A alteração grava
+                  direto em <code>student_trails</code>.
+                </p>
+                <div className="trail-bulk-edit">
+                  <label className="trail-bulk-edit__field">
+                    <span className="muted">Stage de destino</span>
+                    <select
+                      value={bulkStage}
+                      onChange={(e) => {
+                        setBulkStage(e.target.value)
+                        setBulkSuccess(null)
+                      }}
+                    >
+                      <option value="" disabled>
+                        Selecione…
+                      </option>
+                      {stageOptions.map((n) => (
+                        <option key={n} value={String(n)}>
+                          {n}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="trail-bulk-edit__field">
+                    <span className="muted">Questão de destino</span>
+                    <select
+                      value={bulkQuestion}
+                      onChange={(e) => {
+                        setBulkQuestion(e.target.value)
+                        setBulkSuccess(null)
+                      }}
+                    >
+                      <option value="" disabled>
+                        Selecione…
+                      </option>
+                      {questionOptions.map((n) => (
+                        <option key={n} value={String(n)}>
+                          {n}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <button
+                    type="button"
+                    className="btn btn--primary btn--small"
+                    disabled={
+                      bulkBusy ||
+                      selectedStudentTrailIds.size === 0 ||
+                      !bulkStage ||
+                      !bulkQuestion
+                    }
+                    onClick={() => void applyBulkPosition()}
+                  >
+                    {bulkBusy
+                      ? 'Aplicando…'
+                      : `Aplicar a ${selectedStudentTrailIds.size} aluno(s)`}
+                  </button>
+                </div>
+                {bulkError ? (
+                  <p className="banner banner--error" role="alert">
+                    {bulkError}
+                  </p>
+                ) : null}
+                {bulkSuccess ? (
+                  <p className="banner banner--success" role="status">
+                    {bulkSuccess}
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
+
             {studentTrailsError ? (
               <p className="banner banner--error" role="alert">
                 {studentTrailsError}
@@ -1266,21 +1519,104 @@ export function TrailDetailPage() {
             ) : null}
 
             {sortedStudentTrails.length > 0 ? (
-              <div className="table-wrap">
-                <table className="table">
-                  <thead>
-                    <tr>
-                      <th>Aluno</th>
-                      <th>Stage atual</th>
-                      <th>Questão atual</th>
-                      <th>Status</th>
-                      <th>Início</th>
-                      <th>Última interação</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {sortedStudentTrails.map((row) => (
-                      <tr key={row.id}>
+              <>
+                <div className="trail-students-filter">
+                  <label className="trail-bulk-edit__field">
+                    <span className="muted">Filtrar por stage</span>
+                    <select
+                      value={filterStage}
+                      onChange={(e) => setFilterStage(e.target.value)}
+                    >
+                      <option value="">Todos</option>
+                      {stageOptions.map((n) => (
+                        <option key={n} value={String(n)}>
+                          {n}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="trail-bulk-edit__field">
+                    <span className="muted">Filtrar por questão</span>
+                    <select
+                      value={filterQuestion}
+                      onChange={(e) => setFilterQuestion(e.target.value)}
+                    >
+                      <option value="">Todas</option>
+                      {questionOptions.map((n) => (
+                        <option key={n} value={String(n)}>
+                          {n}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  {filterStage || filterQuestion ? (
+                    <button
+                      type="button"
+                      className="btn btn--ghost btn--small"
+                      onClick={() => {
+                        setFilterStage('')
+                        setFilterQuestion('')
+                      }}
+                    >
+                      Limpar filtro
+                    </button>
+                  ) : null}
+                  <span className="muted trail-students-filter__count">
+                    {filteredStudentTrails.length} de {sortedStudentTrails.length}{' '}
+                    aluno(s)
+                  </span>
+                </div>
+
+                {filteredStudentTrails.length === 0 ? (
+                  <p className="muted" role="status">
+                    Nenhum aluno corresponde ao filtro selecionado.
+                  </p>
+                ) : (
+                  <div className="table-wrap">
+                    <table className="table">
+                      <thead>
+                        <tr>
+                          {showBulkEditor ? (
+                            <th className="table__checkbox-cell">
+                              <input
+                                type="checkbox"
+                                aria-label="Selecionar todos os alunos filtrados"
+                                checked={allStudentTrailsSelected}
+                                onChange={toggleSelectAllStudentTrails}
+                              />
+                            </th>
+                          ) : null}
+                          <th>Aluno</th>
+                          <th>Stage atual</th>
+                          <th>Questão atual</th>
+                          <th>Status</th>
+                          <th>Início</th>
+                          <th>Última interação</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredStudentTrails.map((row) => (
+                      <tr
+                        key={row.id}
+                        className={
+                          showBulkEditor && selectedStudentTrailIds.has(row.id)
+                            ? 'table__row--selected'
+                            : undefined
+                        }
+                      >
+                        {showBulkEditor ? (
+                          <td className="table__checkbox-cell">
+                            <input
+                              type="checkbox"
+                              aria-label={`Selecionar ${
+                                studentNameById.get(row.student_id) ??
+                                row.student_id
+                              }`}
+                              checked={selectedStudentTrailIds.has(row.id)}
+                              onChange={() => toggleStudentTrailSelection(row.id)}
+                            />
+                          </td>
+                        ) : null}
                         <td>
                           <Link
                             className="table__name-link"
@@ -1313,9 +1649,11 @@ export function TrailDetailPage() {
                         </td>
                       </tr>
                     ))}
-                  </tbody>
-                </table>
-              </div>
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </>
             ) : null}
           </section>
 
