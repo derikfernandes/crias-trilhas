@@ -157,6 +157,12 @@
   color: var(--text-h);
 }
 
+.banner--success {
+  background: color-mix(in srgb, #16a34a 14%, var(--bg));
+  border: 1px solid color-mix(in srgb, #16a34a 45%, var(--border));
+  color: var(--text-h);
+}
+
 .panel {
   background: color-mix(in srgb, var(--bg) 92%, var(--border));
   border: 1px solid var(--border);
@@ -1971,6 +1977,56 @@
   border-radius: 6px;
   border: 1px solid var(--border);
   font: inherit;
+}
+
+.trail-bulk-edit {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.75rem;
+  margin: 0 0 0.75rem;
+}
+
+.trail-bulk-edit__field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 9rem;
+}
+
+.trail-bulk-edit__field select {
+  padding: 0.45rem 0.6rem;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  font: inherit;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.trail-students-filter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.75rem;
+  margin: 0 0 0.85rem;
+}
+
+.trail-students-filter__count {
+  margin-left: auto;
+  align-self: center;
+}
+
+.table__checkbox-cell {
+  width: 2.5rem;
+  text-align: center;
+}
+
+.table__checkbox-cell input {
+  cursor: pointer;
+}
+
+.table__row--selected {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
 
 .trail-add-students__list {
