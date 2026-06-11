@@ -220,7 +220,7 @@ async function handleRequest(request: Request): Promise<Response> {
             .limit(1)
             .get()
 
-          if (snap.empty) return respond(404, { error: 'Not found' })
+          if (snap.empty) return respond(200, {})
 
           const docSnap = snap.docs[0]
           const out = toStudentOutput(
