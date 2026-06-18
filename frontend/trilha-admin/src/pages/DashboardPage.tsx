@@ -25,13 +25,8 @@ import {
   CONVERSATION_LOGS_COLLECTION,
   snapshotToConversationLog,
 } from '../lib/conversationLogFirestore'
-import {
-  EXERCISE_ATTEMPTS_COLLECTION,
-  snapshotToExerciseAttempt,
-} from '../lib/exerciseAttemptFirestore'
 import { studentPath, trailPath } from '../lib/paths'
 import type { ConversationLog } from '../types/conversationLog'
-import type { ExerciseAttempt } from '../types/exerciseAttempt'
 import type { Institution } from '../types/institution'
 import type { Student } from '../types/student'
 import type { StudentTrail } from '../types/studentTrail'
@@ -152,6 +147,108 @@ type AnswerCandidate = {
   logId: string
 }
 
+function normalizeAnswer(value: string): string {
+  let s = value.trim()
+  if (
+    (s.startsWith('"') && s.endsWith('"')) ||
+    (s.startsWith("'") && s.endsWith("'"))
+  ) {
+    s = s.slice(1, -1).trim()
+  }
+  return s
+}
+
+function answersMatch(studentAnswer: string, correctOption: string): boolean {
+  return (
+    normalizeAnswer(studentAnswer).toLowerCase() ===
+    normalizeAnswer(correctOption).toLowerCase()
+  )
+}
+
+type LogAggregates = {
+  doneByStudent: Map<string, Set<string>>
+  answerMap: Map<string, string>
+}
+
+function buildLogAggregates(logs: ConversationLog[]): LogAggregates {
+  const doneByStudent = new Map<string, Set<string>>()
+  const byKey = new Map<string, AnswerCandidate[]>()
+
+  for (const log of logs) {
+    if (log.sender !== 'student') continue
+    if (!log.student_id || !log.trail_id) continue
+    if (log.stage_number < 1 || log.question_number < 1) continue
+
+    const doneKey = `${log.trail_id}|${log.stage_number}|${log.question_number}`
+    let doneSet = doneByStudent.get(log.student_id)
+    if (!doneSet) {
+      doneSet = new Set()
+      doneByStudent.set(log.student_id, doneSet)
+    }
+    doneSet.add(doneKey)
+
+    const answerKey = `${log.student_id}|${log.trail_id}|${log.stage_number}|${log.question_number}`
+    const list = byKey.get(answerKey) ?? []
+    list.push({
+      text: log.message_text,
+      at: conversationLogTimestamp(log),
+      isExercise: log.message_type === 'exercise',
+      logId: log.id,
+    })
+    byKey.set(answerKey, list)
+  }
+
+  const answerMap = new Map<string, string>()
+  for (const [key, candidates] of byKey) {
+    answerMap.set(key, pickBestStudentAnswer(candidates))
+  }
+
+  return { doneByStudent, answerMap }
+}
+
+function scoreStudentFromAnswerMap(
+  studentId: string,
+  enrolledTrailIds: Set<string>,
+  answerMap: Map<string, string>,
+  stageByKey: Map<string, TrailStage>,
+  questionByKey: Map<string, TrailStageQuestion>,
+  deselectedStages: Set<string>,
+  deselectedQuestions: Set<number>,
+): { correct: number; wrong: number } {
+  let correct = 0
+  let wrong = 0
+  const prefix = `${studentId}|`
+
+  for (const [key, answer] of answerMap) {
+    if (!key.startsWith(prefix) || !answer.trim()) continue
+
+    const rest = key.slice(prefix.length)
+    const sep1 = rest.indexOf('|')
+    const sep2 = rest.indexOf('|', sep1 + 1)
+    if (sep1 < 0 || sep2 < 0) continue
+
+    const trailId = rest.slice(0, sep1)
+    const stage = Number(rest.slice(sep1 + 1, sep2))
+    const question = Number(rest.slice(sep2 + 1))
+    if (!enrolledTrailIds.has(trailId)) continue
+    if (deselectedStages.has(`${trailId}|${stage}`)) continue
+    if (deselectedQuestions.has(question)) continue
+
+    const stageRec = stageByKey.get(`${trailId}|${stage}`)
+    if (stageRec?.stage_type !== 'exercise') continue
+
+    const gabarito = (
+      questionByKey.get(`${trailId}|${stage}|${question}`)?.correct_option ?? ''
+    ).trim()
+    if (!gabarito) continue
+
+    if (answersMatch(answer, gabarito)) correct += 1
+    else wrong += 1
+  }
+
+  return { correct, wrong }
+}
+
 function pickBestStudentAnswer(candidates: AnswerCandidate[]): string {
   if (candidates.length === 0) return ''
   const exercises = candidates.filter((c) => c.isExercise)
@@ -163,63 +260,29 @@ function pickBestStudentAnswer(candidates: AnswerCandidate[]): string {
   return pool[0].text
 }
 
-/** Chave: student_id|trail_id|stage|question */
-function buildStudentAnswerMap(logs: ConversationLog[]): Map<string, string> {
-  const byKey = new Map<string, AnswerCandidate[]>()
-  for (const log of logs) {
-    if (log.sender !== 'student') continue
-    if (!log.student_id || !log.trail_id) continue
-    if (log.stage_number < 1 || log.question_number < 1) continue
-    const key = `${log.student_id}|${log.trail_id}|${log.stage_number}|${log.question_number}`
-    const list = byKey.get(key) ?? []
-    list.push({
-      text: log.message_text,
-      at: conversationLogTimestamp(log),
-      isExercise: log.message_type === 'exercise',
-      logId: log.id,
-    })
-    byKey.set(key, list)
-  }
-  const answers = new Map<string, string>()
-  for (const [key, candidates] of byKey) {
-    answers.set(key, pickBestStudentAnswer(candidates))
-  }
-  return answers
-}
-
-function buildDoneQuestionsByStudent(
-  logs: ConversationLog[],
-): Map<string, Set<string>> {
-  const map = new Map<string, Set<string>>()
-  for (const log of logs) {
-    if (log.sender !== 'student') continue
-    if (!log.student_id || !log.trail_id) continue
-    if (log.stage_number < 1 || log.question_number < 1) continue
-    const key = `${log.trail_id}|${log.stage_number}|${log.question_number}`
-    let set = map.get(log.student_id)
-    if (!set) {
-      set = new Set()
-      map.set(log.student_id, set)
-    }
-    set.add(key)
-  }
-  return map
-}
-
 async function fetchConversationLogsForStudents(
   studentIds: string[],
+  relevantTrailIds?: Set<string>,
 ): Promise<ConversationLog[]> {
   if (!db || studentIds.length === 0) return []
+  const dbOk = db
+
+  const chunkResults = await Promise.all(
+    chunkArray(studentIds, FIRESTORE_IN_LIMIT).map(async (chunk) => {
+      const snap = await getDocs(
+        query(
+          collection(dbOk, CONVERSATION_LOGS_COLLECTION),
+          where('student_id', 'in', chunk),
+        ),
+      )
+      return snap.docs.map(snapshotToConversationLog)
+    }),
+  )
+
   const byId = new Map<string, ConversationLog>()
-  for (const chunk of chunkArray(studentIds, FIRESTORE_IN_LIMIT)) {
-    const snap = await getDocs(
-      query(
-        collection(db, CONVERSATION_LOGS_COLLECTION),
-        where('student_id', 'in', chunk),
-      ),
-    )
-    for (const doc of snap.docs) {
-      const log = snapshotToConversationLog(doc)
+  for (const logs of chunkResults) {
+    for (const log of logs) {
+      if (relevantTrailIds && !relevantTrailIds.has(log.trail_id)) continue
       byId.set(log.id, log)
     }
   }
@@ -248,11 +311,11 @@ export function DashboardPage() {
   const [students, setStudents] = useState<Student[]>([])
   const [trails, setTrails] = useState<Trail[]>([])
   const [studentTrails, setStudentTrails] = useState<StudentTrail[]>([])
-  const [attempts, setAttempts] = useState<ExerciseAttempt[]>([])
   const [conversationLogs, setConversationLogs] = useState<ConversationLog[]>([])
   const [stages, setStages] = useState<TrailStage[]>([])
   const [questions, setQuestions] = useState<TrailStageQuestion[]>([])
   const [loadingData, setLoadingData] = useState(false)
+  const [loadingLogs, setLoadingLogs] = useState(false)
   const [dataError, setDataError] = useState<string | null>(null)
 
   // Filtros da tabela de alunos
@@ -328,18 +391,18 @@ export function DashboardPage() {
         setStudents([])
         setTrails([])
         setStudentTrails([])
-        setAttempts([])
         setConversationLogs([])
         setStages([])
         setQuestions([])
         setDataError(null)
         setLoadingData(false)
+        setLoadingLogs(false)
         return
       }
 
       setLoadingData(true)
       const dbOk = db
-      let pending = 5
+      let pending = 4
 
     const done = () => {
       pending -= 1
@@ -399,34 +462,6 @@ export function DashboardPage() {
         onError(setStudentTrails, true),
       ),
     )
-    unsubs.push(
-      onSnapshot(
-        query(
-          collection(dbOk, EXERCISE_ATTEMPTS_COLLECTION),
-          where('institution_id', '==', selectedId),
-        ),
-        (snap) => {
-          setAttempts(snap.docs.map(snapshotToExerciseAttempt))
-          setDataError(null)
-          done()
-        },
-        onError(setAttempts, true),
-      ),
-    )
-    unsubs.push(
-      onSnapshot(
-        query(
-          collection(dbOk, CONVERSATION_LOGS_COLLECTION),
-          where('institution_id', '==', selectedId),
-        ),
-        (snap) => {
-          setConversationLogs(snap.docs.map(snapshotToConversationLog))
-          setDataError(null)
-          done()
-        },
-        onError(setConversationLogs, true),
-      ),
-    )
     // Stages e questões não têm institution_id; carrega tudo e filtra
     // pelas trilhas da instituição (volume pequeno no client).
     unsubs.push(
@@ -454,6 +489,67 @@ export function DashboardPage() {
       for (const u of unsubs) u()
     }
   }, [selectedId])
+
+  const studentIdsKey = useMemo(
+    () =>
+      students
+        .map((s) => s.id)
+        .filter(Boolean)
+        .sort()
+        .join('\0'),
+    [students],
+  )
+
+  const trailIdsKey = useMemo(
+    () =>
+      trails
+        .map((t) => t.id)
+        .filter(Boolean)
+        .sort()
+        .join('\0'),
+    [trails],
+  )
+
+  useEffect(() => {
+    let cancelled = false
+
+    if (!db || !selectedId || loadingData) {
+      return () => {
+        cancelled = true
+      }
+    }
+
+    const studentIds = studentIdsKey ? studentIdsKey.split('\0') : []
+    if (studentIds.length === 0) {
+      setConversationLogs([])
+      setLoadingLogs(false)
+      return () => {
+        cancelled = true
+      }
+    }
+
+    const relevantTrailIds = new Set(
+      trailIdsKey ? trailIdsKey.split('\0') : [],
+    )
+
+    setLoadingLogs(true)
+    void fetchConversationLogsForStudents(studentIds, relevantTrailIds)
+      .then((logs) => {
+        if (cancelled) return
+        setConversationLogs(logs)
+        setLoadingLogs(false)
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return
+        setDataError(err instanceof Error ? err.message : 'Erro ao carregar logs')
+        setConversationLogs([])
+        setLoadingLogs(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [selectedId, studentIdsKey, trailIdsKey, loadingData])
 
   const sortedInstitutions = useMemo(() => {
     return [...institutions].sort((a, b) => {
@@ -578,27 +674,13 @@ export function DashboardPage() {
     [availableQuestions, deselectedQuestions],
   )
 
-  /**
-   * Questões com interação real do aluno (pelo menos 1 log com sender=student),
-   * agrupadas por stage. Chave: student_id -> Set de "trail_id|stage|question".
-   */
-  const doneQuestionsByStudent = useMemo(() => {
-    const map = new Map<string, Set<string>>()
-    for (const log of conversationLogs) {
-      if (log.sender !== 'student') continue
-      if (!log.student_id || !log.trail_id) continue
-      if (log.stage_number < 1 || log.question_number < 1) continue
-      const key = `${log.trail_id}|${log.stage_number}|${log.question_number}`
-      let set = map.get(log.student_id)
-      if (!set) {
-        set = new Set()
-        map.set(log.student_id, set)
-      }
-      set.add(key)
-    }
-    return map
-  }, [conversationLogs])
+  const logAggregates = useMemo(
+    () => buildLogAggregates(conversationLogs),
+    [conversationLogs],
+  )
 
+  const doneQuestionsByStudent = logAggregates.doneByStudent
+  const studentAnswerMap = logAggregates.answerMap
 
   /**
    * Todas as questões ativas da trilha (colunas de resposta no XLSX), agrupadas
@@ -633,15 +715,21 @@ export function DashboardPage() {
     }
 
     const attemptsByStudent = new Map<string, { correct: number; wrong: number }>()
-    for (const a of attempts) {
-      if (!relevantIds.has(a.trail_id)) continue
-      let agg = attemptsByStudent.get(a.student_id)
-      if (!agg) {
-        agg = { correct: 0, wrong: 0 }
-        attemptsByStudent.set(a.student_id, agg)
-      }
-      if (a.is_correct) agg.correct += 1
-      else agg.wrong += 1
+    for (const student of students) {
+      const enrolled = trailsByStudent.get(student.id) ?? []
+      const enrolledTrailIds = new Set(enrolled.map((st) => st.trail_id))
+      attemptsByStudent.set(
+        student.id,
+        scoreStudentFromAnswerMap(
+          student.id,
+          enrolledTrailIds,
+          studentAnswerMap,
+          stageByKey,
+          questionByKey,
+          deselectedStages,
+          deselectedQuestions,
+        ),
+      )
     }
 
     const rows: StudentRow[] = students.map((student) => {
@@ -681,11 +769,13 @@ export function DashboardPage() {
     students,
     relevantTrails,
     studentTrails,
-    attempts,
     questionsByTrail,
+    stageByKey,
+    questionByKey,
     deselectedStages,
     deselectedQuestions,
     doneQuestionsByStudent,
+    studentAnswerMap,
   ])
 
   const filteredStudentRows = useMemo(() => {
@@ -762,11 +852,9 @@ export function DashboardPage() {
 
     let correct = 0
     let total = 0
-    const activeIds = new Set(activeTrails.map((t) => t.id))
-    for (const a of attempts) {
-      if (!activeIds.has(a.trail_id)) continue
-      total += 1
-      if (a.is_correct) correct += 1
+    for (const row of studentRows.filter((r) => r.student.active)) {
+      correct += row.correct
+      total += row.correct + row.wrong
     }
 
     return {
@@ -775,24 +863,55 @@ export function DashboardPage() {
       avgCompletion,
       avgAccuracy: pct(correct, total),
     }
-  }, [students, studentRows, activeTrails, attempts])
+  }, [students, studentRows, activeTrails])
 
-  // Ranking de pílulas
-  const pillRows = useMemo<PillRow[]>(() => {
-    const byKey = new Map<string, { correct: number; wrong: number }>()
-    for (const a of attempts) {
-      const trail = trailById.get(a.trail_id)
-      if (!trail?.active) continue
+  // Ranking de pílulas — itera só respostas existentes no mapa
+  const gradablePillQuestions = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const trail of activeTrails) {
       if (pillSubjectFilter && trail.subject?.trim() !== pillSubjectFilter) {
         continue
       }
-      const key = `${a.trail_id}|${a.stage_number}|${a.question_number}`
-      let agg = byKey.get(key)
+      const positions = questionsByTrail.get(trail.id) ?? []
+      for (const p of positions) {
+        const stage = stageByKey.get(`${trail.id}|${p.stage}`)
+        if (stage?.stage_type !== 'exercise') continue
+
+        const key = `${trail.id}|${p.stage}|${p.question}`
+        const gabarito = (questionByKey.get(key)?.correct_option ?? '').trim()
+        if (!gabarito) continue
+        map.set(key, gabarito)
+      }
+    }
+    return map
+  }, [
+    activeTrails,
+    questionsByTrail,
+    stageByKey,
+    questionByKey,
+    pillSubjectFilter,
+  ])
+
+  const pillRows = useMemo<PillRow[]>(() => {
+    const byKey = new Map<string, { correct: number; wrong: number }>()
+
+    for (const [answerKey, answer] of studentAnswerMap) {
+      if (!answer.trim()) continue
+
+      const parts = answerKey.split('|')
+      if (parts.length !== 4) continue
+
+      const qKey = `${parts[1]}|${parts[2]}|${parts[3]}`
+      const gabarito = gradablePillQuestions.get(qKey)
+      if (!gabarito) continue
+
+      let agg = byKey.get(qKey)
       if (!agg) {
         agg = { correct: 0, wrong: 0 }
-        byKey.set(key, agg)
+        byKey.set(qKey, agg)
       }
-      if (a.is_correct) agg.correct += 1
+
+      if (answersMatch(answer, gabarito)) agg.correct += 1
       else agg.wrong += 1
     }
 
@@ -820,7 +939,13 @@ export function DashboardPage() {
       })
     }
     return rows
-  }, [attempts, trailById, questionByKey, pillSubjectFilter, pillMinResponses])
+  }, [
+    studentAnswerMap,
+    gradablePillQuestions,
+    trailById,
+    questionByKey,
+    pillMinResponses,
+  ])
 
   const sortedPillRows = useMemo(() => {
     const rows = [...pillRows]
@@ -960,9 +1085,13 @@ export function DashboardPage() {
     setExportingTrailId(trail.id)
     try {
       const studentIds = students.map((s) => s.id).filter(Boolean)
-      const logs = await fetchConversationLogsForStudents(studentIds)
-      const answersByKey = buildStudentAnswerMap(logs)
-      const exportDoneByStudent = buildDoneQuestionsByStudent(logs)
+      const relevantTrailIds = new Set(trails.map((t) => t.id))
+      const logs = await fetchConversationLogsForStudents(
+        studentIds,
+        relevantTrailIds,
+      )
+      const { answerMap: answersByKey, doneByStudent: exportDoneByStudent } =
+        buildLogAggregates(logs)
 
       const answerColumns = allQuestionColumnsByTrail.get(trail.id) ?? []
       const fixedHeaders = [
@@ -1119,13 +1248,17 @@ export function DashboardPage() {
             <div className="dashboard-card">
               <span className="dashboard-card__label">% médio de conclusão</span>
               <span className="dashboard-card__value">
-                {loadingData ? '…' : formatPct(summary.avgCompletion)}
+                {loadingData || loadingLogs
+                  ? '…'
+                  : formatPct(summary.avgCompletion)}
               </span>
             </div>
             <div className="dashboard-card">
               <span className="dashboard-card__label">% médio de acerto</span>
               <span className="dashboard-card__value">
-                {loadingData ? '…' : formatPct(summary.avgAccuracy)}
+                {loadingData || loadingLogs
+                  ? '…'
+                  : formatPct(summary.avgAccuracy)}
               </span>
             </div>
             {missingGabaritoCount > 0 ? (
@@ -1147,7 +1280,11 @@ export function DashboardPage() {
             <div className="panel__head">
               <h2>Alunos</h2>
               <p className="admin__actions gerenciamento-detail-actions">
-                {loadingData ? <span className="muted">Carregando…</span> : null}
+                {loadingData ? (
+                  <span className="muted">Carregando alunos…</span>
+                ) : loadingLogs ? (
+                  <span className="muted">Carregando respostas…</span>
+                ) : null}
                 <span className="muted">
                   {filteredStudentRows.length} de {studentRows.length} alunos
                 </span>
@@ -1433,32 +1570,52 @@ export function DashboardPage() {
                             case 'released':
                               return <td key={c.key}>{row.released}</td>
                             case 'done':
-                              return <td key={c.key}>{row.done}</td>
+                              return (
+                                <td key={c.key}>
+                                  {loadingLogs ? '…' : row.done}
+                                </td>
+                              )
                             case 'completionPct':
                               return (
                                 <td key={c.key}>
-                                  <div className="progress">
-                                    <div className="progress__bar">
-                                      <div
-                                        className="progress__fill"
-                                        style={{
-                                          width: `${row.completionPct ?? 0}%`,
-                                        }}
-                                      />
+                                  {loadingLogs ? (
+                                    <span className="muted">…</span>
+                                  ) : (
+                                    <div className="progress">
+                                      <div className="progress__bar">
+                                        <div
+                                          className="progress__fill"
+                                          style={{
+                                            width: `${row.completionPct ?? 0}%`,
+                                          }}
+                                        />
+                                      </div>
+                                      <span className="progress__label">
+                                        {formatPct(row.completionPct)}
+                                      </span>
                                     </div>
-                                    <span className="progress__label">
-                                      {formatPct(row.completionPct)}
-                                    </span>
-                                  </div>
+                                  )}
                                 </td>
                               )
                             case 'correct':
-                              return <td key={c.key}>{row.correct}</td>
+                              return (
+                                <td key={c.key}>
+                                  {loadingLogs ? '…' : row.correct}
+                                </td>
+                              )
                             case 'wrong':
-                              return <td key={c.key}>{row.wrong}</td>
+                              return (
+                                <td key={c.key}>
+                                  {loadingLogs ? '…' : row.wrong}
+                                </td>
+                              )
                             case 'accuracyPct':
                               return (
-                                <td key={c.key}>{formatPct(row.accuracyPct)}</td>
+                                <td key={c.key}>
+                                  {loadingLogs
+                                    ? '…'
+                                    : formatPct(row.accuracyPct)}
+                                </td>
                               )
                           }
                         })}
@@ -1474,13 +1631,17 @@ export function DashboardPage() {
             <div className="panel__head">
               <h2>Pílulas — acertos e erros</h2>
               <p className="admin__actions gerenciamento-detail-actions">
-                {loadingData ? <span className="muted">Carregando…</span> : null}
+                {loadingData ? (
+                  <span className="muted">Carregando…</span>
+                ) : loadingLogs ? (
+                  <span className="muted">Calculando acertos…</span>
+                ) : null}
               </p>
             </div>
 
-            {attempts.length === 0 && !loadingData ? (
+            {pillRows.length === 0 && !loadingData && !loadingLogs ? (
               <p className="banner">
-                Sem tentativas registradas ainda. Os acertos e erros aparecem
+                Sem respostas corrigíveis ainda. Os acertos e erros aparecem
                 aqui quando os alunos responderem questões de exercício com
                 gabarito preenchido.{' '}
                 <Link to="/gabarito">Preencher gabarito →</Link>
