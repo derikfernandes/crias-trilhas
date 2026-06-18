@@ -45,6 +45,10 @@ import {
 import { TrailForm } from '../components/TrailForm'
 import { TrailStructureEditor } from '../components/TrailStructureEditor'
 import { TrailContentEditor } from '../components/TrailContentEditor'
+import {
+  ConversationChat,
+  LOGS_PAGE_SIZE,
+} from '../components/ConversationChat'
 import type { Trail } from '../types/trail'
 import type { TrailStage } from '../types/trailStage'
 import type { StudentTrail } from '../types/studentTrail'
@@ -109,6 +113,7 @@ export function TrailDetailPage() {
   const [logs, setLogs] = useState<ConversationLog[]>([])
   const [loadingLogs, setLoadingLogs] = useState(true)
   const [logsError, setLogsError] = useState<string | null>(null)
+  const [logsVisibleCount, setLogsVisibleCount] = useState(LOGS_PAGE_SIZE)
 
   const [showTrailForm, setShowTrailForm] = useState(false)
   const [structurePhases, setStructurePhases] = useState<StructurePhase[]>([])
@@ -180,14 +185,6 @@ export function TrailDetailPage() {
       return false
     })
   }, [eligibleStudentsToAdd, studentPickerFilter])
-
-  const sortedLogs = useMemo(() => {
-    return [...logs].sort((a, b) => {
-      const ma = a.created_at?.toMillis?.() ?? 0
-      const mb = b.created_at?.toMillis?.() ?? 0
-      return mb - ma
-    })
-  }, [logs])
 
   const maxCreatedStageNumber = useMemo(() => {
     if (stages.length === 0) return 0
@@ -303,6 +300,10 @@ export function TrailDetailPage() {
 
     void run()
     return () => unsub?.()
+  }, [id])
+
+  useEffect(() => {
+    setLogsVisibleCount(LOGS_PAGE_SIZE)
   }, [id])
 
   useEffect(() => {
@@ -1671,56 +1672,24 @@ export function TrailDetailPage() {
               </p>
             ) : null}
 
-            {!loadingLogs && sortedLogs.length === 0 ? (
+            {!loadingLogs && logs.length === 0 ? (
               <p className="muted">
                 Nenhum log de conversa encontrado para esta trilha ainda. Cada mensagem
                 trocada pelo chatbot gera um registro em <code>conversation_logs</code>.
               </p>
             ) : null}
 
-            {sortedLogs.length > 0 ? (
-              <div className="table-wrap">
-                <table className="table">
-                  <thead>
-                    <tr>
-                      <th>Quando</th>
-                      <th>Aluno</th>
-                      <th>Stage</th>
-                      <th>Questão</th>
-                      <th>Remetente</th>
-                      <th>Tipo</th>
-                      <th>Mensagem</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {sortedLogs.slice(0, 200).map((row) => (
-                      <tr key={row.id}>
-                        <td>
-                          {row.created_at_brasilia
-                            ? row.created_at_brasilia
-                            : row.created_at?.toDate
-                              ? row.created_at.toDate().toLocaleString('pt-BR')
-                              : '—'}
-                        </td>
-                        <td>
-                          <code>{row.student_id}</code>
-                        </td>
-                        <td>{row.stage_number}</td>
-                        <td>{row.question_number}</td>
-                        <td>
-                          <code>{row.sender}</code>
-                        </td>
-                        <td>{row.message_type ?? '—'}</td>
-                        <td className="table__text">
-                          {row.message_text.length > 200
-                            ? `${row.message_text.slice(0, 200)}…`
-                            : row.message_text}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+            {logs.length > 0 ? (
+              <ConversationChat
+                logs={logs}
+                visibleCount={logsVisibleCount}
+                showStudent
+                onLoadMore={() =>
+                  setLogsVisibleCount((count) =>
+                    Math.min(count + LOGS_PAGE_SIZE, logs.length),
+                  )
+                }
+              />
             ) : null}
           </section>
 

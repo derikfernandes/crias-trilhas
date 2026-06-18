@@ -23,6 +23,10 @@ import {
   snapshotToConversationLog,
 } from '../lib/conversationLogFirestore'
 import { StudentForm } from '../components/StudentForm'
+import {
+  ConversationChat,
+  LOGS_PAGE_SIZE,
+} from '../components/ConversationChat'
 import type { Student } from '../types/student'
 import type { StudentTrail, StudentTrailStatus } from '../types/studentTrail'
 import type { ConversationLog } from '../types/conversationLog'
@@ -41,6 +45,7 @@ export function StudentDetailPage() {
   const [logs, setLogs] = useState<ConversationLog[]>([])
   const [loadingLogs, setLoadingLogs] = useState(true)
   const [logsError, setLogsError] = useState<string | null>(null)
+  const [logsVisibleCount, setLogsVisibleCount] = useState(LOGS_PAGE_SIZE)
 
   const [institutionTrails, setInstitutionTrails] = useState<Trail[]>([])
   const [loadingInstitutionTrails, setLoadingInstitutionTrails] = useState(false)
@@ -119,6 +124,10 @@ export function StudentDetailPage() {
 
     void run()
     return () => unsub?.()
+  }, [id])
+
+  useEffect(() => {
+    setLogsVisibleCount(LOGS_PAGE_SIZE)
   }, [id])
 
   useEffect(() => {
@@ -614,48 +623,16 @@ export function StudentDetailPage() {
         ) : null}
 
         {logs.length > 0 ? (
-          <div className="table-wrap">
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>Quando</th>
-                  <th>Trilha</th>
-                  <th>Stage</th>
-                  <th>Questão</th>
-                  <th>Remetente</th>
-                  <th>Tipo</th>
-                  <th>Mensagem</th>
-                </tr>
-              </thead>
-              <tbody>
-                {logs.slice(0, 200).map((row) => (
-                  <tr key={row.id}>
-                    <td>
-                      {row.created_at_brasilia
-                        ? row.created_at_brasilia
-                        : row.created_at?.toDate
-                          ? row.created_at.toDate().toLocaleString('pt-BR')
-                          : '—'}
-                    </td>
-                    <td>
-                      <code>{row.trail_id}</code>
-                    </td>
-                    <td>{row.stage_number}</td>
-                    <td>{row.question_number}</td>
-                    <td>
-                      <code>{row.sender}</code>
-                    </td>
-                    <td>{row.message_type ?? '—'}</td>
-                    <td className="table__text">
-                      {row.message_text.length > 200
-                        ? `${row.message_text.slice(0, 200)}…`
-                        : row.message_text}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <ConversationChat
+            logs={logs}
+            visibleCount={logsVisibleCount}
+            showTrail
+            onLoadMore={() =>
+              setLogsVisibleCount((count) =>
+                Math.min(count + LOGS_PAGE_SIZE, logs.length),
+              )
+            }
+          />
         ) : null}
       </section>
     </>

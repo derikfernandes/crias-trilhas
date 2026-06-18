@@ -2,7 +2,9 @@ import type { ReactNode } from 'react'
 import { BrowserRouter, Link, Navigate, Route, Routes } from 'react-router-dom'
 import { db, firebaseConfigError } from './lib/firebase'
 import { PRODUCTION_APP_ORIGIN } from './lib/site'
+import { DashboardPage } from './pages/DashboardPage'
 import { DocPage } from './pages/DocPage'
+import { GabaritoPage } from './pages/GabaritoPage'
 import { HomePage } from './pages/HomePage'
 import { InstitutionDetailPage } from './pages/InstitutionDetailPage'
 import { InstitutionNewPage } from './pages/InstitutionNewPage'
@@ -36,6 +38,8 @@ function Layout({ children }: { children: ReactNode }) {
           {firebaseOk ? <Link to="/alunos/novo">Novo aluno</Link> : null}
           {firebaseOk ? <Link to="/trilhas/novo">Nova trilha</Link> : null}
           {firebaseOk ? <Link to="/gerenciamento">Gerenciamento</Link> : null}
+          {firebaseOk ? <Link to="/dashboard">Dashboard</Link> : null}
+          {firebaseOk ? <Link to="/gabarito">Gabarito</Link> : null}
           <Link to="/doc">API / Doc</Link>
         </div>
       </nav>
@@ -119,6 +123,22 @@ export default function App() {
             element={
               <FirebaseGate>
                 <GerenciamentoPage />
+              </FirebaseGate>
+            }
+          />
+          <Route
+            path="/dashboard"
+            element={
+              <FirebaseGate>
+                <DashboardPage />
+              </FirebaseGate>
+            }
+          />
+          <Route
+            path="/gabarito"
+            element={
+              <FirebaseGate>
+                <GabaritoPage />
               </FirebaseGate>
             }
           />
