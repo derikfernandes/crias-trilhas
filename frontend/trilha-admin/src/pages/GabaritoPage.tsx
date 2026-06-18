@@ -22,12 +22,14 @@ import {
   snapshotToTrailStageQuestion,
   TRAIL_STAGE_QUESTIONS_COLLECTION,
 } from '../lib/trailStageQuestionFirestore'
-import { trailStageQuestionsPath } from '../lib/paths'
 import type { Trail } from '../types/trail'
 import type { TrailStage } from '../types/trailStage'
 import type { TrailStageQuestion } from '../types/trailStageQuestion'
 
 const LAST_TRAIL_ID_STORAGE_KEY = 'trilha_admin_gabarito_trail_id'
+
+type SortBy = 'stage' | 'question'
+type SortDir = 'asc' | 'desc'
 
 type SaveState =
   | { kind: 'idle' }
@@ -51,6 +53,10 @@ export function GabaritoPage() {
   const [dataError, setDataError] = useState<string | null>(null)
 
   const [onlyMissing, setOnlyMissing] = useState(false)
+  const [filterStage, setFilterStage] = useState<number | ''>('')
+  const [filterQuestion, setFilterQuestion] = useState<number | ''>('')
+  const [sortBy, setSortBy] = useState<SortBy>('stage')
+  const [sortDir, setSortDir] = useState<SortDir>('asc')
   /** Edições pendentes: docId -> valor digitado de correct_option. */
   const [drafts, setDrafts] = useState<Record<string, string>>({})
   const [saveState, setSaveState] = useState<SaveState>({ kind: 'idle' })
@@ -104,6 +110,10 @@ export function GabaritoPage() {
 
     setDrafts({})
     setSaveState({ kind: 'idle' })
+    setFilterStage('')
+    setFilterQuestion('')
+    setSortBy('stage')
+    setSortDir('asc')
 
     if (!db || !selectedTrailId) {
       setStages([])
@@ -177,10 +187,59 @@ export function GabaritoPage() {
     [exerciseQuestions],
   )
 
+  const availableStages = useMemo(() => {
+    const nums = new Set(exerciseQuestions.map((q) => q.stage_number))
+    return [...nums].sort((a, b) => a - b)
+  }, [exerciseQuestions])
+
+  const availableQuestions = useMemo(() => {
+    const source =
+      filterStage !== ''
+        ? exerciseQuestions.filter((q) => q.stage_number === filterStage)
+        : exerciseQuestions
+    const nums = new Set(source.map((q) => q.question_number))
+    return [...nums].sort((a, b) => a - b)
+  }, [exerciseQuestions, filterStage])
+
+  useEffect(() => {
+    if (
+      filterQuestion !== '' &&
+      !availableQuestions.includes(filterQuestion)
+    ) {
+      setFilterQuestion('')
+    }
+  }, [availableQuestions, filterQuestion])
+
   const visibleQuestions = useMemo(() => {
-    if (!onlyMissing) return exerciseQuestions
-    return exerciseQuestions.filter((q) => !(q.correct_option ?? '').trim())
-  }, [exerciseQuestions, onlyMissing])
+    let list = exerciseQuestions
+    if (onlyMissing) {
+      list = list.filter((q) => !(q.correct_option ?? '').trim())
+    }
+    if (filterStage !== '') {
+      list = list.filter((q) => q.stage_number === filterStage)
+    }
+    if (filterQuestion !== '') {
+      list = list.filter((q) => q.question_number === filterQuestion)
+    }
+    return [...list].sort((a, b) => {
+      let cmp = 0
+      if (sortBy === 'stage') {
+        cmp = a.stage_number - b.stage_number
+        if (cmp === 0) cmp = a.question_number - b.question_number
+      } else {
+        cmp = a.question_number - b.question_number
+        if (cmp === 0) cmp = a.stage_number - b.stage_number
+      }
+      return sortDir === 'asc' ? cmp : -cmp
+    })
+  }, [
+    exerciseQuestions,
+    onlyMissing,
+    filterStage,
+    filterQuestion,
+    sortBy,
+    sortDir,
+  ])
 
   /** Valor exibido no input: rascunho se existir, senão o salvo. */
   function inputValue(q: TrailStageQuestion): string {
@@ -257,6 +316,20 @@ export function GabaritoPage() {
     () => trails.find((t) => t.id === selectedTrailId) ?? null,
     [trails, selectedTrailId],
   )
+
+  function toggleSort(column: SortBy) {
+    if (sortBy === column) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
+    } else {
+      setSortBy(column)
+      setSortDir('asc')
+    }
+  }
+
+  function sortAria(column: SortBy): 'ascending' | 'descending' | 'none' {
+    if (sortBy !== column) return 'none'
+    return sortDir === 'asc' ? 'ascending' : 'descending'
+  }
 
   return (
     <>
@@ -361,49 +434,136 @@ export function GabaritoPage() {
           ) : null}
 
           <div className="gabarito-filters">
-            <label className="field field--inline">
+            <label className="field field--inline gabarito-filters__check">
               <input
                 type="checkbox"
                 checked={onlyMissing}
                 onChange={(e) => setOnlyMissing(e.target.checked)}
               />
-              <span>mostrar só sem gabarito</span>
+              <span>só sem gabarito</span>
             </label>
-            <span className="muted">
+            <label className="gabarito-filter-select">
+              <span className="muted">Stage</span>
+              <select
+                value={filterStage === '' ? '' : String(filterStage)}
+                onChange={(e) => {
+                  const v = e.target.value.trim()
+                  setFilterStage(v ? Number(v) : '')
+                }}
+                disabled={loadingData || availableStages.length === 0}
+              >
+                <option value="">Todos</option>
+                {availableStages.map((n) => (
+                  <option key={n} value={n}>
+                    Stage {n}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="gabarito-filter-select">
+              <span className="muted">Questão</span>
+              <select
+                value={filterQuestion === '' ? '' : String(filterQuestion)}
+                onChange={(e) => {
+                  const v = e.target.value.trim()
+                  setFilterQuestion(v ? Number(v) : '')
+                }}
+                disabled={loadingData || availableQuestions.length === 0}
+              >
+                <option value="">Todas</option>
+                {availableQuestions.map((n) => (
+                  <option key={n} value={n}>
+                    Questão {n}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <p className="gabarito-filters__summary muted">
               {exerciseQuestions.length === 0
                 ? 'Nenhuma questão de exercício nesta trilha.'
                 : missingCount === 0
-                  ? `Todas as ${exerciseQuestions.length} questões de exercício têm gabarito.`
-                  : `${missingCount} de ${exerciseQuestions.length} questões sem gabarito.`}
-            </span>
+                  ? `Todas as ${exerciseQuestions.length} questões têm gabarito.`
+                  : `${missingCount} de ${exerciseQuestions.length} sem gabarito.`}
+              {visibleQuestions.length !== exerciseQuestions.length &&
+              exerciseQuestions.length > 0
+                ? ` Exibindo ${visibleQuestions.length}.`
+                : null}
+            </p>
           </div>
 
-          <div className="table-wrap">
-            <table className="table">
+          <div className="table-wrap gabarito-table-wrap">
+            <table className="table gabarito-table">
               <thead>
                 <tr>
-                  <th>Stage / Questão</th>
+                  <th
+                    className="gabarito-col-num gabarito-sort-th"
+                    aria-sort={sortAria('stage')}
+                  >
+                    <button
+                      type="button"
+                      className={
+                        sortBy === 'stage'
+                          ? 'gabarito-sort-btn gabarito-sort-btn--active'
+                          : 'gabarito-sort-btn'
+                      }
+                      onClick={() => toggleSort('stage')}
+                      disabled={loadingData}
+                    >
+                      Stage
+                      <span className="gabarito-sort-indicator" aria-hidden>
+                        {sortBy === 'stage'
+                          ? sortDir === 'asc'
+                            ? '↑'
+                            : '↓'
+                          : '↕'}
+                      </span>
+                    </button>
+                  </th>
+                  <th
+                    className="gabarito-col-num gabarito-sort-th"
+                    aria-sort={sortAria('question')}
+                  >
+                    <button
+                      type="button"
+                      className={
+                        sortBy === 'question'
+                          ? 'gabarito-sort-btn gabarito-sort-btn--active'
+                          : 'gabarito-sort-btn'
+                      }
+                      onClick={() => toggleSort('question')}
+                      disabled={loadingData}
+                    >
+                      Questão
+                      <span className="gabarito-sort-indicator" aria-hidden>
+                        {sortBy === 'question'
+                          ? sortDir === 'asc'
+                            ? '↑'
+                            : '↓'
+                          : '↕'}
+                      </span>
+                    </button>
+                  </th>
                   <th>Título</th>
                   <th>Conteúdo</th>
-                  <th>Alternativas</th>
                   <th>Resposta correta</th>
-                  <th>Status</th>
-                  <th></th>
+                  <th className="gabarito-col-status">Status</th>
                 </tr>
               </thead>
               <tbody>
                 {loadingData ? (
                   <tr>
-                    <td colSpan={7} className="muted table__empty">
+                    <td colSpan={6} className="muted table__empty">
                       Carregando questões…
                     </td>
                   </tr>
                 ) : visibleQuestions.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="muted table__empty">
+                    <td colSpan={6} className="muted table__empty">
                       {exerciseQuestions.length === 0
                         ? 'Esta trilha não tem questões em stages do tipo exercise.'
-                        : 'Nenhuma questão sem gabarito. 🎉'}
+                        : onlyMissing
+                          ? 'Nenhuma questão sem gabarito com os filtros atuais.'
+                          : 'Nenhuma questão corresponde aos filtros.'}
                     </td>
                   </tr>
                 ) : (
@@ -415,23 +575,15 @@ export function GabaritoPage() {
                     const filled = dirty ? value.trim() !== '' : saved !== ''
                     return (
                       <tr key={q.id}>
-                        <td>
-                          <code>
-                            s{q.stage_number} q{q.question_number}
-                          </code>
+                        <td className="gabarito-col-num">{q.stage_number}</td>
+                        <td className="gabarito-col-num">{q.question_number}</td>
+                        <td className="gabarito-text-cell">
+                          {q.title || '—'}
                         </td>
-                        <td>{q.title || '—'}</td>
-                        <td className="gabarito-content-cell" title={q.content}>
+                        <td className="gabarito-text-cell gabarito-content-cell">
                           {q.content || '—'}
                         </td>
-                        <td>
-                          {q.options && q.options.length > 0 ? (
-                            <code>{q.options.map((o) => o.key).join(' · ')}</code>
-                          ) : (
-                            <span className="muted">resposta livre</span>
-                          )}
-                        </td>
-                        <td>
+                        <td className="gabarito-answer-cell">
                           <input
                             type="text"
                             className={
@@ -454,13 +606,13 @@ export function GabaritoPage() {
                                 ? `Ex.: ${q.options[0].key}`
                                 : 'Resposta correta'
                             }
-                            aria-label={`Resposta correta de s${q.stage_number} q${q.question_number}`}
+                            aria-label={`Resposta correta de stage ${q.stage_number} questão ${q.question_number}`}
                           />
                           {err ? (
                             <span className="gabarito-input-error">{err}</span>
                           ) : null}
                         </td>
-                        <td>
+                        <td className="gabarito-col-status">
                           {filled ? (
                             <span className="badge badge--ok">
                               {dirty ? 'editado' : 'preenchido'}
@@ -468,17 +620,6 @@ export function GabaritoPage() {
                           ) : (
                             <span className="badge badge--warn">faltando</span>
                           )}
-                        </td>
-                        <td className="table__actions">
-                          <Link
-                            className="btn btn--small btn--ghost"
-                            to={trailStageQuestionsPath(
-                              q.trail_id,
-                              q.stage_number,
-                            )}
-                          >
-                            Abrir
-                          </Link>
                         </td>
                       </tr>
                     )

@@ -3046,21 +3046,144 @@
 .gabarito-filters {
   display: flex;
   flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.75rem 1rem;
+  margin-bottom: 1.25rem;
+  padding: 1rem 1.1rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--bg) 92%, var(--text-h) 8%);
+}
+
+.gabarito-filters__check {
+  align-self: center;
+  margin-right: 0.25rem;
+}
+
+.gabarito-filters__summary {
+  flex: 1 1 100%;
+  margin: 0;
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
+.gabarito-filter-select {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-width: 7.5rem;
+}
+
+.gabarito-filter-select select {
+  padding: 0.42rem 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font: inherit;
+  background: var(--bg);
+  color: var(--text-h);
+}
+
+.gabarito-table-wrap {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  margin: 0;
+  overflow-x: auto;
+}
+
+.gabarito-table {
+  margin: 0;
+}
+
+.gabarito-table th,
+.gabarito-table td {
+  vertical-align: top;
+}
+
+.gabarito-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--bg);
+  box-shadow: 0 1px 0 var(--border);
+}
+
+.gabarito-col-num {
+  width: 1%;
+  white-space: nowrap;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.gabarito-col-status {
+  width: 1%;
+  white-space: nowrap;
+  text-align: center;
+}
+
+.gabarito-sort-th {
+  padding: 0;
+}
+
+.gabarito-sort-btn {
+  display: inline-flex;
   align-items: center;
-  gap: 1rem;
-  margin-bottom: 1rem;
+  justify-content: center;
+  gap: 0.3rem;
+  width: 100%;
+  padding: 0.65rem 0.5rem;
+  border: none;
+  background: transparent;
+  font: inherit;
+  font-weight: 600;
+  color: var(--text-h);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.gabarito-sort-btn:hover:not(:disabled) {
+  color: var(--accent);
+}
+
+.gabarito-sort-btn:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.gabarito-sort-btn--active {
+  color: var(--accent);
+}
+
+.gabarito-sort-indicator {
+  font-size: 0.72rem;
+  opacity: 0.4;
+  line-height: 1;
+}
+
+.gabarito-sort-btn--active .gabarito-sort-indicator {
+  opacity: 1;
+}
+
+.gabarito-text-cell {
+  min-width: 10rem;
+  text-align: justify;
+  white-space: normal;
+  word-break: break-word;
+  line-height: 1.45;
 }
 
 .gabarito-content-cell {
-  max-width: 22rem;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  min-width: 14rem;
+}
+
+.gabarito-answer-cell {
+  min-width: 9rem;
+  width: 11rem;
 }
 
 .gabarito-input {
   font: inherit;
-  width: 9rem;
+  width: 100%;
+  box-sizing: border-box;
   padding: 0.4rem 0.55rem;
   border-radius: 8px;
   border: 1px solid var(--border);
@@ -3082,7 +3205,8 @@
   margin-top: 0.25rem;
   font-size: 0.76rem;
   color: #dc2626;
-  max-width: 12rem;
+  line-height: 1.35;
+  white-space: normal;
 }
 
 .badge {
