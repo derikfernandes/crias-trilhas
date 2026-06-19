@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import * as XLSX from 'xlsx'
 import { collection, getDocs, onSnapshot, query, where } from 'firebase/firestore'
@@ -26,6 +26,7 @@ import {
   snapshotToConversationLog,
 } from '../lib/conversationLogFirestore'
 import { studentPath, trailPath } from '../lib/paths'
+import { usePermissions } from '../hooks/usePermissions'
 import type { ConversationLog } from '../types/conversationLog'
 import type { Institution } from '../types/institution'
 import type { Student } from '../types/student'
@@ -260,24 +261,36 @@ function pickBestStudentAnswer(candidates: AnswerCandidate[]): string {
   return pool[0].text
 }
 
+const DATA_SOURCES = 3
+const LOG_FETCH_BATCH_SIZE = 3
+
 async function fetchConversationLogsForStudents(
   studentIds: string[],
   relevantTrailIds?: Set<string>,
+  onProgress?: (completed: number, total: number) => void,
 ): Promise<ConversationLog[]> {
   if (!db || studentIds.length === 0) return []
   const dbOk = db
 
-  const chunkResults = await Promise.all(
-    chunkArray(studentIds, FIRESTORE_IN_LIMIT).map(async (chunk) => {
-      const snap = await getDocs(
-        query(
-          collection(dbOk, CONVERSATION_LOGS_COLLECTION),
-          where('student_id', 'in', chunk),
-        ),
-      )
-      return snap.docs.map(snapshotToConversationLog)
-    }),
-  )
+  const chunks = chunkArray(studentIds, FIRESTORE_IN_LIMIT)
+  const chunkResults: ConversationLog[][] = []
+
+  for (let i = 0; i < chunks.length; i += LOG_FETCH_BATCH_SIZE) {
+    const batch = chunks.slice(i, i + LOG_FETCH_BATCH_SIZE)
+    const batchResults = await Promise.all(
+      batch.map(async (chunk) => {
+        const snap = await getDocs(
+          query(
+            collection(dbOk, CONVERSATION_LOGS_COLLECTION),
+            where('student_id', 'in', chunk),
+          ),
+        )
+        return snap.docs.map(snapshotToConversationLog)
+      }),
+    )
+    chunkResults.push(...batchResults)
+    onProgress?.(Math.min(i + batch.length, chunks.length), chunks.length)
+  }
 
   const byId = new Map<string, ConversationLog>()
   for (const logs of chunkResults) {
@@ -300,6 +313,7 @@ function forceWorksheetCellString(
 }
 
 export function DashboardPage() {
+  const { filterInstitutions } = usePermissions()
   const [institutions, setInstitutions] = useState<Institution[]>([])
   const [loadingInst, setLoadingInst] = useState(true)
   const [instError, setInstError] = useState<string | null>(null)
@@ -316,7 +330,24 @@ export function DashboardPage() {
   const [questions, setQuestions] = useState<TrailStageQuestion[]>([])
   const [loadingData, setLoadingData] = useState(false)
   const [loadingLogs, setLoadingLogs] = useState(false)
+  const [loadStepsDone, setLoadStepsDone] = useState(0)
+  const [loadStepsTotal, setLoadStepsTotal] = useState(DATA_SOURCES + 1)
+  const [loadPercent, setLoadPercent] = useState(0)
+  const [loadLabel, setLoadLabel] = useState('')
   const [dataError, setDataError] = useState<string | null>(null)
+  const loadProgressRef = useRef({ done: 0, total: DATA_SOURCES + 1 })
+
+  const getLoadTargetPercent = () => {
+    const { done, total } = loadProgressRef.current
+    return Math.min(99, Math.round((done / Math.max(total, 1)) * 100))
+  }
+
+  const syncLoadProgress = (labelPrefix: string) => {
+    const { done, total } = loadProgressRef.current
+    setLoadStepsDone(done)
+    setLoadStepsTotal(total)
+    setLoadLabel(labelPrefix)
+  }
 
   // Filtros da tabela de alunos
   const [nameFilter, setNameFilter] = useState('')
@@ -397,26 +428,41 @@ export function DashboardPage() {
         setDataError(null)
         setLoadingData(false)
         setLoadingLogs(false)
+        setLoadStepsDone(0)
+        setLoadStepsTotal(DATA_SOURCES + 1)
+        loadProgressRef.current = { done: 0, total: DATA_SOURCES + 1 }
+        setLoadPercent(0)
+        setLoadLabel('')
         return
       }
 
+      loadProgressRef.current = { done: 0, total: DATA_SOURCES + 1 }
       setLoadingData(true)
+      setLoadStepsDone(0)
+      setLoadStepsTotal(DATA_SOURCES + 1)
+      setLoadPercent(0)
+      setLoadLabel('Carregando alunos e trilhas…')
       const dbOk = db
-      let pending = 4
+      const loadedSources = new Set<string>()
 
-    const done = () => {
-      pending -= 1
-      if (pending <= 0) setLoadingData(false)
+    const done = (source: string) => {
+      if (loadedSources.has(source)) return
+      loadedSources.add(source)
+      loadProgressRef.current.done += 1
+      syncLoadProgress('Carregando alunos e trilhas…')
+      if (loadedSources.size >= DATA_SOURCES) {
+        setLoadingData(false)
+      }
     }
 
     const onError = (
       setData: (items: never[]) => void,
-      countsTowardLoading: boolean,
+      source: string,
     ) => {
       return (err: { message: string }) => {
         setDataError(err.message)
         setData([])
-        if (countsTowardLoading) done()
+        done(source)
       }
     }
 
@@ -427,11 +473,19 @@ export function DashboardPage() {
           where('institution_id', '==', selectedId),
         ),
         (snap) => {
-          setStudents(snap.docs.map(snapshotToStudent))
+          const studentList = snap.docs.map(snapshotToStudent)
+          setStudents(studentList)
           setDataError(null)
-          done()
+          const ids = studentList.map((s) => s.id).filter(Boolean)
+          const logChunks =
+            ids.length > 0
+              ? chunkArray(ids, FIRESTORE_IN_LIMIT).length
+              : 1
+          loadProgressRef.current.total = DATA_SOURCES + logChunks
+          setLoadStepsTotal(loadProgressRef.current.total)
+          done('students')
         },
-        onError(setStudents, true),
+        onError(setStudents, 'students'),
       ),
     )
     unsubs.push(
@@ -443,9 +497,9 @@ export function DashboardPage() {
         (snap) => {
           setTrails(snap.docs.map(snapshotToTrail))
           setDataError(null)
-          done()
+          done('trails')
         },
-        onError(setTrails, true),
+        onError(setTrails, 'trails'),
       ),
     )
     unsubs.push(
@@ -457,11 +511,20 @@ export function DashboardPage() {
         (snap) => {
           setStudentTrails(snap.docs.map(snapshotToStudentTrail))
           setDataError(null)
-          done()
+          done('studentTrails')
         },
-        onError(setStudentTrails, true),
+        onError(setStudentTrails, 'studentTrails'),
       ),
     )
+    const onMetadataError = (
+      setData: (items: never[]) => void,
+    ) => {
+      return (err: { message: string }) => {
+        setDataError(err.message)
+        setData([])
+      }
+    }
+
     // Stages e questões não têm institution_id; carrega tudo e filtra
     // pelas trilhas da instituição (volume pequeno no client).
     unsubs.push(
@@ -470,7 +533,7 @@ export function DashboardPage() {
         (snap) => {
           setStages(snap.docs.map(snapshotToTrailStage))
         },
-        onError(setStages, false),
+        onMetadataError(setStages),
       ),
     )
     unsubs.push(
@@ -479,7 +542,7 @@ export function DashboardPage() {
         (snap) => {
           setQuestions(snap.docs.map(snapshotToTrailStageQuestion))
         },
-        onError(setQuestions, false),
+        onMetadataError(setQuestions),
       ),
     )
     }
@@ -523,6 +586,10 @@ export function DashboardPage() {
     if (studentIds.length === 0) {
       setConversationLogs([])
       setLoadingLogs(false)
+      loadProgressRef.current.done = loadProgressRef.current.total
+      setLoadStepsDone(loadProgressRef.current.total)
+      setLoadPercent(100)
+      setLoadLabel('')
       return () => {
         cancelled = true
       }
@@ -532,18 +599,38 @@ export function DashboardPage() {
       trailIdsKey ? trailIdsKey.split('\0') : [],
     )
 
+    const logChunks = chunkArray(studentIds, FIRESTORE_IN_LIMIT).length
+    loadProgressRef.current.total = DATA_SOURCES + logChunks
+    setLoadStepsTotal(loadProgressRef.current.total)
+
     setLoadingLogs(true)
-    void fetchConversationLogsForStudents(studentIds, relevantTrailIds)
+    syncLoadProgress('Carregando respostas dos alunos…')
+    void fetchConversationLogsForStudents(
+      studentIds,
+      relevantTrailIds,
+      (completed, total) => {
+        if (cancelled) return
+        loadProgressRef.current.done = DATA_SOURCES + completed
+        loadProgressRef.current.total = DATA_SOURCES + total
+        syncLoadProgress('Carregando respostas dos alunos…')
+      },
+    )
       .then((logs) => {
         if (cancelled) return
         setConversationLogs(logs)
         setLoadingLogs(false)
+        loadProgressRef.current.done = loadProgressRef.current.total
+        setLoadStepsDone(loadProgressRef.current.total)
+        setLoadPercent(100)
+        setLoadLabel('')
       })
       .catch((err: unknown) => {
         if (cancelled) return
         setDataError(err instanceof Error ? err.message : 'Erro ao carregar logs')
         setConversationLogs([])
         setLoadingLogs(false)
+        setLoadPercent(0)
+        setLoadLabel('')
       })
 
     return () => {
@@ -552,12 +639,12 @@ export function DashboardPage() {
   }, [selectedId, studentIdsKey, trailIdsKey, loadingData])
 
   const sortedInstitutions = useMemo(() => {
-    return [...institutions].sort((a, b) => {
+    return filterInstitutions(institutions).sort((a, b) => {
       const ma = a.updated_at?.toMillis?.() ?? a.created_at?.toMillis?.() ?? 0
       const mb = b.updated_at?.toMillis?.() ?? b.created_at?.toMillis?.() ?? 0
       return mb - ma
     })
-  }, [institutions])
+  }, [institutions, filterInstitutions])
 
   const activeTrails = useMemo(() => trails.filter((t) => t.active), [trails])
 
@@ -1171,14 +1258,33 @@ export function DashboardPage() {
     (c) => !hiddenColumns.has(c.key),
   )
 
+  const isDashboardLoading =
+    Boolean(selectedId) && (loadingData || loadingLogs)
+
+  useEffect(() => {
+    if (!isDashboardLoading) return
+
+    const id = window.setInterval(() => {
+      const target = getLoadTargetPercent()
+      setLoadPercent((current) => {
+        if (current < target) return Math.min(current + 1, target)
+        return current
+      })
+    }, 40)
+
+    return () => window.clearInterval(id)
+  }, [isDashboardLoading, loadStepsDone, loadStepsTotal])
+
   return (
     <>
       <header className="admin__header">
         <h1>Dashboard</h1>
-        <p className="admin__lede muted">
-          Visão geral de engajamento dos alunos e desempenho por pílula
-          (questão de exercício).
-        </p>
+        {!isDashboardLoading ? (
+          <p className="admin__lede muted">
+            Visão geral de engajamento dos alunos e desempenho por pílula
+            (questão de exercício).
+          </p>
+        ) : null}
         <div className="gerenciamento-toolbar">
           <Link className="btn btn--ghost" to="/">
             ← Início
@@ -1230,35 +1336,59 @@ export function DashboardPage() {
             Selecione uma instituição para ver o dashboard.
           </p>
         </section>
+      ) : isDashboardLoading ? (
+        <section
+          className="dashboard-load-progress dashboard-load-progress--gate panel"
+          aria-live="polite"
+          aria-busy="true"
+        >
+          <div className="dashboard-load-progress__head">
+            <span className="dashboard-load-progress__label">
+              {loadLabel || 'Carregando dashboard…'}
+            </span>
+            <span className="dashboard-load-progress__pct">{loadPercent}%</span>
+          </div>
+          <div
+            className="progress progress--wide"
+            role="progressbar"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={loadPercent}
+            aria-label={loadLabel || 'Progresso do carregamento'}
+          >
+            <div className="progress__bar">
+              <div
+                className="progress__fill"
+                style={{ width: `${loadPercent}%` }}
+              />
+            </div>
+          </div>
+        </section>
       ) : (
         <>
           <section className="dashboard-cards">
             <div className="dashboard-card">
               <span className="dashboard-card__label">Alunos ativos</span>
               <span className="dashboard-card__value">
-                {loadingData ? '…' : summary.activeStudents}
+                {summary.activeStudents}
               </span>
             </div>
             <div className="dashboard-card">
               <span className="dashboard-card__label">Trilhas ativas</span>
               <span className="dashboard-card__value">
-                {loadingData ? '…' : summary.activeTrails}
+                {summary.activeTrails}
               </span>
             </div>
             <div className="dashboard-card">
               <span className="dashboard-card__label">% médio de conclusão</span>
               <span className="dashboard-card__value">
-                {loadingData || loadingLogs
-                  ? '…'
-                  : formatPct(summary.avgCompletion)}
+                {formatPct(summary.avgCompletion)}
               </span>
             </div>
             <div className="dashboard-card">
               <span className="dashboard-card__label">% médio de acerto</span>
               <span className="dashboard-card__value">
-                {loadingData || loadingLogs
-                  ? '…'
-                  : formatPct(summary.avgAccuracy)}
+                {formatPct(summary.avgAccuracy)}
               </span>
             </div>
             {missingGabaritoCount > 0 ? (
@@ -1280,27 +1410,9 @@ export function DashboardPage() {
             <div className="panel__head">
               <h2>Alunos</h2>
               <p className="admin__actions gerenciamento-detail-actions">
-                {loadingData ? (
-                  <span className="muted">Carregando alunos…</span>
-                ) : loadingLogs ? (
-                  <span className="muted">Carregando respostas…</span>
-                ) : null}
                 <span className="muted">
                   {filteredStudentRows.length} de {studentRows.length} alunos
                 </span>
-                <button
-                  type="button"
-                  className="btn btn--small btn--ghost"
-                  onClick={() => {
-                    setShowStagePicker((v) => !v)
-                    setShowQuestionPicker(false)
-                  }}
-                >
-                  Stages
-                  {availableStages.length > 0
-                    ? ` (${selectedStageCount}/${availableStages.length})`
-                    : ''}
-                </button>
                 <button
                   type="button"
                   className="btn btn--small btn--ghost"
@@ -1309,9 +1421,22 @@ export function DashboardPage() {
                     setShowStagePicker(false)
                   }}
                 >
-                  Questões
+                  Aulas
                   {availableQuestions.length > 0
                     ? ` (${selectedQuestionCount}/${availableQuestions.length})`
+                    : ''}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn--small btn--ghost"
+                  onClick={() => {
+                    setShowStagePicker((v) => !v)
+                    setShowQuestionPicker(false)
+                  }}
+                >
+                  Tópicos
+                  {availableStages.length > 0
+                    ? ` (${selectedStageCount}/${availableStages.length})`
                     : ''}
                 </button>
                 <button
@@ -1331,9 +1456,7 @@ export function DashboardPage() {
                     type="button"
                     className="btn btn--small btn--ghost"
                     disabled={
-                      loadingData ||
-                      students.length === 0 ||
-                      exportingTrailId !== null
+                      students.length === 0 || exportingTrailId !== null
                     }
                     onClick={() => void exportTrailHistoryXlsx(trail)}
                     title="Respostas do aluno por questão/stage; métricas respeitam filtros Stages/Questões"
@@ -1392,7 +1515,7 @@ export function DashboardPage() {
             ) : null}
 
             {showStagePicker ? (
-              <div className="dashboard-column-picker">
+              <div className="dashboard-stage-picker">
                 <div className="dashboard-stage-picker__head">
                   <span className="muted">
                     Stages incluídos no cálculo de questões liberadas/feitas.
@@ -1418,24 +1541,28 @@ export function DashboardPage() {
                     </button>
                   </span>
                 </div>
-                {availableStages.length === 0 ? (
-                  <span className="muted">Nenhum stage nas trilhas atuais.</span>
-                ) : (
-                  availableStages.map((s) => (
-                    <label key={s.key} className="field field--inline">
-                      <input
-                        type="checkbox"
-                        checked={!deselectedStages.has(s.key)}
-                        onChange={() => toggleStage(s.key)}
-                      />
-                      <span>
-                        {s.trailName} · Stage {s.stageNumber}
-                        {s.title ? ` — ${s.title}` : ''}{' '}
-                        <span className="muted">({s.stageType})</span>
-                      </span>
-                    </label>
-                  ))
-                )}
+                <div className="dashboard-stage-picker__list">
+                  {availableStages.length === 0 ? (
+                    <span className="muted">
+                      Nenhum stage nas trilhas atuais.
+                    </span>
+                  ) : (
+                    availableStages.map((s) => (
+                      <label key={s.key} className="field field--inline">
+                        <input
+                          type="checkbox"
+                          checked={!deselectedStages.has(s.key)}
+                          onChange={() => toggleStage(s.key)}
+                        />
+                        <span>
+                          {s.trailName} · Stage {s.stageNumber}
+                          {s.title ? ` — ${s.title}` : ''}{' '}
+                          <span className="muted">({s.stageType})</span>
+                        </span>
+                      </label>
+                    ))
+                  )}
+                </div>
               </div>
             ) : null}
 
@@ -1528,16 +1655,7 @@ export function DashboardPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {loadingData ? (
-                    <tr>
-                      <td
-                        colSpan={visibleColumns.length + 1}
-                        className="muted table__empty"
-                      >
-                        Carregando alunos…
-                      </td>
-                    </tr>
-                  ) : filteredStudentRows.length === 0 ? (
+                  {filteredStudentRows.length === 0 ? (
                     <tr>
                       <td
                         colSpan={visibleColumns.length + 1}
@@ -1570,51 +1688,33 @@ export function DashboardPage() {
                             case 'released':
                               return <td key={c.key}>{row.released}</td>
                             case 'done':
-                              return (
-                                <td key={c.key}>
-                                  {loadingLogs ? '…' : row.done}
-                                </td>
-                              )
+                              return <td key={c.key}>{row.done}</td>
                             case 'completionPct':
                               return (
                                 <td key={c.key}>
-                                  {loadingLogs ? (
-                                    <span className="muted">…</span>
-                                  ) : (
-                                    <div className="progress">
-                                      <div className="progress__bar">
-                                        <div
-                                          className="progress__fill"
-                                          style={{
-                                            width: `${row.completionPct ?? 0}%`,
-                                          }}
-                                        />
-                                      </div>
-                                      <span className="progress__label">
-                                        {formatPct(row.completionPct)}
-                                      </span>
+                                  <div className="progress">
+                                    <div className="progress__bar">
+                                      <div
+                                        className="progress__fill"
+                                        style={{
+                                          width: `${row.completionPct ?? 0}%`,
+                                        }}
+                                      />
                                     </div>
-                                  )}
+                                    <span className="progress__label">
+                                      {formatPct(row.completionPct)}
+                                    </span>
+                                  </div>
                                 </td>
                               )
                             case 'correct':
-                              return (
-                                <td key={c.key}>
-                                  {loadingLogs ? '…' : row.correct}
-                                </td>
-                              )
+                              return <td key={c.key}>{row.correct}</td>
                             case 'wrong':
-                              return (
-                                <td key={c.key}>
-                                  {loadingLogs ? '…' : row.wrong}
-                                </td>
-                              )
+                              return <td key={c.key}>{row.wrong}</td>
                             case 'accuracyPct':
                               return (
                                 <td key={c.key}>
-                                  {loadingLogs
-                                    ? '…'
-                                    : formatPct(row.accuracyPct)}
+                                  {formatPct(row.accuracyPct)}
                                 </td>
                               )
                           }
@@ -1630,16 +1730,9 @@ export function DashboardPage() {
           <section className="panel">
             <div className="panel__head">
               <h2>Pílulas — acertos e erros</h2>
-              <p className="admin__actions gerenciamento-detail-actions">
-                {loadingData ? (
-                  <span className="muted">Carregando…</span>
-                ) : loadingLogs ? (
-                  <span className="muted">Calculando acertos…</span>
-                ) : null}
-              </p>
             </div>
 
-            {pillRows.length === 0 && !loadingData && !loadingLogs ? (
+            {pillRows.length === 0 ? (
               <p className="banner">
                 Sem respostas corrigíveis ainda. Os acertos e erros aparecem
                 aqui quando os alunos responderem questões de exercício com

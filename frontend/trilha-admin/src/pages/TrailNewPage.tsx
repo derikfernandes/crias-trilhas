@@ -2,12 +2,14 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { collection, onSnapshot } from 'firebase/firestore'
 import { TrailForm } from '../components/TrailForm'
+import { usePermissions } from '../hooks/usePermissions'
 import { db } from '../lib/firebase'
 import { INSTITUTIONS_COLLECTION } from '../lib/institutionFirestore'
 
 const LAST_INSTITUTION_ID_STORAGE_KEY = 'trilha_admin_selected_institution_id'
 
 export function TrailNewPage() {
+  const { filterInstitutions } = usePermissions()
   const [searchParams] = useSearchParams()
   const [institutions, setInstitutions] = useState<{ id: string; name: string }[]>([])
 
@@ -23,11 +25,11 @@ export function TrailNewPage() {
         return { id: d.id, name: nm }
       })
       next.sort((a, b) => a.name.localeCompare(b.name, 'pt-BR', { sensitivity: 'base' }))
-      setInstitutions(next)
+      setInstitutions(filterInstitutions(next))
     })
 
     return () => unsub()
-  }, [])
+  }, [filterInstitutions])
 
   const effectiveInstitutionId = useMemo(() => {
     const fromQuery = (searchParams.get('institution_id') ?? '').trim()

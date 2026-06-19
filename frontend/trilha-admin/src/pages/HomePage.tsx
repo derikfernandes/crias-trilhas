@@ -9,20 +9,22 @@ import {
 } from '../lib/institutionFirestore'
 import { fullInstitutionUrl, institutionPath } from '../lib/paths'
 import { PRODUCTION_APP_ORIGIN } from '../lib/site'
+import { usePermissions } from '../hooks/usePermissions'
 import type { Institution } from '../types/institution'
 
 export function HomePage() {
+  const { canNav, filterInstitutions } = usePermissions()
   const [items, setItems] = useState<Institution[]>([])
   const [loadingList, setLoadingList] = useState(true)
   const [listError, setListError] = useState<string | null>(null)
 
   const sortedItems = useMemo(() => {
-    return [...items].sort((a, b) => {
+    return filterInstitutions(items).sort((a, b) => {
       const ma = a.updated_at?.toMillis?.() ?? a.created_at?.toMillis?.() ?? 0
       const mb = b.updated_at?.toMillis?.() ?? b.created_at?.toMillis?.() ?? 0
       return mb - ma
     })
-  }, [items])
+  }, [items, filterInstitutions])
 
   useEffect(() => {
     let unsub: (() => void) | null = null
@@ -78,9 +80,11 @@ export function HomePage() {
           Vercel.
         </p>
         <p className="admin__actions">
-          <Link className="btn btn--primary" to="/instituicoes/novo">
-            Nova instituição
-          </Link>
+          {canNav('institution_new') ? (
+            <Link className="btn btn--primary" to="/instituicoes/novo">
+              Nova instituição
+            </Link>
+          ) : null}
         </p>
       </header>
 
