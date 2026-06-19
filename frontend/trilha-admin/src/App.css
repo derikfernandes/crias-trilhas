@@ -31,6 +31,15 @@
   font-size: 0.95rem;
 }
 
+.nav__user {
+  font-size: 0.85rem;
+  align-self: center;
+}
+
+.nav__logout {
+  font-size: 0.875rem;
+}
+
 .nav__links a:hover {
   text-decoration: underline;
 }
@@ -1331,7 +1340,9 @@
   color: var(--text-h);
 }
 
-.field input[type='text'] {
+.field input[type='text'],
+.field input[type='email'],
+.field input[type='password'] {
   font: inherit;
   padding: 0.55rem 0.65rem;
   border-radius: 8px;
@@ -1349,7 +1360,9 @@
   color: var(--text-h);
 }
 
-.field input[type='text']:focus-visible {
+.field input[type='text']:focus-visible,
+.field input[type='email']:focus-visible,
+.field input[type='password']:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
@@ -2847,6 +2860,52 @@
 
 /* ===== Dashboard ===== */
 
+.dashboard-load-progress {
+  margin-bottom: 1rem;
+}
+
+.dashboard-load-progress--gate {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: min(52vh, 32rem);
+  margin-top: 0.5rem;
+}
+
+.dashboard-load-progress--gate .progress--wide .progress__bar {
+  height: 0.75rem;
+}
+
+.dashboard-load-progress__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.65rem;
+}
+
+.dashboard-load-progress__label {
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.dashboard-load-progress__pct {
+  font-size: 0.9rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.progress--wide {
+  min-width: 0;
+  width: 100%;
+}
+
+.progress--wide .progress__bar {
+  flex: 1;
+  height: 0.65rem;
+}
+
 .dashboard-cards {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
@@ -2941,14 +3000,44 @@
   background: color-mix(in srgb, var(--bg) 88%, var(--border));
 }
 
+.dashboard-stage-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.7rem 0.9rem;
+  margin-bottom: 1rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg) 88%, var(--border));
+}
+
+.dashboard-stage-picker__list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  max-height: min(22rem, 55vh);
+  overflow-y: auto;
+  padding-right: 0.25rem;
+}
+
+.dashboard-stage-picker__list .field--inline {
+  align-items: flex-start;
+  width: 100%;
+  margin: 0;
+}
+
+.dashboard-stage-picker__list .field--inline span {
+  line-height: 1.35;
+}
+
 .dashboard-stage-picker__head {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem 1rem;
-  width: 100%;
-  margin-bottom: 0.4rem;
+  flex: 0 0 auto;
+  margin-bottom: 0;
 }
 
 .dashboard-stage-picker__actions {
@@ -3228,4 +3317,109 @@
   background: color-mix(in srgb, #d97706 16%, var(--bg));
   border: 1px solid color-mix(in srgb, #d97706 50%, var(--border));
   color: var(--text-h);
+}
+
+.login {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem 1.25rem;
+  box-sizing: border-box;
+}
+
+.login__card {
+  width: min(100%, 26rem);
+  padding: 2rem 1.75rem;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--bg) 92%, var(--accent) 4%);
+  box-shadow: var(--shadow);
+}
+
+.login__header {
+  margin-bottom: 1.5rem;
+}
+
+.login__brand {
+  display: inline-block;
+  margin-bottom: 0.75rem;
+  font-weight: 600;
+  color: var(--text-h);
+  text-decoration: none;
+}
+
+.login__brand:hover {
+  text-decoration: underline;
+}
+
+.login__header h1 {
+  margin: 0 0 0.35rem;
+  font-size: 1.75rem;
+  letter-spacing: -0.03em;
+  color: var(--text-h);
+}
+
+.login__lede {
+  margin: 0;
+  line-height: 1.45;
+}
+
+.login__form {
+  max-width: none;
+}
+
+.login__footer {
+  margin: 1.25rem 0 0;
+  font-size: 0.9rem;
+}
+
+.login__footer a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.login__footer a:hover {
+  text-decoration: underline;
+}
+
+.admin-permissions {
+  display: grid;
+  gap: 1.5rem;
+}
+
+@media (min-width: 960px) {
+  .admin-permissions {
+    grid-template-columns: minmax(280px, 1fr) minmax(320px, 1.2fr);
+    align-items: start;
+  }
+}
+
+.admin-permissions__form-panel {
+  position: sticky;
+  top: 1rem;
+}
+
+.admin-permissions__fieldset {
+  margin: 0;
+  padding: 0.75rem 0 0;
+  border: 0;
+}
+
+.admin-permissions__fieldset legend {
+  font-weight: 600;
+  font-size: 0.9rem;
+  margin-bottom: 0.5rem;
+  color: var(--text-h);
+}
+
+.admin-permissions__checks {
+  display: grid;
+  gap: 0.35rem 1rem;
+}
+
+@media (min-width: 520px) {
+  .admin-permissions__checks {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }

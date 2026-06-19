@@ -22,6 +22,7 @@ import {
   TRAILS_COLLECTION,
 } from '../lib/trailFirestore'
 import { institutionPath, studentPath, trailPath } from '../lib/paths'
+import { usePermissions } from '../hooks/usePermissions'
 import type { Institution } from '../types/institution'
 import type { Student } from '../types/student'
 import type { StudentTrail } from '../types/studentTrail'
@@ -30,6 +31,7 @@ import type { Trail } from '../types/trail'
 const LAST_INSTITUTION_ID_STORAGE_KEY = 'trilha_admin_selected_institution_id'
 
 export function GerenciamentoPage() {
+  const { filterInstitutions } = usePermissions()
   const [institutions, setInstitutions] = useState<Institution[]>([])
   const [loadingInst, setLoadingInst] = useState(true)
   const [instError, setInstError] = useState<string | null>(null)
@@ -50,12 +52,12 @@ export function GerenciamentoPage() {
   const [studentTrailsError, setStudentTrailsError] = useState<string | null>(null)
 
   const sortedInstitutions = useMemo(() => {
-    return [...institutions].sort((a, b) => {
+    return filterInstitutions(institutions).sort((a, b) => {
       const ma = a.updated_at?.toMillis?.() ?? a.created_at?.toMillis?.() ?? 0
       const mb = b.updated_at?.toMillis?.() ?? b.created_at?.toMillis?.() ?? 0
       return mb - ma
     })
-  }, [institutions])
+  }, [institutions, filterInstitutions])
 
   const selectedInstitution = useMemo(
     () => institutions.find((i) => i.id === selectedId) ?? null,

@@ -7,10 +7,12 @@ import {
   snapshotToInstitution,
 } from '../lib/institutionFirestore'
 import { InstitutionForm } from '../components/InstitutionForm'
+import { usePermissions } from '../hooks/usePermissions'
 import type { Institution } from '../types/institution'
 
 export function InstitutionDetailPage() {
   const { id } = useParams<{ id: string }>()
+  const { canInstitution, permissionsLoading } = usePermissions()
   const [inst, setInst] = useState<Institution | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -52,6 +54,18 @@ export function InstitutionDetailPage() {
     return (
       <p className="banner banner--error" role="alert">
         ID ausente na URL.
+      </p>
+    )
+  }
+
+  if (permissionsLoading) {
+    return <p className="muted">Carregando permissões…</p>
+  }
+
+  if (!canInstitution(id)) {
+    return (
+      <p className="banner banner--error" role="alert">
+        Você não tem permissão para acessar esta instituição.
       </p>
     )
   }
