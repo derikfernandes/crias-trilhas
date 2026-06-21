@@ -36,11 +36,20 @@ import type { TrailStage } from '../types/trailStage'
 import type { TrailStageQuestion } from '../types/trailStageQuestion'
 
 const LAST_INSTITUTION_ID_STORAGE_KEY = 'trilha_admin_selected_institution_id'
+const STUDENTS_PAGE_SIZE = 20
+const ENUNCIADO_PREVIEW_MAX = 100
+
+type ExpandedEnunciado = {
+  topicLabel: string
+  title: string
+  trailName: string
+  text: string
+}
 
 const ALL_STUDENT_COLUMNS = [
   { key: 'phone', label: 'Telefone' },
-  { key: 'released', label: 'Questões liberadas' },
-  { key: 'done', label: 'Questões feitas' },
+  { key: 'released', label: 'Tópicos liberados' },
+  { key: 'done', label: 'Tópicos feitos' },
   { key: 'completionPct', label: '% conclusão' },
   { key: 'correct', label: 'Acertos' },
   { key: 'wrong', label: 'Erros' },
@@ -67,6 +76,8 @@ type PillRow = {
   stageNumber: number
   questionNumber: number
   title: string
+  content: string
+  gabarito: string
   total: number
   correct: number
   wrong: number
@@ -114,8 +125,75 @@ function slugFileName(value: string): string {
   )
 }
 
-function stageQuestionColumn(stage: number, question: number): string {
-  return `Q${question}.S${stage}`
+/** Cabeçalho de coluna na planilha: aula (A) × tópico da aula (T). */
+function lessonTopicColumn(topicNumber: number, lessonNumber: number): string {
+  return `A${lessonNumber}.T${topicNumber}`
+}
+
+/** Código legível na UI do dashboard, ex.: T3 A1. */
+function formatLessonTopicCode(topicNumber: number, lessonNumber: number): string {
+  return `T${topicNumber} A${lessonNumber}`
+}
+
+function truncateEnunciadoPreview(text: string, max = ENUNCIADO_PREVIEW_MAX): string {
+  const normalized = text.replace(/\s+/g, ' ').trim()
+  if (!normalized) return ''
+  if (normalized.length <= max) return normalized
+  return `${normalized.slice(0, max).trimEnd()}…`
+}
+
+function EnunciadoPreviewCell({
+  content,
+  title,
+  onExpand,
+}: {
+  content: string
+  title: string
+  onExpand: () => void
+}) {
+  const fullText = content.trim() || title.trim()
+  if (!fullText) {
+    return <span className="muted">—</span>
+  }
+  const preview = truncateEnunciadoPreview(fullText)
+  const isTruncated = preview.endsWith('…')
+
+  return (
+    <button
+      type="button"
+      className="table__text-btn dashboard-enunciado-preview"
+      onClick={onExpand}
+      title={isTruncated ? 'Clique para ver o enunciado completo' : fullText}
+    >
+      {preview}
+    </button>
+  )
+}
+
+function LessonTopicCode({
+  topicNumber,
+  lessonNumber,
+  content,
+  title,
+}: {
+  topicNumber: number
+  lessonNumber: number
+  content: string
+  title?: string
+}) {
+  const label = formatLessonTopicCode(topicNumber, lessonNumber)
+  const enunciado = content.trim() || title?.trim() || ''
+  if (!enunciado) {
+    return <code>{label}</code>
+  }
+  return (
+    <span className="dashboard-lesson-topic-tip">
+      <code className="dashboard-lesson-topic-tip__code">{label}</code>
+      <span className="dashboard-lesson-topic-tip__popup" role="tooltip">
+        {enunciado}
+      </span>
+    </span>
+  )
 }
 
 const FIRESTORE_IN_LIMIT = 30
@@ -164,6 +242,21 @@ function answersMatch(studentAnswer: string, correctOption: string): boolean {
     normalizeAnswer(studentAnswer).toLowerCase() ===
     normalizeAnswer(correctOption).toLowerCase()
   )
+}
+
+/** Exibe gabarito numérico como letra: 1→A, 2→B, 3→C. */
+function formatGabaritoLetter(value: string): string {
+  const normalized = normalizeAnswer(value).toLowerCase()
+  if (!normalized) return '—'
+  const fromNumber: Record<string, string> = {
+    '1': 'A',
+    '2': 'B',
+    '3': 'C',
+  }
+  if (fromNumber[normalized]) return fromNumber[normalized]
+  const upper = normalized.toUpperCase()
+  if (upper === 'A' || upper === 'B' || upper === 'C') return upper
+  return upper
 }
 
 type LogAggregates = {
@@ -336,17 +429,24 @@ export function DashboardPage() {
   const [loadLabel, setLoadLabel] = useState('')
   const [dataError, setDataError] = useState<string | null>(null)
   const loadProgressRef = useRef({ done: 0, total: DATA_SOURCES + 1 })
+  const loadTargetPercentRef = useRef(0)
 
-  const getLoadTargetPercent = () => {
-    const { done, total } = loadProgressRef.current
-    return Math.min(99, Math.round((done / Math.max(total, 1)) * 100))
+  const computeLoadPercent = (done: number, total: number, complete = false) => {
+    if (complete) return 100
+    if (total <= 0) return 0
+    return Math.min(99, Math.round((done / total) * 100))
   }
 
-  const syncLoadProgress = (labelPrefix: string) => {
+  const syncLoadProgress = (label: string, options?: { complete?: boolean }) => {
     const { done, total } = loadProgressRef.current
+    const pct = computeLoadPercent(done, total, options?.complete)
+    loadTargetPercentRef.current = pct
     setLoadStepsDone(done)
     setLoadStepsTotal(total)
-    setLoadLabel(labelPrefix)
+    setLoadLabel(label)
+    if (options?.complete) {
+      setLoadPercent(100)
+    }
   }
 
   // Filtros da tabela de alunos
@@ -369,11 +469,15 @@ export function DashboardPage() {
   const [showStagePicker, setShowStagePicker] = useState(false)
   const [showQuestionPicker, setShowQuestionPicker] = useState(false)
   const [exportingTrailId, setExportingTrailId] = useState<string | null>(null)
+  const [exportingPillTrailId, setExportingPillTrailId] = useState<string | null>(
+    null,
+  )
   const [exportError, setExportError] = useState<string | null>(null)
   const [studentSort, setStudentSort] = useState<{
     key: StudentSortKey
     dir: 'asc' | 'desc'
   }>({ key: 'name', dir: 'asc' })
+  const [studentPage, setStudentPage] = useState(1)
 
   // Filtros do ranking de pílulas
   const [pillSubjectFilter, setPillSubjectFilter] = useState('')
@@ -382,6 +486,17 @@ export function DashboardPage() {
     key: PillSortKey
     dir: 'asc' | 'desc'
   }>({ key: 'accuracyPct', dir: 'asc' })
+  const [expandedEnunciado, setExpandedEnunciado] =
+    useState<ExpandedEnunciado | null>(null)
+
+  useEffect(() => {
+    if (!expandedEnunciado) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setExpandedEnunciado(null)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [expandedEnunciado])
 
   useEffect(() => {
     let unsub: (() => void) | null = null
@@ -431,12 +546,14 @@ export function DashboardPage() {
         setLoadStepsDone(0)
         setLoadStepsTotal(DATA_SOURCES + 1)
         loadProgressRef.current = { done: 0, total: DATA_SOURCES + 1 }
+        loadTargetPercentRef.current = 0
         setLoadPercent(0)
         setLoadLabel('')
         return
       }
 
       loadProgressRef.current = { done: 0, total: DATA_SOURCES + 1 }
+      loadTargetPercentRef.current = 0
       setLoadingData(true)
       setLoadStepsDone(0)
       setLoadStepsTotal(DATA_SOURCES + 1)
@@ -587,9 +704,7 @@ export function DashboardPage() {
       setConversationLogs([])
       setLoadingLogs(false)
       loadProgressRef.current.done = loadProgressRef.current.total
-      setLoadStepsDone(loadProgressRef.current.total)
-      setLoadPercent(100)
-      setLoadLabel('')
+      syncLoadProgress('', { complete: true })
       return () => {
         cancelled = true
       }
@@ -601,9 +716,19 @@ export function DashboardPage() {
 
     const logChunks = chunkArray(studentIds, FIRESTORE_IN_LIMIT).length
     loadProgressRef.current.total = DATA_SOURCES + logChunks
+    loadProgressRef.current.done = Math.min(
+      loadProgressRef.current.done,
+      DATA_SOURCES,
+    )
     setLoadStepsTotal(loadProgressRef.current.total)
 
     setLoadingLogs(true)
+    const logsStartPct = computeLoadPercent(
+      loadProgressRef.current.done,
+      loadProgressRef.current.total,
+    )
+    loadTargetPercentRef.current = logsStartPct
+    setLoadPercent(logsStartPct)
     syncLoadProgress('Carregando respostas dos alunos…')
     void fetchConversationLogsForStudents(
       studentIds,
@@ -620,15 +745,14 @@ export function DashboardPage() {
         setConversationLogs(logs)
         setLoadingLogs(false)
         loadProgressRef.current.done = loadProgressRef.current.total
-        setLoadStepsDone(loadProgressRef.current.total)
-        setLoadPercent(100)
-        setLoadLabel('')
+        syncLoadProgress('', { complete: true })
       })
       .catch((err: unknown) => {
         if (cancelled) return
         setDataError(err instanceof Error ? err.message : 'Erro ao carregar logs')
         setConversationLogs([])
         setLoadingLogs(false)
+        loadTargetPercentRef.current = 0
         setLoadPercent(0)
         setLoadLabel('')
       })
@@ -922,6 +1046,39 @@ export function DashboardPage() {
     return rows
   }, [filteredStudentRows, studentSort])
 
+  const studentPageCount = useMemo(
+    () =>
+      Math.max(1, Math.ceil(sortedFilteredStudentRows.length / STUDENTS_PAGE_SIZE)),
+    [sortedFilteredStudentRows.length],
+  )
+
+  const paginatedStudentRows = useMemo(() => {
+    const start = (studentPage - 1) * STUDENTS_PAGE_SIZE
+    return sortedFilteredStudentRows.slice(start, start + STUDENTS_PAGE_SIZE)
+  }, [sortedFilteredStudentRows, studentPage])
+
+  useEffect(() => {
+    setStudentPage(1)
+  }, [selectedId, nameFilter, pctMin, pctMax, subjectFilter])
+
+  useEffect(() => {
+    if (studentPage > studentPageCount) {
+      setStudentPage(studentPageCount)
+    }
+  }, [studentPage, studentPageCount])
+
+  const studentPageRange = useMemo(() => {
+    if (sortedFilteredStudentRows.length === 0) {
+      return { start: 0, end: 0 }
+    }
+    const start = (studentPage - 1) * STUDENTS_PAGE_SIZE + 1
+    const end = Math.min(
+      studentPage * STUDENTS_PAGE_SIZE,
+      sortedFilteredStudentRows.length,
+    )
+    return { start, end }
+  }, [sortedFilteredStudentRows.length, studentPage])
+
   // Cards de resumo
   const summary = useMemo(() => {
     const activeStudents = students.filter((s) => s.active)
@@ -1019,6 +1176,12 @@ export function DashboardPage() {
         stageNumber,
         questionNumber,
         title: question?.title || '—',
+        content: question?.content ?? '',
+        gabarito: formatGabaritoLetter(
+          gradablePillQuestions.get(key) ??
+            question?.correct_option ??
+            '',
+        ),
         total,
         correct: agg.correct,
         wrong: agg.wrong,
@@ -1078,6 +1241,11 @@ export function DashboardPage() {
     () => [...pillRows].sort((a, b) => b.accuracyPct - a.accuracyPct).slice(0, 5),
     [pillRows],
   )
+
+  const pillExportTrails = useMemo(() => {
+    if (!pillSubjectFilter) return activeTrails
+    return activeTrails.filter((t) => t.subject?.trim() === pillSubjectFilter)
+  }, [activeTrails, pillSubjectFilter])
 
   function togglePillSort(key: PillSortKey) {
     setPillSort((curr) =>
@@ -1184,13 +1352,13 @@ export function DashboardPage() {
       const fixedHeaders = [
         'Nome',
         'Telefone',
-        'Questões liberadas',
-        'Questões feitas',
+        'Tópicos liberados',
+        'Tópicos feitos',
         '% conclusão',
       ]
       const headers = [
         ...fixedHeaders,
-        ...answerColumns.map((p) => stageQuestionColumn(p.stage, p.question)),
+        ...answerColumns.map((p) => lessonTopicColumn(p.stage, p.question)),
       ]
 
       const sortedStudents = [...students].sort((a, b) =>
@@ -1254,6 +1422,65 @@ export function DashboardPage() {
     }
   }
 
+  function exportPillTrailXlsx(trail: Trail) {
+    if (exportingPillTrailId) return
+    setExportError(null)
+    setExportingPillTrailId(trail.id)
+    try {
+      const rows = sortedPillRows.filter((p) => p.trailId === trail.id)
+      const headers = [
+        'Trilha',
+        'Matéria',
+        'Tópico / Aula',
+        'Título',
+        'Enunciado',
+        'Gabarito',
+        'Respostas',
+        'Acertos',
+        'Erros',
+        '% acerto',
+      ]
+      const data = rows.map((p) => [
+        p.trailName,
+        p.subject,
+        formatLessonTopicCode(p.stageNumber, p.questionNumber),
+        p.title,
+        p.content.trim() || p.title.trim(),
+        p.gabarito,
+        p.total,
+        p.correct,
+        p.wrong,
+        `${p.accuracyPct}%`,
+      ])
+
+      const worksheet = XLSX.utils.aoa_to_sheet([headers, ...data])
+      headers.forEach((header, colIndex) => {
+        forceWorksheetCellString(worksheet, 0, colIndex, header)
+      })
+      data.forEach((row, rowIndex) => {
+        const enunciado = row[4]
+        if (typeof enunciado === 'string' && enunciado.length > 0) {
+          forceWorksheetCellString(worksheet, rowIndex + 1, 4, enunciado)
+        }
+        const gabarito = row[5]
+        if (typeof gabarito === 'string' && gabarito.length > 0) {
+          forceWorksheetCellString(worksheet, rowIndex + 1, 5, gabarito)
+        }
+      })
+
+      const workbook = XLSX.utils.book_new()
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Aulas')
+      const trailSlug = slugFileName(trail.name || trail.id)
+      XLSX.writeFile(workbook, `aulas-acertos-erros-${trailSlug}.xlsx`)
+    } catch (err) {
+      setExportError(
+        err instanceof Error ? err.message : 'Erro ao gerar planilha.',
+      )
+    } finally {
+      setExportingPillTrailId(null)
+    }
+  }
+
   const visibleColumns = ALL_STUDENT_COLUMNS.filter(
     (c) => !hiddenColumns.has(c.key),
   )
@@ -1262,13 +1489,19 @@ export function DashboardPage() {
     Boolean(selectedId) && (loadingData || loadingLogs)
 
   useEffect(() => {
+    if (isDashboardLoading) return
+    loadTargetPercentRef.current = 0
+  }, [isDashboardLoading])
+
+  useEffect(() => {
     if (!isDashboardLoading) return
 
     const id = window.setInterval(() => {
-      const target = getLoadTargetPercent()
+      const target = loadTargetPercentRef.current
       setLoadPercent((current) => {
+        if (current === target) return current
         if (current < target) return Math.min(current + 1, target)
-        return current
+        return Math.max(current - 1, target)
       })
     }, 40)
 
@@ -1281,8 +1514,8 @@ export function DashboardPage() {
         <h1>Dashboard</h1>
         {!isDashboardLoading ? (
           <p className="admin__lede muted">
-            Visão geral de engajamento dos alunos e desempenho por pílula
-            (questão de exercício).
+            Visão geral de engajamento dos alunos e desempenho por aula
+            (exercício).
           </p>
         ) : null}
         <div className="gerenciamento-toolbar">
@@ -1394,7 +1627,7 @@ export function DashboardPage() {
             {missingGabaritoCount > 0 ? (
               <Link to="/gabarito" className="dashboard-card dashboard-card--warn">
                 <span className="dashboard-card__label">
-                  Questões sem gabarito
+                  Aulas sem gabarito
                 </span>
                 <span className="dashboard-card__value">
                   {missingGabaritoCount}
@@ -1459,7 +1692,7 @@ export function DashboardPage() {
                       students.length === 0 || exportingTrailId !== null
                     }
                     onClick={() => void exportTrailHistoryXlsx(trail)}
-                    title="Respostas do aluno por questão/stage; métricas respeitam filtros Stages/Questões"
+                    title="Respostas do aluno por aula e tópico da aula; métricas respeitam filtros Aulas/Tópicos"
                   >
                     {exportingTrailId === trail.id
                       ? 'Gerando XLSX…'
@@ -1473,8 +1706,8 @@ export function DashboardPage() {
               <div className="dashboard-column-picker">
                 <div className="dashboard-stage-picker__head">
                   <span className="muted">
-                    Questões incluídas no cálculo de liberadas/feitas (por
-                    número no stage: q1, q2…).
+                    Aulas incluídas no cálculo de liberadas/feitas (por
+                    número no tópico da aula: A1, A2…).
                   </span>
                   <span className="dashboard-stage-picker__actions">
                     <button
@@ -1497,7 +1730,7 @@ export function DashboardPage() {
                 </div>
                 {availableQuestions.length === 0 ? (
                   <span className="muted">
-                    Nenhuma questão nas trilhas atuais.
+                    Nenhuma aula nas trilhas atuais.
                   </span>
                 ) : (
                   availableQuestions.map((n) => (
@@ -1507,7 +1740,7 @@ export function DashboardPage() {
                         checked={!deselectedQuestions.has(n)}
                         onChange={() => toggleQuestion(n)}
                       />
-                      <span>Questão {n}</span>
+                      <span>Aula {n}</span>
                     </label>
                   ))
                 )}
@@ -1518,7 +1751,8 @@ export function DashboardPage() {
               <div className="dashboard-stage-picker">
                 <div className="dashboard-stage-picker__head">
                   <span className="muted">
-                    Stages incluídos no cálculo de questões liberadas/feitas.
+                    Tópicos da aula incluídos no cálculo de aulas
+                    liberadas/feitas.
                   </span>
                   <span className="dashboard-stage-picker__actions">
                     <button
@@ -1544,7 +1778,7 @@ export function DashboardPage() {
                 <div className="dashboard-stage-picker__list">
                   {availableStages.length === 0 ? (
                     <span className="muted">
-                      Nenhum stage nas trilhas atuais.
+                      Nenhum tópico da aula nas trilhas atuais.
                     </span>
                   ) : (
                     availableStages.map((s) => (
@@ -1555,7 +1789,7 @@ export function DashboardPage() {
                           onChange={() => toggleStage(s.key)}
                         />
                         <span>
-                          {s.trailName} · Stage {s.stageNumber}
+                          {s.trailName} · Tópico {s.stageNumber}
                           {s.title ? ` — ${s.title}` : ''}{' '}
                           <span className="muted">({s.stageType})</span>
                         </span>
@@ -1667,7 +1901,7 @@ export function DashboardPage() {
                       </td>
                     </tr>
                   ) : (
-                    sortedFilteredStudentRows.map((row) => (
+                    paginatedStudentRows.map((row) => (
                       <tr key={row.student.id}>
                         <td>
                           <Link
@@ -1725,17 +1959,71 @@ export function DashboardPage() {
                 </tbody>
               </table>
             </div>
+
+            {sortedFilteredStudentRows.length > STUDENTS_PAGE_SIZE ? (
+              <div className="dashboard-students-pagination">
+                <span className="muted">
+                  Mostrando {studentPageRange.start}–{studentPageRange.end} de{' '}
+                  {sortedFilteredStudentRows.length} alunos
+                </span>
+                <div className="dashboard-students-pagination__actions">
+                  <button
+                    type="button"
+                    className="btn btn--small btn--ghost"
+                    disabled={studentPage <= 1}
+                    onClick={() => setStudentPage((p) => Math.max(1, p - 1))}
+                  >
+                    Anterior
+                  </button>
+                  <span className="dashboard-students-pagination__page">
+                    Página {studentPage} de {studentPageCount}
+                  </span>
+                  <button
+                    type="button"
+                    className="btn btn--small btn--ghost"
+                    disabled={studentPage >= studentPageCount}
+                    onClick={() =>
+                      setStudentPage((p) => Math.min(studentPageCount, p + 1))
+                    }
+                  >
+                    Próxima
+                  </button>
+                </div>
+              </div>
+            ) : null}
           </section>
 
           <section className="panel">
             <div className="panel__head">
-              <h2>Pílulas — acertos e erros</h2>
+              <h2>Aulas — acertos e erros</h2>
+              <p className="admin__actions gerenciamento-detail-actions">
+                <span className="muted">
+                  {sortedPillRows.length} de {pillRows.length}{' '}
+                  {pillRows.length === 1 ? 'aula' : 'aulas'}
+                </span>
+                {pillExportTrails.map((trail) => (
+                  <button
+                    key={trail.id}
+                    type="button"
+                    className="btn btn--small btn--ghost"
+                    disabled={
+                      pillRows.length === 0 || exportingPillTrailId !== null
+                    }
+                    onClick={() => exportPillTrailXlsx(trail)}
+                    title="Desempenho por aula; respeita filtros de matéria e mínimo de respostas"
+                  >
+                    {exportingPillTrailId === trail.id
+                      ? 'Gerando XLSX…'
+                      : `Baixar XLSX — ${trail.name || trail.id}`}
+                  </button>
+                ))}
+              </p>
             </div>
 
             {pillRows.length === 0 ? (
               <p className="banner">
                 Sem respostas corrigíveis ainda. Os acertos e erros aparecem
-                aqui quando os alunos responderem questões de exercício com
+                aqui quando os alunos responderem aulas de exercício com
                 gabarito preenchido.{' '}
                 <Link to="/gabarito">Preencher gabarito →</Link>
               </p>
@@ -1783,9 +2071,12 @@ export function DashboardPage() {
                             <span className="dashboard-top-pills__pct dashboard-top-pills__pct--bad">
                               {p.accuracyPct}%
                             </span>{' '}
-                            <code>
-                              s{p.stageNumber} q{p.questionNumber}
-                            </code>{' '}
+                            <LessonTopicCode
+                              topicNumber={p.stageNumber}
+                              lessonNumber={p.questionNumber}
+                              content={p.content}
+                              title={p.title}
+                            />{' '}
                             {p.title} <span className="muted">({p.trailName})</span>
                           </li>
                         ))}
@@ -1799,9 +2090,12 @@ export function DashboardPage() {
                             <span className="dashboard-top-pills__pct dashboard-top-pills__pct--good">
                               {p.accuracyPct}%
                             </span>{' '}
-                            <code>
-                              s{p.stageNumber} q{p.questionNumber}
-                            </code>{' '}
+                            <LessonTopicCode
+                              topicNumber={p.stageNumber}
+                              lessonNumber={p.questionNumber}
+                              content={p.content}
+                              title={p.title}
+                            />{' '}
                             {p.title} <span className="muted">({p.trailName})</span>
                           </li>
                         ))}
@@ -1825,9 +2119,11 @@ export function DashboardPage() {
                           className="dashboard-sortable"
                           onClick={() => togglePillSort('position')}
                         >
-                          Stage/Questão{pillSortIndicator('position')}
+                          Tópico / Aula{pillSortIndicator('position')}
                         </th>
                         <th>Título</th>
+                        <th>Enunciado</th>
+                        <th>Gabarito</th>
                         <th
                           className="dashboard-sortable"
                           onClick={() => togglePillSort('total')}
@@ -1857,8 +2153,8 @@ export function DashboardPage() {
                     <tbody>
                       {sortedPillRows.length === 0 ? (
                         <tr>
-                          <td colSpan={8} className="muted table__empty">
-                            Nenhuma pílula com pelo menos {pillMinResponses}{' '}
+                          <td colSpan={10} className="muted table__empty">
+                            Nenhuma aula com pelo menos {pillMinResponses}{' '}
                             {pillMinResponses === 1 ? 'resposta' : 'respostas'}.
                           </td>
                         </tr>
@@ -1875,11 +2171,32 @@ export function DashboardPage() {
                             </td>
                             <td>{p.subject}</td>
                             <td>
-                              <code>
-                                s{p.stageNumber} q{p.questionNumber}
-                              </code>
+                              <LessonTopicCode
+                                topicNumber={p.stageNumber}
+                                lessonNumber={p.questionNumber}
+                                content={p.content}
+                                title={p.title}
+                              />
                             </td>
                             <td>{p.title}</td>
+                            <td>
+                              <EnunciadoPreviewCell
+                                content={p.content}
+                                title={p.title}
+                                onExpand={() =>
+                                  setExpandedEnunciado({
+                                    topicLabel: formatLessonTopicCode(
+                                      p.stageNumber,
+                                      p.questionNumber,
+                                    ),
+                                    title: p.title,
+                                    trailName: p.trailName,
+                                    text: p.content.trim() || p.title.trim(),
+                                  })
+                                }
+                              />
+                            </td>
+                            <td>{p.gabarito}</td>
                             <td>{p.total}</td>
                             <td>{p.correct}</td>
                             <td>{p.wrong}</td>
@@ -1905,6 +2222,47 @@ export function DashboardPage() {
               </>
             )}
           </section>
+
+          {expandedEnunciado ? (
+            <div
+              className="message-modal"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="dashboard-enunciado-title"
+              onClick={() => setExpandedEnunciado(null)}
+            >
+              <div
+                className="message-modal__panel"
+                onClick={(event) => event.stopPropagation()}
+              >
+                <div className="message-modal__head">
+                  <h3 id="dashboard-enunciado-title">Enunciado</h3>
+                  <button
+                    type="button"
+                    className="btn btn--ghost btn--small"
+                    onClick={() => setExpandedEnunciado(null)}
+                  >
+                    Fechar
+                  </button>
+                </div>
+                <dl className="message-modal__meta">
+                  <div>
+                    <dt>Trilha</dt>
+                    <dd>{expandedEnunciado.trailName}</dd>
+                  </div>
+                  <div>
+                    <dt>Tópico / Aula</dt>
+                    <dd>{expandedEnunciado.topicLabel}</dd>
+                  </div>
+                  <div>
+                    <dt>Título</dt>
+                    <dd>{expandedEnunciado.title}</dd>
+                  </div>
+                </dl>
+                <div className="message-modal__body">{expandedEnunciado.text}</div>
+              </div>
+            </div>
+          ) : null}
         </>
       )}
     </>
