@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { collection, deleteDoc, doc, onSnapshot, query, where } from 'firebase/firestore'
+import { collection, onSnapshot, query, where } from 'firebase/firestore'
 import { db } from '../lib/firebase'
 import {
   formatInstitutionTs,
@@ -21,6 +21,7 @@ import {
   snapshotToTrail,
   TRAILS_COLLECTION,
 } from '../lib/trailFirestore'
+import { deleteTrailCascade } from '../lib/trailApi'
 import { institutionPath, studentPath, trailPath } from '../lib/paths'
 import { usePermissions } from '../hooks/usePermissions'
 import type { Institution } from '../types/institution'
@@ -231,7 +232,6 @@ export function GerenciamentoPage() {
   }, [selectedTrailId, trails])
 
   async function handleDeleteTrail(trail: Trail) {
-    if (!db) return
     const label = trail.name?.trim() || trail.id
     const ok = window.confirm(
       `Excluir a trilha "${label}"? Esta ação não pode ser desfeita.`,
@@ -240,7 +240,7 @@ export function GerenciamentoPage() {
 
     try {
       setDeletingTrailId(trail.id)
-      await deleteDoc(doc(db, TRAILS_COLLECTION, trail.id))
+      await deleteTrailCascade(trail.id)
     } catch (err) {
       window.alert(err instanceof Error ? err.message : 'Erro ao excluir trilha.')
     } finally {

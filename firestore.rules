@@ -13,7 +13,12 @@ service cloud.firestore {
     }
 
     match /trails/{trailId} {
-      allow read, write: if true;
+      allow read: if true;
+      allow create: if true;
+      // Não permite re-vincular trilha para outra instituição via client SDK.
+      allow update: if request.resource.data.institution_id == resource.data.institution_id;
+      // Exclusão de trilhas deve ocorrer no backend com cascade seguro.
+      allow delete: if false;
     }
 
     match /trail_stages/{trailStageId} {
