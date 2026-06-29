@@ -27,6 +27,10 @@ export async function createStudentTrail(
   collectionName: string,
   data: StudentTrailCreatePayload,
 ): Promise<{ id: string }> {
+  const institutionId = data.institution_id.trim()
+  if (!institutionId) {
+    throw new Error('Campo "institution_id" inválido para criar student_trails.')
+  }
   const docId = studentTrailDocId(data.student_id, data.trail_id)
   const ref = db.collection(collectionName).doc(docId)
   const now = FieldValue.serverTimestamp()
@@ -41,7 +45,7 @@ export async function createStudentTrail(
 
     const base: Record<string, unknown> = {
       student_id: data.student_id,
-      institution_id: data.institution_id,
+      institution_id: institutionId,
       trail_id: data.trail_id,
       current_stage_number: data.current_stage_number,
       current_question_number: data.current_question_number,

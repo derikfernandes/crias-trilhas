@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   collection,
-  deleteDoc,
   doc,
   runTransaction,
   serverTimestamp,
@@ -16,6 +15,7 @@ import {
   trailStageQuestionDocId,
 } from '../lib/trailStageQuestionFirestore'
 import { trailPath } from '../lib/paths'
+import { deleteTrailCascade } from '../lib/trailApi'
 import { TrailStructureEditor } from './TrailStructureEditor'
 import { TrailContentEditor } from './TrailContentEditor'
 import {
@@ -454,7 +454,6 @@ export function TrailForm({ docId, fixedInstitutionId, initial, onSaved }: Props
     try {
       if (docId) {
         await updateDoc(doc(dbOk, TRAILS_COLLECTION, docId), {
-          institution_id: instId,
           name: trimmedName,
           description: trimmedDescription,
           subject: trimmedSubject,
@@ -498,6 +497,11 @@ export function TrailForm({ docId, fixedInstitutionId, initial, onSaved }: Props
 
           const trailRef = doc(collection(dbOk, TRAILS_COLLECTION), trailId)
           const previousTrailSnap = await tx.get(trailRef)
+          if (targetTrailId && !previousTrailSnap.exists()) {
+            throw new Error(
+              'A trilha não existe mais ou foi excluída. Recarregue e crie novamente.',
+            )
+          }
           const previousData = previousTrailSnap.exists()
             ? (previousTrailSnap.data() as { default_total_steps_per_stage?: unknown })
             : {}
@@ -521,25 +525,28 @@ export function TrailForm({ docId, fixedInstitutionId, initial, onSaved }: Props
             stageSnapshots.set(stageNumber, stageSnap.exists() ? stageSnap.data() : null)
           }
 
-          tx.set(
-            trailRef,
-            {
-              institution_id: instId,
-              name: trimmedName,
-              description: trimmedDescription,
-              subject: trimmedSubject,
-              default_total_steps_per_stage: stepsToSave,
-              active,
-              phase_blueprint: structurePhases.map((p) => ({
-                title: p.title.trim(),
-                stage_type: p.stage_type,
-                prompt: p.stage_type === 'ai' ? p.prompt.trim() : null,
-              })),
-              created_at: previousTrailSnap.exists() ? previousTrailSnap.data()?.created_at ?? serverTimestamp() : serverTimestamp(),
-              updated_at: serverTimestamp(),
-            },
-            { merge: true },
-          )
+          const trailPayload = {
+            institution_id: instId,
+            name: trimmedName,
+            description: trimmedDescription,
+            subject: trimmedSubject,
+            default_total_steps_per_stage: stepsToSave,
+            active,
+            phase_blueprint: structurePhases.map((p) => ({
+              title: p.title.trim(),
+              stage_type: p.stage_type,
+              prompt: p.stage_type === 'ai' ? p.prompt.trim() : null,
+            })),
+            updated_at: serverTimestamp(),
+          }
+          if (previousTrailSnap.exists()) {
+            tx.update(trailRef, trailPayload)
+          } else {
+            tx.set(trailRef, {
+              ...trailPayload,
+              created_at: serverTimestamp(),
+            })
+          }
 
           for (let i = 0; i < structurePhases.length; i++) {
             const phase = structurePhases[i]
@@ -595,14 +602,14 @@ export function TrailForm({ docId, fixedInstitutionId, initial, onSaved }: Props
   }
 
   async function handleDelete() {
-    if (!db || !docId || !initial) return
+    if (!docId || !initial) return
     const ok = window.confirm(
       `Excluir a trilha "${initial.name || docId}"? Esta ação não pode ser desfeita.`,
     )
     if (!ok) return
 
     try {
-      await deleteDoc(doc(db, TRAILS_COLLECTION, docId))
+      await deleteTrailCascade(docId)
       navigate('/')
     } catch (err) {
       window.alert(err instanceof Error ? err.message : 'Erro ao excluir.')

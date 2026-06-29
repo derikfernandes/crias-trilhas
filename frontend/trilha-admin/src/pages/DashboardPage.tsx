@@ -130,6 +130,17 @@ function lessonTopicColumn(topicNumber: number, lessonNumber: number): string {
   return `A${lessonNumber}.T${topicNumber}`
 }
 
+function lessonTopicColumnLabel(
+  trailId: string,
+  topicNumber: number,
+  lessonNumber: number,
+  stageByKey: Map<string, TrailStage>,
+): string {
+  const code = lessonTopicColumn(topicNumber, lessonNumber)
+  const stageTitle = stageByKey.get(`${trailId}|${topicNumber}`)?.title?.trim()
+  return stageTitle ? `${code} - ${stageTitle}` : code
+}
+
 /** Código legível na UI do dashboard, ex.: T3 A1. */
 function formatLessonTopicCode(topicNumber: number, lessonNumber: number): string {
   return `T${topicNumber} A${lessonNumber}`
@@ -403,6 +414,54 @@ function forceWorksheetCellString(
 ) {
   const ref = XLSX.utils.encode_cell({ r: row, c: col })
   worksheet[ref] = { t: 's', v: value }
+}
+
+const CORRESPONDENCE_HEADERS = ['Código', 'Tópico da aula', 'Enunciado'] as const
+
+function buildTrailCorrespondenceRows(
+  trailId: string,
+  positions: { stage: number; question: number }[],
+  stageByKey: Map<string, TrailStage>,
+  questionByKey: Map<string, TrailStageQuestion>,
+): string[][] {
+  return positions.map((p) => {
+    const question = questionByKey.get(`${trailId}|${p.stage}|${p.question}`)
+    return [
+      lessonTopicColumn(p.stage, p.question),
+      stageByKey.get(`${trailId}|${p.stage}`)?.title?.trim() ?? '',
+      (question?.content ?? question?.title ?? '').trim(),
+    ]
+  })
+}
+
+function appendCorrespondenceSheet(
+  workbook: XLSX.WorkBook,
+  trailId: string,
+  positions: { stage: number; question: number }[],
+  stageByKey: Map<string, TrailStage>,
+  questionByKey: Map<string, TrailStageQuestion>,
+) {
+  const legendRows = buildTrailCorrespondenceRows(
+    trailId,
+    positions,
+    stageByKey,
+    questionByKey,
+  )
+  const legendSheet = XLSX.utils.aoa_to_sheet([
+    [...CORRESPONDENCE_HEADERS],
+    ...legendRows,
+  ])
+  CORRESPONDENCE_HEADERS.forEach((header, colIndex) => {
+    forceWorksheetCellString(legendSheet, 0, colIndex, header)
+  })
+  legendRows.forEach((row, rowIndex) => {
+    row.forEach((value, colIndex) => {
+      if (value.length > 0) {
+        forceWorksheetCellString(legendSheet, rowIndex + 1, colIndex, value)
+      }
+    })
+  })
+  XLSX.utils.book_append_sheet(workbook, legendSheet, 'Correspondência')
 }
 
 export function DashboardPage() {
@@ -1358,7 +1417,9 @@ export function DashboardPage() {
       ]
       const headers = [
         ...fixedHeaders,
-        ...answerColumns.map((p) => lessonTopicColumn(p.stage, p.question)),
+        ...answerColumns.map((p) =>
+          lessonTopicColumnLabel(trail.id, p.stage, p.question, stageByKey),
+        ),
       ]
 
       const sortedStudents = [...students].sort((a, b) =>
@@ -1411,6 +1472,13 @@ export function DashboardPage() {
 
       const workbook = XLSX.utils.book_new()
       XLSX.utils.book_append_sheet(workbook, worksheet, 'Histórico')
+      appendCorrespondenceSheet(
+        workbook,
+        trail.id,
+        answerColumns,
+        stageByKey,
+        questionByKey,
+      )
       const trailSlug = slugFileName(trail.name || trail.id)
       XLSX.writeFile(workbook, `historico-alunos-${trailSlug}.xlsx`)
     } catch (err) {
@@ -1443,7 +1511,12 @@ export function DashboardPage() {
       const data = rows.map((p) => [
         p.trailName,
         p.subject,
-        formatLessonTopicCode(p.stageNumber, p.questionNumber),
+        lessonTopicColumnLabel(
+          p.trailId,
+          p.stageNumber,
+          p.questionNumber,
+          stageByKey,
+        ),
         p.title,
         p.content.trim() || p.title.trim(),
         p.gabarito,
@@ -1470,6 +1543,17 @@ export function DashboardPage() {
 
       const workbook = XLSX.utils.book_new()
       XLSX.utils.book_append_sheet(workbook, worksheet, 'Aulas')
+      const correspondencePositions =
+        allQuestionColumnsByTrail.get(trail.id) ?? []
+      if (correspondencePositions.length > 0) {
+        appendCorrespondenceSheet(
+          workbook,
+          trail.id,
+          correspondencePositions,
+          stageByKey,
+          questionByKey,
+        )
+      }
       const trailSlug = slugFileName(trail.name || trail.id)
       XLSX.writeFile(workbook, `aulas-acertos-erros-${trailSlug}.xlsx`)
     } catch (err) {

@@ -132,6 +132,94 @@ function toStudentTrailOutput(
   }
 }
 
+async function validateStudentTrailInstitutionConsistency(
+  db: ReturnType<typeof getFirestore>,
+  studentId: string,
+  trailId: string,
+  requestedInstitutionId: string | null,
+  studentTrailData?: Record<string, unknown>,
+): Promise<{ ok: true; institutionId: string } | { ok: false; status: number; error: string }> {
+  const studentsCollection = process.env.STUDENTS_COLLECTION ?? 'students'
+  const trailsCollection = process.env.TRAILS_COLLECTION ?? 'trails'
+
+  const [studentSnap, trailSnap] = await Promise.all([
+    db.collection(studentsCollection).doc(studentId).get(),
+    db.collection(trailsCollection).doc(trailId).get(),
+  ])
+
+  if (!studentSnap.exists) {
+    return {
+      ok: false,
+      status: 404,
+      error: `Aluno "${studentId}" não encontrado.`,
+    }
+  }
+  if (!trailSnap.exists) {
+    return {
+      ok: false,
+      status: 404,
+      error: `Trilha "${trailId}" não encontrada.`,
+    }
+  }
+
+  const studentData = (studentSnap.data() ?? {}) as Record<string, unknown>
+  const trailData = (trailSnap.data() ?? {}) as Record<string, unknown>
+  const studentInstitutionId =
+    typeof studentData.institution_id === 'string'
+      ? studentData.institution_id.trim()
+      : ''
+  const trailInstitutionId =
+    typeof trailData.institution_id === 'string'
+      ? trailData.institution_id.trim()
+      : ''
+
+  if (!studentInstitutionId || !trailInstitutionId) {
+    return {
+      ok: false,
+      status: 409,
+      error:
+        'Inconsistência de instituição: aluno ou trilha sem institution_id válido.',
+    }
+  }
+  if (studentInstitutionId !== trailInstitutionId) {
+    return {
+      ok: false,
+      status: 409,
+      error:
+        'Inconsistência de instituição: aluno e trilha pertencem a instituições diferentes.',
+    }
+  }
+  if (
+    requestedInstitutionId &&
+    requestedInstitutionId.trim() &&
+    requestedInstitutionId.trim() !== trailInstitutionId
+  ) {
+    return {
+      ok: false,
+      status: 409,
+      error:
+        'Inconsistência de instituição: institution_id enviado não corresponde ao da trilha.',
+    }
+  }
+
+  if (studentTrailData) {
+    const studentTrailInstitutionId =
+      typeof studentTrailData.institution_id === 'string'
+        ? studentTrailData.institution_id.trim()
+        : ''
+    if (!studentTrailInstitutionId || studentTrailInstitutionId !== trailInstitutionId) {
+      return {
+        ok: false,
+        status: 409,
+        error:
+          'Inconsistência de instituição no student_trails: execute saneamento antes de atualizar este registro.',
+      }
+    }
+  }
+
+  return { ok: true, institutionId: trailInstitutionId }
+}
+
 async function handleRequest(request: Request): Promise<Response> {
   const url = new URL(request.url)
   const id = url.searchParams.get('id')?.trim()
@@ -238,22 +326,41 @@ async function handleRequest(request: Request): Promise<Response> {
 
       const validated = validateStudentTrailCreate(payload)
       if (validated.ok === false) return respond(400, { error: validated.error })
+      const consistency = await validateStudentTrailInstitutionConsistency(
+        db,
+        validated.data.student_id,
+        validated.data.trail_id,
+        validated.data.institution_id,
+      )
+      if (consistency.ok === false) {
+        console.warn('[student_trails.create_rejected_institution_mismatch]', {
+          student_id: validated.data.student_id,
+          trail_id: validated.data.trail_id,
+          institution_id: validated.data.institution_id,
+          error: consistency.error,
+        })
+        return respond(consistency.status, { error: consistency.error })
+      }
 
       try {
+        const createPayload = {
+          ...validated.data,
+          institution_id: consistency.institutionId,
+        }
         const { id: newId } = await createStudentTrail(
           db,
           collection,
-          validated.data,
+          createPayload,
         )
         return jsonResponse(
           {
             id: newId,
-            student_id: validated.data.student_id,
-            institution_id: validated.data.institution_id,
-            trail_id: validated.data.trail_id,
-            current_stage_number: validated.data.current_stage_number,
-            current_question_number: validated.data.current_question_number,
-            status: validated.data.status,
+            student_id: createPayload.student_id,
+            institution_id: createPayload.institution_id,
+            trail_id: createPayload.trail_id,
+            current_stage_number: createPayload.current_stage_number,
+            current_question_number: createPayload.current_question_number,
+            status: createPayload.status,
             started_at: null,
             completed_at: null,
             last_interaction_at: null,
@@ -300,6 +407,31 @@ async function handleRequest(request: Request): Promise<Response> {
           error:
             'Campos "student_id" e "trail_id" são obrigatórios (query ou body) para operações de runtime.',
         })
+      }
+      const currentSnap = await getStudentTrailByComposite(
+        db,
+        collection,
+        targetStudentId,
+        targetTrailId,
+      )
+      if (!currentSnap.exists) return respond(404, { error: 'Not found' })
+
+      const currentData = (currentSnap.data() ?? {}) as Record<string, unknown>
+      const consistency = await validateStudentTrailInstitutionConsistency(
+        db,
+        targetStudentId,
+        targetTrailId,
+        null,
+        currentData,
+      )
+      if (consistency.ok === false) {
+        console.warn('[student_trails.runtime_rejected_institution_mismatch]', {
+          action,
+          student_id: targetStudentId,
+          trail_id: targetTrailId,
+          error: consistency.error,
+        })
+        return respond(consistency.status, { error: consistency.error })
       }
 
       if (action === 'advance_question') {

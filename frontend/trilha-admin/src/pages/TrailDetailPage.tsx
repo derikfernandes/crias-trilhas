@@ -8,7 +8,6 @@ import {
   query,
   runTransaction,
   serverTimestamp,
-  updateDoc,
   writeBatch,
   where,
 } from 'firebase/firestore'
@@ -135,8 +134,6 @@ export function TrailDetailPage() {
   const [pendingBulkContent, setPendingBulkContent] = useState<ContentEtapa[] | null>(null)
   const [importingBulk, setImportingBulk] = useState(false)
   const [institutions, setInstitutions] = useState<{ id: string; name: string }[]>([])
-  const [savingInstitutionId, setSavingInstitutionId] = useState(false)
-  const [institutionError, setInstitutionError] = useState<string | null>(null)
 
   const sortedStudentTrails = useMemo(() => {
     return [...studentTrails].sort((a, b) => {
@@ -908,6 +905,9 @@ export function TrailDetailPage() {
       await runTransaction(dbOk, async (tx) => {
         const trailRef = doc(dbOk, TRAILS_COLLECTION, id)
         const previousTrailSnap = await tx.get(trailRef)
+        if (!previousTrailSnap.exists()) {
+          throw new Error('A trilha não existe mais ou foi excluída.')
+        }
         const previousData = previousTrailSnap.exists()
           ? (previousTrailSnap.data() as { default_total_steps_per_stage?: unknown })
           : {}
@@ -935,20 +935,16 @@ export function TrailDetailPage() {
           )
         }
 
-        tx.set(
-          trailRef,
-          {
-            default_total_steps_per_stage: stepsToSave,
-            phase_blueprint: structurePhases.map((phase) => ({
-              title: phase.title.trim(),
-              stage_type: phase.stage_type,
-              prompt: phase.stage_type === 'ai' ? phase.prompt.trim() : null,
-            })),
-            active: trailActiveDraft,
-            updated_at: serverTimestamp(),
-          },
-          { merge: true },
-        )
+        tx.update(trailRef, {
+          default_total_steps_per_stage: stepsToSave,
+          phase_blueprint: structurePhases.map((phase) => ({
+            title: phase.title.trim(),
+            stage_type: phase.stage_type,
+            prompt: phase.stage_type === 'ai' ? phase.prompt.trim() : null,
+          })),
+          active: trailActiveDraft,
+          updated_at: serverTimestamp(),
+        })
 
         for (let i = 0; i < structurePhases.length; i++) {
           const phase = structurePhases[i]
@@ -1109,26 +1105,6 @@ export function TrailDetailPage() {
     }
   }
 
-  async function handleInstitutionChange(nextInstitutionId: string) {
-    if (!db || !id || !nextInstitutionId) return
-    if (trail?.institution_id === nextInstitutionId) return
-
-    setSavingInstitutionId(true)
-    setInstitutionError(null)
-    try {
-      await updateDoc(doc(db, TRAILS_COLLECTION, id), {
-        institution_id: nextInstitutionId,
-        updated_at: serverTimestamp(),
-      })
-    } catch (e) {
-      setInstitutionError(
-        e instanceof Error ? e.message : 'Não foi possível atualizar a instituição.',
-      )
-    } finally {
-      setSavingInstitutionId(false)
-    }
-  }
-
   if (!id) {
     return (
       <p className="banner banner--error" role="alert">
@@ -1147,29 +1123,19 @@ export function TrailDetailPage() {
           </Link>
           <label className="trail-header-select">
             <span className="muted">Instituição</span>
-            <select
-              value={trail?.institution_id ?? ''}
-              onChange={(e) => void handleInstitutionChange(e.target.value)}
-              disabled={loading || !trail || savingInstitutionId || institutions.length === 0}
-            >
-              <option value="" disabled>
-                Selecione…
-              </option>
-              {institutions.map((inst) => (
-                <option key={inst.id} value={inst.id}>
-                  {inst.name ? `${inst.name} (${inst.id})` : inst.id}
-                </option>
-              ))}
-            </select>
+            <input
+              value={
+                trail?.institution_id
+                  ? (institutions.find((inst) => inst.id === trail.institution_id)?.name ||
+                      trail.institution_id)
+                  : '—'
+              }
+              readOnly
+              disabled
+            />
           </label>
         </p>
       </header>
-
-      {institutionError ? (
-        <p className="banner banner--error" role="alert">
-          {institutionError}
-        </p>
-      ) : null}
 
       {error ? (
         <p className="banner banner--error" role="alert">

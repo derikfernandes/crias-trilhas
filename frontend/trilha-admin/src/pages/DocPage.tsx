@@ -726,7 +726,8 @@ const TRAIL_ENDPOINTS: DocEndpoint[] = [
         name: 'institution_id',
         type: 'string',
         required: false,
-        description: 'Pode re-vincular a trilha a outra instituição.',
+        description:
+          'Não permitido após criação (imutável). Enviar este campo retorna erro.',
       },
       { name: 'name', type: 'string', required: false, description: 'Novo nome da trilha.' },
       { name: 'description', type: 'string', required: false, description: 'Nova descrição geral.' },
@@ -757,7 +758,7 @@ const TRAIL_ENDPOINTS: DocEndpoint[] = [
     path: '/trails/{id}',
     title: 'Deletar trilha',
     description:
-      'Remove permanentemente o registro da trilha. Operação irreversível; valide regras de negócio no backend.',
+      'Remove a trilha com exclusão em cascade dos registros dependentes (`trail_stage_questions`, `trail_stages`, `student_trails`, `conversation_logs`). Operação irreversível.',
     auth: true,
     pathParams: [
       {
@@ -768,7 +769,6 @@ const TRAIL_ENDPOINTS: DocEndpoint[] = [
     ],
     responses: [
       { code: '204', description: 'Exclusão concluída (No Content).' },
-      { code: '404', description: 'Trilha não encontrada.' },
       { code: '401', description: 'Não autenticado.' },
     ],
   },

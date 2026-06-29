@@ -129,6 +129,31 @@ function toTrailOutput(
   }
 }
 
+async function deleteByTrailId(
+  db: ReturnType<typeof getFirestore>,
+  collectionName: string,
+  trailId: string,
+): Promise<number> {
+  let total = 0
+  const batchSize = 400
+
+  while (true) {
+    const snap = await db
+      .collection(collectionName)
+      .where('trail_id', '==', trailId)
+      .limit(batchSize)
+      .get()
+    if (snap.empty) break
+
+    const batch = db.batch()
+    for (const d of snap.docs) batch.delete(d.ref)
+    await batch.commit()
+    total += snap.size
+  }
+
+  return total
+}
+
 async function handleRequest(request: Request): Promise<Response> {
   const url = new URL(request.url)
   const id = url.searchParams.get('id')?.trim()
@@ -325,8 +350,17 @@ async function handleRequest(request: Request): Promise<Response> {
       const body = payload as Json
       const updates: Json = {}
 
-      const institution_id = sanitizeString(body.institution_id)
-      if (institution_id) updates.institution_id = institution_id
+      if ('institution_id' in body && body.institution_id !== undefined) {
+        console.warn('[trails.update_blocked_institution_change]', {
+          trail_id: id,
+          requested_institution_id:
+            typeof body.institution_id === 'string' ? body.institution_id : null,
+        })
+        return respond(400, {
+          error:
+            'Campo "institution_id" é imutável após a criação da trilha.',
+        })
+      }
 
       const name = sanitizeString(body.name)
       if (name) updates.name = name
@@ -380,11 +414,50 @@ async function handleRequest(request: Request): Promise<Response> {
     if (request.method === 'DELETE') {
       if (!id) return respond(400, { error: 'id é obrigatório em DELETE' })
 
+      const trailStagesCollection =
+        process.env.TRAIL_STAGES_COLLECTION ?? 'trail_stages'
+      const trailStageQuestionsCollection =
+        process.env.TRAIL_STAGE_QUESTIONS_COLLECTION ?? 'trail_stage_questions'
+      const studentTrailsCollection =
+        process.env.STUDENT_TRAILS_COLLECTION ?? 'student_trails'
+      const conversationLogsCollection =
+        process.env.CONVERSATION_LOGS_COLLECTION ?? 'conversation_logs'
+
+      const deletedTrailStageQuestions = await deleteByTrailId(
+        db,
+        trailStageQuestionsCollection,
+        id,
+      )
+      const deletedTrailStages = await deleteByTrailId(
+        db,
+        trailStagesCollection,
+        id,
+      )
+      const deletedStudentTrails = await deleteByTrailId(
+        db,
+        studentTrailsCollection,
+        id,
+      )
+      const deletedConversationLogs = await deleteByTrailId(
+        db,
+        conversationLogsCollection,
+        id,
+      )
+
       const ref = db.collection(collection).doc(id)
       const snap = await ref.get()
-      if (!snap.exists) return respond(404, { error: 'Not found' })
-
-      await ref.delete()
+      const deletedTrail = snap.exists
+      if (deletedTrail) {
+        await ref.delete()
+      }
+      console.info('[trails.delete_cascade]', {
+        trail_id: id,
+        deleted_trail: deletedTrail,
+        deleted_trail_stage_questions: deletedTrailStageQuestions,
+        deleted_trail_stages: deletedTrailStages,
+        deleted_student_trails: deletedStudentTrails,
+        deleted_conversation_logs: deletedConversationLogs,
+      })
       return new Response(null, { status: 204, headers: corsHeaders() })
     }
 
