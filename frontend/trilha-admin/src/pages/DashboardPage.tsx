@@ -50,7 +50,10 @@ const ALL_STUDENT_COLUMNS = [
   { key: 'phone', label: 'Telefone' },
   { key: 'released', label: 'Tópicos liberados' },
   { key: 'done', label: 'Tópicos feitos' },
-  { key: 'completionPct', label: '% conclusão' },
+  { key: 'completionPct', label: '% conclusão (tópicos)' },
+  { key: 'lessonsReleased', label: 'Aulas liberadas' },
+  { key: 'lessonsDone', label: 'Aulas realizadas' },
+  { key: 'lessonsCompletionPct', label: '% conclusão (aulas)' },
   { key: 'correct', label: 'Acertos' },
   { key: 'wrong', label: 'Erros' },
   { key: 'accuracyPct', label: '% de acerto' },
@@ -63,6 +66,9 @@ type StudentRow = {
   released: number
   done: number
   completionPct: number | null
+  lessonsReleased: number
+  lessonsDone: number
+  lessonsCompletionPct: number | null
   correct: number
   wrong: number
   accuracyPct: number | null
@@ -462,6 +468,171 @@ function appendCorrespondenceSheet(
     })
   })
   XLSX.utils.book_append_sheet(workbook, legendSheet, 'Correspondência')
+}
+
+type TopicPosition = { stage: number; question: number }
+
+function filterTrailTopicPositions(
+  trailId: string,
+  positions: TopicPosition[],
+  deselectedStages: Set<string>,
+  deselectedQuestions: Set<number>,
+): TopicPosition[] {
+  return positions.filter(
+    (p) =>
+      !deselectedStages.has(`${trailId}|${p.stage}`) &&
+      !deselectedQuestions.has(p.question),
+  )
+}
+
+function groupTopicsByLesson(positions: TopicPosition[]): Map<number, TopicPosition[]> {
+  const byQuestion = new Map<number, TopicPosition[]>()
+  for (const p of positions) {
+    const arr = byQuestion.get(p.question)
+    if (arr) arr.push(p)
+    else byQuestion.set(p.question, [p])
+  }
+  return byQuestion
+}
+
+function isLessonCompleteForTrail(
+  trailId: string,
+  topics: TopicPosition[],
+  studentDone: Set<string>,
+): boolean {
+  return topics.every((p) =>
+    studentDone.has(`${trailId}|${p.stage}|${p.question}`),
+  )
+}
+
+function computeLessonMetricsForTrails(
+  trailIds: Iterable<string>,
+  questionsByTrail: Map<string, TopicPosition[]>,
+  studentDone: Set<string>,
+  deselectedStages: Set<string>,
+  deselectedQuestions: Set<number>,
+): { lessonsReleased: number; lessonsDone: number; lessonsCompletionPct: number | null } {
+  const releasedKeys = new Set<string>()
+  const doneKeys = new Set<string>()
+
+  for (const trailId of trailIds) {
+    const selected = filterTrailTopicPositions(
+      trailId,
+      questionsByTrail.get(trailId) ?? [],
+      deselectedStages,
+      deselectedQuestions,
+    )
+    for (const [questionNumber, topics] of groupTopicsByLesson(selected)) {
+      if (topics.length === 0) continue
+      const lessonKey = `${trailId}|${questionNumber}`
+      releasedKeys.add(lessonKey)
+      if (isLessonCompleteForTrail(trailId, topics, studentDone)) {
+        doneKeys.add(lessonKey)
+      }
+    }
+  }
+
+  const lessonsReleased = releasedKeys.size
+  const lessonsDone = doneKeys.size
+  return {
+    lessonsReleased,
+    lessonsDone,
+    lessonsCompletionPct: pct(lessonsDone, lessonsReleased),
+  }
+}
+
+function trailLessonNumbers(
+  trailId: string,
+  questionsByTrail: Map<string, TopicPosition[]>,
+  deselectedStages: Set<string>,
+  deselectedQuestions: Set<number>,
+): number[] {
+  const selected = filterTrailTopicPositions(
+    trailId,
+    questionsByTrail.get(trailId) ?? [],
+    deselectedStages,
+    deselectedQuestions,
+  )
+  return [...groupTopicsByLesson(selected).keys()].sort((a, b) => a - b)
+}
+
+function appendLessonsProgressSheet(
+  workbook: XLSX.WorkBook,
+  trail: Trail,
+  students: Student[],
+  questionsByTrail: Map<string, TopicPosition[]>,
+  doneByStudent: Map<string, Set<string>>,
+  deselectedStages: Set<string>,
+  deselectedQuestions: Set<number>,
+) {
+  const lessonNumbers = trailLessonNumbers(
+    trail.id,
+    questionsByTrail,
+    deselectedStages,
+    deselectedQuestions,
+  )
+  const lessonHeaders = lessonNumbers.map((n) => `A${n}`)
+  const headers = [
+    'Nome',
+    'Telefone',
+    ...lessonHeaders,
+    'Qtd aulas',
+    'Qtd realizadas',
+    '% aulas',
+  ]
+
+  const sortedStudents = [...students].sort((a, b) =>
+    (a.name || '').localeCompare(b.name || '', 'pt-BR', {
+      sensitivity: 'base',
+    }),
+  )
+
+  const rows = sortedStudents.map((student) => {
+    const studentDone = doneByStudent.get(student.id) ?? new Set()
+    const metrics = computeLessonMetricsForTrails(
+      [trail.id],
+      questionsByTrail,
+      studentDone,
+      deselectedStages,
+      deselectedQuestions,
+    )
+    const byQuestion = groupTopicsByLesson(
+      filterTrailTopicPositions(
+        trail.id,
+        questionsByTrail.get(trail.id) ?? [],
+        deselectedStages,
+        deselectedQuestions,
+      ),
+    )
+    const lessonCells = lessonNumbers.map((n) => {
+      const topics = byQuestion.get(n) ?? []
+      if (topics.length === 0) return ''
+      return isLessonCompleteForTrail(trail.id, topics, studentDone)
+        ? 'Sim'
+        : 'Não'
+    })
+    return [
+      student.name || student.id,
+      student.phone_number || '',
+      ...lessonCells,
+      metrics.lessonsReleased,
+      metrics.lessonsDone,
+      formatPctExport(metrics.lessonsCompletionPct),
+    ]
+  })
+
+  const sheet = XLSX.utils.aoa_to_sheet([headers, ...rows])
+  headers.forEach((header, colIndex) => {
+    forceWorksheetCellString(sheet, 0, colIndex, header)
+  })
+  rows.forEach((row, rowIndex) => {
+    row.forEach((value, colIndex) => {
+      if (typeof value === 'string' && value.length > 0) {
+        forceWorksheetCellString(sheet, rowIndex + 1, colIndex, value)
+      }
+    })
+  })
+  XLSX.utils.book_append_sheet(workbook, sheet, 'Aulas')
 }
 
 export function DashboardPage() {
@@ -1022,12 +1193,23 @@ export function DashboardPage() {
         }
       }
 
+      const lessonMetrics = computeLessonMetricsForTrails(
+        enrolled.map((st) => st.trail_id),
+        questionsByTrail,
+        studentDone,
+        deselectedStages,
+        deselectedQuestions,
+      )
+
       const agg = attemptsByStudent.get(student.id) ?? { correct: 0, wrong: 0 }
       return {
         student,
         released,
         done,
         completionPct: pct(done, released),
+        lessonsReleased: lessonMetrics.lessonsReleased,
+        lessonsDone: lessonMetrics.lessonsDone,
+        lessonsCompletionPct: lessonMetrics.lessonsCompletionPct,
         correct: agg.correct,
         wrong: agg.wrong,
         accuracyPct: pct(agg.correct, agg.correct + agg.wrong),
@@ -1049,11 +1231,20 @@ export function DashboardPage() {
   ])
 
   const filteredStudentRows = useMemo(() => {
-    const name = nameFilter.trim().toLowerCase()
+    const query = nameFilter.trim().toLowerCase()
+    const queryDigits = query.replace(/\D/g, '')
     const lo = Math.min(pctMin, pctMax)
     const hi = Math.max(pctMin, pctMax)
     return studentRows.filter((row) => {
-      if (name && !row.student.name.toLowerCase().includes(name)) return false
+      if (query) {
+        const nameMatch = row.student.name.toLowerCase().includes(query)
+        const phone = (row.student.phone_number ?? '').toLowerCase()
+        const phoneDigits = phone.replace(/\D/g, '')
+        const phoneMatch =
+          phone.includes(query) ||
+          (queryDigits.length > 0 && phoneDigits.includes(queryDigits))
+        if (!nameMatch && !phoneMatch) return false
+      }
       const p = row.completionPct ?? 0
       if (p < lo || p > hi) return false
       return true
@@ -1089,6 +1280,15 @@ export function DashboardPage() {
           break
         case 'completionPct':
           cmp = compareNullableNumber(a.completionPct, b.completionPct)
+          break
+        case 'lessonsReleased':
+          cmp = a.lessonsReleased - b.lessonsReleased
+          break
+        case 'lessonsDone':
+          cmp = a.lessonsDone - b.lessonsDone
+          break
+        case 'lessonsCompletionPct':
+          cmp = compareNullableNumber(a.lessonsCompletionPct, b.lessonsCompletionPct)
           break
         case 'correct':
           cmp = a.correct - b.correct
@@ -1478,6 +1678,15 @@ export function DashboardPage() {
         answerColumns,
         stageByKey,
         questionByKey,
+      )
+      appendLessonsProgressSheet(
+        workbook,
+        trail,
+        sortedStudents,
+        questionsByTrail,
+        exportDoneByStudent,
+        deselectedStages,
+        deselectedQuestions,
       )
       const trailSlug = slugFileName(trail.name || trail.id)
       XLSX.writeFile(workbook, `historico-alunos-${trailSlug}.xlsx`)
@@ -1901,12 +2110,12 @@ export function DashboardPage() {
 
             <div className="dashboard-filters">
               <label className="field dashboard-filter-name">
-                <span>Buscar por nome</span>
+                <span>Buscar por nome ou telefone</span>
                 <input
                   type="text"
                   value={nameFilter}
                   onChange={(e) => setNameFilter(e.target.value)}
-                  placeholder="Nome do aluno…"
+                  placeholder="Nome ou telefone…"
                 />
               </label>
               <label className="gerenciamento-select">
@@ -2021,6 +2230,30 @@ export function DashboardPage() {
                                     </div>
                                     <span className="progress__label">
                                       {formatPct(row.completionPct)}
+                                    </span>
+                                  </div>
+                                </td>
+                              )
+                            case 'lessonsReleased':
+                              return (
+                                <td key={c.key}>{row.lessonsReleased}</td>
+                              )
+                            case 'lessonsDone':
+                              return <td key={c.key}>{row.lessonsDone}</td>
+                            case 'lessonsCompletionPct':
+                              return (
+                                <td key={c.key}>
+                                  <div className="progress">
+                                    <div className="progress__bar">
+                                      <div
+                                        className="progress__fill"
+                                        style={{
+                                          width: `${row.lessonsCompletionPct ?? 0}%`,
+                                        }}
+                                      />
+                                    </div>
+                                    <span className="progress__label">
+                                      {formatPct(row.lessonsCompletionPct)}
                                     </span>
                                   </div>
                                 </td>
