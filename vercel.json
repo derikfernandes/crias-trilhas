@@ -3,6 +3,9 @@
   "installCommand": "npm install",
   "buildCommand": "npm run build",
   "outputDirectory": "frontend/trilha-admin/dist",
+  "functions": {
+    "api/dashboard_summary.ts": { "maxDuration": 60 }
+  },
   "rewrites": [
     { "source": "/institution/", "destination": "/api/institution" },
     { "source": "/institution", "destination": "/api/institution" },
