@@ -25,6 +25,7 @@ import {
   CONVERSATION_LOGS_COLLECTION,
   snapshotToConversationLog,
 } from '../lib/conversationLogFirestore'
+import { fetchDashboardLogSummary } from '../lib/dashboardSummaryApi'
 import { studentPath, trailPath } from '../lib/paths'
 import { usePermissions } from '../hooks/usePermissions'
 import type { ConversationLog } from '../types/conversationLog'
@@ -372,7 +373,16 @@ function pickBestStudentAnswer(candidates: AnswerCandidate[]): string {
 }
 
 const DATA_SOURCES = 3
+/** Stages e questões (carregados por trilha) também entram no gate de loading. */
+const META_SOURCES = 2
+/** Passos de progresso: fontes de dados + metadados + 1 passo de métricas (logs). */
+const TOTAL_LOAD_STEPS = DATA_SOURCES + META_SOURCES + 1
 const LOG_FETCH_BATCH_SIZE = 3
+
+const EMPTY_LOG_AGGREGATES: LogAggregates = {
+  doneByStudent: new Map(),
+  answerMap: new Map(),
+}
 
 async function fetchConversationLogsForStudents(
   studentIds: string[],
@@ -648,17 +658,22 @@ export function DashboardPage() {
   const [students, setStudents] = useState<Student[]>([])
   const [trails, setTrails] = useState<Trail[]>([])
   const [studentTrails, setStudentTrails] = useState<StudentTrail[]>([])
-  const [conversationLogs, setConversationLogs] = useState<ConversationLog[]>([])
+  const [logAggregates, setLogAggregates] = useState<LogAggregates>(
+    EMPTY_LOG_AGGREGATES,
+  )
   const [stages, setStages] = useState<TrailStage[]>([])
   const [questions, setQuestions] = useState<TrailStageQuestion[]>([])
   const [loadingData, setLoadingData] = useState(false)
+  const [loadingMeta, setLoadingMeta] = useState(false)
   const [loadingLogs, setLoadingLogs] = useState(false)
   const [loadStepsDone, setLoadStepsDone] = useState(0)
-  const [loadStepsTotal, setLoadStepsTotal] = useState(DATA_SOURCES + 1)
+  const [loadStepsTotal, setLoadStepsTotal] = useState(TOTAL_LOAD_STEPS)
   const [loadPercent, setLoadPercent] = useState(0)
   const [loadLabel, setLoadLabel] = useState('')
   const [dataError, setDataError] = useState<string | null>(null)
-  const loadProgressRef = useRef({ done: 0, total: DATA_SOURCES + 1 })
+  const [logsError, setLogsError] = useState<string | null>(null)
+  const [logsRetryKey, setLogsRetryKey] = useState(0)
+  const loadProgressRef = useRef({ done: 0, total: TOTAL_LOAD_STEPS })
   const loadTargetPercentRef = useRef(0)
 
   const computeLoadPercent = (done: number, total: number, complete = false) => {
@@ -767,26 +782,31 @@ export function DashboardPage() {
         setStudents([])
         setTrails([])
         setStudentTrails([])
-        setConversationLogs([])
-        setStages([])
-        setQuestions([])
+        setLogAggregates(EMPTY_LOG_AGGREGATES)
         setDataError(null)
+        setLogsError(null)
         setLoadingData(false)
+        setLoadingMeta(false)
         setLoadingLogs(false)
         setLoadStepsDone(0)
-        setLoadStepsTotal(DATA_SOURCES + 1)
-        loadProgressRef.current = { done: 0, total: DATA_SOURCES + 1 }
+        setLoadStepsTotal(TOTAL_LOAD_STEPS)
+        loadProgressRef.current = { done: 0, total: TOTAL_LOAD_STEPS }
         loadTargetPercentRef.current = 0
         setLoadPercent(0)
         setLoadLabel('')
         return
       }
 
-      loadProgressRef.current = { done: 0, total: DATA_SOURCES + 1 }
+      loadProgressRef.current = { done: 0, total: TOTAL_LOAD_STEPS }
       loadTargetPercentRef.current = 0
       setLoadingData(true)
+      // Evita frame com dashboard zerado entre o fim do loadingData e o início
+      // dos efeitos de metadados/logs.
+      setLoadingMeta(true)
+      setLoadingLogs(true)
+      setLogsError(null)
       setLoadStepsDone(0)
-      setLoadStepsTotal(DATA_SOURCES + 1)
+      setLoadStepsTotal(TOTAL_LOAD_STEPS)
       setLoadPercent(0)
       setLoadLabel('Carregando alunos e trilhas…')
       const dbOk = db
@@ -820,16 +840,8 @@ export function DashboardPage() {
           where('institution_id', '==', selectedId),
         ),
         (snap) => {
-          const studentList = snap.docs.map(snapshotToStudent)
-          setStudents(studentList)
+          setStudents(snap.docs.map(snapshotToStudent))
           setDataError(null)
-          const ids = studentList.map((s) => s.id).filter(Boolean)
-          const logChunks =
-            ids.length > 0
-              ? chunkArray(ids, FIRESTORE_IN_LIMIT).length
-              : 1
-          loadProgressRef.current.total = DATA_SOURCES + logChunks
-          setLoadStepsTotal(loadProgressRef.current.total)
           done('students')
         },
         onError(setStudents, 'students'),
@@ -863,35 +875,6 @@ export function DashboardPage() {
         onError(setStudentTrails, 'studentTrails'),
       ),
     )
-    const onMetadataError = (
-      setData: (items: never[]) => void,
-    ) => {
-      return (err: { message: string }) => {
-        setDataError(err.message)
-        setData([])
-      }
-    }
-
-    // Stages e questões não têm institution_id; carrega tudo e filtra
-    // pelas trilhas da instituição (volume pequeno no client).
-    unsubs.push(
-      onSnapshot(
-        collection(dbOk, TRAIL_STAGES_COLLECTION),
-        (snap) => {
-          setStages(snap.docs.map(snapshotToTrailStage))
-        },
-        onMetadataError(setStages),
-      ),
-    )
-    unsubs.push(
-      onSnapshot(
-        collection(dbOk, TRAIL_STAGE_QUESTIONS_COLLECTION),
-        (snap) => {
-          setQuestions(snap.docs.map(snapshotToTrailStageQuestion))
-        },
-        onMetadataError(setQuestions),
-      ),
-    )
     }
 
     void run()
@@ -920,6 +903,105 @@ export function DashboardPage() {
     [trails],
   )
 
+  // Stages e questões filtrados pelas trilhas da instituição (em chunks de 30
+  // IDs por limitação do operador "in"), em vez de baixar as coleções inteiras.
+  // Também participam do gate de loading para evitar percentuais zerados
+  // enquanto ainda não chegaram.
+  useEffect(() => {
+    if (!db || !selectedId) {
+      setStages([])
+      setQuestions([])
+      setLoadingMeta(false)
+      return
+    }
+    if (loadingData) return
+
+    const dbOk = db
+    const trailIds = trailIdsKey ? trailIdsKey.split('\0') : []
+    const loadedMeta = new Set<string>()
+
+    loadProgressRef.current.done = Math.min(
+      loadProgressRef.current.done,
+      DATA_SOURCES,
+    )
+
+    const metaDone = (source: 'stages' | 'questions') => {
+      if (loadedMeta.has(source)) return
+      loadedMeta.add(source)
+      loadProgressRef.current.done += 1
+      syncLoadProgress('Carregando conteúdo das trilhas…')
+      if (loadedMeta.size >= META_SOURCES) {
+        setLoadingMeta(false)
+      }
+    }
+
+    if (trailIds.length === 0) {
+      setStages([])
+      setQuestions([])
+      metaDone('stages')
+      metaDone('questions')
+      return
+    }
+
+    setLoadingMeta(true)
+    const chunks = chunkArray(trailIds, FIRESTORE_IN_LIMIT)
+    const stageChunks = new Map<number, TrailStage[]>()
+    const questionChunks = new Map<number, TrailStageQuestion[]>()
+    const unsubs: (() => void)[] = []
+
+    const flatten = <T,>(byChunk: Map<number, T[]>): T[] =>
+      chunks.flatMap((_, idx) => byChunk.get(idx) ?? [])
+
+    chunks.forEach((chunk, idx) => {
+      unsubs.push(
+        onSnapshot(
+          query(
+            collection(dbOk, TRAIL_STAGES_COLLECTION),
+            where('trail_id', 'in', chunk),
+          ),
+          (snap) => {
+            stageChunks.set(idx, snap.docs.map(snapshotToTrailStage))
+            setStages(flatten(stageChunks))
+            if (stageChunks.size >= chunks.length) metaDone('stages')
+          },
+          (err) => {
+            setDataError(err.message)
+            stageChunks.set(idx, [])
+            setStages(flatten(stageChunks))
+            if (stageChunks.size >= chunks.length) metaDone('stages')
+          },
+        ),
+      )
+      unsubs.push(
+        onSnapshot(
+          query(
+            collection(dbOk, TRAIL_STAGE_QUESTIONS_COLLECTION),
+            where('trail_id', 'in', chunk),
+          ),
+          (snap) => {
+            questionChunks.set(idx, snap.docs.map(snapshotToTrailStageQuestion))
+            setQuestions(flatten(questionChunks))
+            if (questionChunks.size >= chunks.length) metaDone('questions')
+          },
+          (err) => {
+            setDataError(err.message)
+            questionChunks.set(idx, [])
+            setQuestions(flatten(questionChunks))
+            if (questionChunks.size >= chunks.length) metaDone('questions')
+          },
+        ),
+      )
+    })
+
+    return () => {
+      for (const u of unsubs) u()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedId, trailIdsKey, loadingData])
+
+  // Métricas dos alunos: agregação server-side (/api/dashboard_summary). Se o
+  // endpoint falhar, cai no caminho legado (download dos logs no browser) e,
+  // se esse também falhar, mostra erro com opção de tentar novamente.
   useEffect(() => {
     let cancelled = false
 
@@ -929,9 +1011,11 @@ export function DashboardPage() {
       }
     }
 
+    const institutionId = selectedId
     const studentIds = studentIdsKey ? studentIdsKey.split('\0') : []
     if (studentIds.length === 0) {
-      setConversationLogs([])
+      setLogAggregates(EMPTY_LOG_AGGREGATES)
+      setLogsError(null)
       setLoadingLogs(false)
       loadProgressRef.current.done = loadProgressRef.current.total
       syncLoadProgress('', { complete: true })
@@ -940,57 +1024,91 @@ export function DashboardPage() {
       }
     }
 
-    const relevantTrailIds = new Set(
-      trailIdsKey ? trailIdsKey.split('\0') : [],
-    )
-
-    const logChunks = chunkArray(studentIds, FIRESTORE_IN_LIMIT).length
-    loadProgressRef.current.total = DATA_SOURCES + logChunks
+    setLoadingLogs(true)
+    setLogsError(null)
     loadProgressRef.current.done = Math.min(
       loadProgressRef.current.done,
-      DATA_SOURCES,
+      DATA_SOURCES + META_SOURCES,
     )
-    setLoadStepsTotal(loadProgressRef.current.total)
+    syncLoadProgress('Calculando métricas dos alunos…')
 
-    setLoadingLogs(true)
-    const logsStartPct = computeLoadPercent(
-      loadProgressRef.current.done,
-      loadProgressRef.current.total,
-    )
-    loadTargetPercentRef.current = logsStartPct
-    setLoadPercent(logsStartPct)
-    syncLoadProgress('Carregando respostas dos alunos…')
-    void fetchConversationLogsForStudents(
-      studentIds,
-      relevantTrailIds,
-      (completed, total) => {
+    const finishProgress = () => {
+      loadProgressRef.current.done = Math.min(
+        loadProgressRef.current.done + 1,
+        loadProgressRef.current.total,
+      )
+      const complete =
+        loadProgressRef.current.done >= loadProgressRef.current.total
+      syncLoadProgress(complete ? '' : 'Calculando métricas dos alunos…', {
+        complete,
+      })
+    }
+
+    async function run() {
+      try {
+        const summary = await fetchDashboardLogSummary(institutionId)
         if (cancelled) return
-        loadProgressRef.current.done = DATA_SOURCES + completed
-        loadProgressRef.current.total = DATA_SOURCES + total
-        syncLoadProgress('Carregando respostas dos alunos…')
-      },
-    )
-      .then((logs) => {
+        setLogAggregates(summary)
+        setLoadingLogs(false)
+        finishProgress()
+        return
+      } catch (apiErr) {
         if (cancelled) return
-        setConversationLogs(logs)
+        console.warn(
+          'Falha na agregação server-side do dashboard; usando fallback no cliente.',
+          apiErr,
+        )
+      }
+
+      // Fallback legado: baixa os logs no browser e agrega localmente.
+      const relevantTrailIds = new Set(
+        trailIdsKey ? trailIdsKey.split('\0') : [],
+      )
+      const logChunks = chunkArray(studentIds, FIRESTORE_IN_LIMIT).length
+      loadProgressRef.current.total =
+        DATA_SOURCES + META_SOURCES + logChunks
+      setLoadStepsTotal(loadProgressRef.current.total)
+      syncLoadProgress('Carregando respostas dos alunos…')
+
+      try {
+        const logs = await fetchConversationLogsForStudents(
+          studentIds,
+          relevantTrailIds,
+          (completed, total) => {
+            if (cancelled) return
+            loadProgressRef.current.done =
+              DATA_SOURCES + META_SOURCES + completed
+            loadProgressRef.current.total = DATA_SOURCES + META_SOURCES + total
+            syncLoadProgress('Carregando respostas dos alunos…')
+          },
+        )
+        if (cancelled) return
+        setLogAggregates(buildLogAggregates(logs))
         setLoadingLogs(false)
         loadProgressRef.current.done = loadProgressRef.current.total
         syncLoadProgress('', { complete: true })
-      })
-      .catch((err: unknown) => {
+      } catch (err) {
         if (cancelled) return
-        setDataError(err instanceof Error ? err.message : 'Erro ao carregar logs')
-        setConversationLogs([])
+        setLogsError(
+          err instanceof Error
+            ? err.message
+            : 'Erro ao carregar métricas dos alunos.',
+        )
+        setLogAggregates(EMPTY_LOG_AGGREGATES)
         setLoadingLogs(false)
         loadTargetPercentRef.current = 0
         setLoadPercent(0)
         setLoadLabel('')
-      })
+      }
+    }
+
+    void run()
 
     return () => {
       cancelled = true
     }
-  }, [selectedId, studentIdsKey, trailIdsKey, loadingData])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedId, studentIdsKey, trailIdsKey, loadingData, logsRetryKey])
 
   const sortedInstitutions = useMemo(() => {
     return filterInstitutions(institutions).sort((a, b) => {
@@ -1113,11 +1231,6 @@ export function DashboardPage() {
     () =>
       availableQuestions.filter((n) => !deselectedQuestions.has(n)).length,
     [availableQuestions, deselectedQuestions],
-  )
-
-  const logAggregates = useMemo(
-    () => buildLogAggregates(conversationLogs),
-    [conversationLogs],
   )
 
   const doneQuestionsByStudent = logAggregates.doneByStudent
@@ -1598,14 +1711,10 @@ export function DashboardPage() {
     setExportError(null)
     setExportingTrailId(trail.id)
     try {
-      const studentIds = students.map((s) => s.id).filter(Boolean)
-      const relevantTrailIds = new Set(trails.map((t) => t.id))
-      const logs = await fetchConversationLogsForStudents(
-        studentIds,
-        relevantTrailIds,
-      )
-      const { answerMap: answersByKey, doneByStudent: exportDoneByStudent } =
-        buildLogAggregates(logs)
+      // Reutiliza os agregados já carregados no dashboard (mesmos alunos e
+      // trilhas da instituição), sem refazer o download de logs.
+      const answersByKey = studentAnswerMap
+      const exportDoneByStudent = doneQuestionsByStudent
 
       const answerColumns = allQuestionColumnsByTrail.get(trail.id) ?? []
       const fixedHeaders = [
@@ -1779,7 +1888,7 @@ export function DashboardPage() {
   )
 
   const isDashboardLoading =
-    Boolean(selectedId) && (loadingData || loadingLogs)
+    Boolean(selectedId) && (loadingData || loadingMeta || loadingLogs)
 
   useEffect(() => {
     if (isDashboardLoading) return
@@ -1889,6 +1998,23 @@ export function DashboardPage() {
               />
             </div>
           </div>
+        </section>
+      ) : logsError ? (
+        <section className="panel">
+          <p className="banner banner--error" role="alert">
+            Não foi possível carregar as métricas dos alunos: {logsError}
+          </p>
+          <p className="muted">
+            Os totais de alunos e trilhas foram carregados, mas os percentuais
+            de conclusão e acerto ficariam zerados. Tente novamente.
+          </p>
+          <button
+            type="button"
+            className="btn"
+            onClick={() => setLogsRetryKey((k) => k + 1)}
+          >
+            Tentar novamente
+          </button>
         </section>
       ) : (
         <>

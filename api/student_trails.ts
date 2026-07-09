@@ -11,13 +11,13 @@ import {
   markStudentTrailLastInteraction,
   completeStudentTrail,
   blockStudentTrail,
-} from './lib/studentTrailService'
+} from '../server/lib/studentTrailService'
 import {
   validateStudentTrailCreate,
   parseStatus,
   parseIntLoose,
   type StudentTrailStatus,
-} from './lib/studentTrailValidation'
+} from '../server/lib/studentTrailValidation'
 
 type Json = Record<string, unknown>
 
@@ -509,7 +509,7 @@ async function handleRequest(request: Request): Promise<Response> {
         }
 
         const { updateStudentTrailStatus } = await import(
-          './lib/studentTrailService.js'
+          '../server/lib/studentTrailService.js'
         )
         await updateStudentTrailStatus(
           db,
@@ -571,7 +571,7 @@ async function handleRequest(request: Request): Promise<Response> {
         }
 
         const { updateStudentTrailFields } = await import(
-          './lib/studentTrailService.js'
+          '../server/lib/studentTrailService.js'
         )
         await updateStudentTrailFields(db, collection, snap.id, patch)
 

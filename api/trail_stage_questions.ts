@@ -8,7 +8,7 @@ import {
   getTrailStageQuestionById,
   listTrailStageQuestionsForStage,
   updateTrailStageQuestionFields,
-} from './lib/trailStageQuestionService'
+} from '../server/lib/trailStageQuestionService'
 import {
   parseOptionsFromDoc,
   parseTrailStageQuestionUpdatePayload,
@@ -17,7 +17,7 @@ import {
   parseStageTypeFromFirestoreData,
   pedagogicalStageDocId,
   validateTrailStageQuestionCreate,
-} from './lib/trailStageQuestionValidation'
+} from '../server/lib/trailStageQuestionValidation'
 
 type Json = Record<string, unknown>
 
@@ -360,7 +360,7 @@ async function handleRequest(request: Request): Promise<Response> {
         trail_id,
         stage_number,
       )
-      if (!stageResolved.ok) return respond(400, { error: stageResolved.error })
+      if (stageResolved.ok === false) return respond(400, { error: stageResolved.error })
 
       const validated = validateTrailStageQuestionCreate(
         payload,
@@ -443,7 +443,7 @@ async function handleRequest(request: Request): Promise<Response> {
         existingTrailId,
         existingStageNumber,
       )
-      if (!stageResolved.ok) return respond(400, { error: stageResolved.error })
+      if (stageResolved.ok === false) return respond(400, { error: stageResolved.error })
 
       const mergedForValidate = {
         trail_id: existingTrailId,

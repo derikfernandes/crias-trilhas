@@ -8,6 +8,14 @@
         { "fieldPath": "stage_number", "order": "ASCENDING" },
         { "fieldPath": "question_number", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "conversation_logs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "sender", "order": "ASCENDING" },
+        { "fieldPath": "student_id", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

@@ -250,7 +250,7 @@ export function validateTrailStageQuestionCreate(
   if (!content) return { ok: false, error: 'Campo "content" é obrigatório' }
 
   const resolvedReleased = resolveIsReleasedForCreate(body, question_number)
-  if (!resolvedReleased.ok) return { ok: false, error: resolvedReleased.error }
+  if (resolvedReleased.ok === false) return { ok: false, error: resolvedReleased.error }
   const is_released = resolvedReleased.value
 
   let explanation: string | null = null
