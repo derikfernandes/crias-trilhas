@@ -2989,60 +2989,165 @@
   accent-color: var(--accent);
 }
 
-.dashboard-column-picker {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem 1.1rem;
-  padding: 0.7rem 0.9rem;
-  margin-bottom: 1rem;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--bg) 88%, var(--border));
+/* Popover de filtro estilo AutoFiltro do Excel (Aulas / Tópicos / Colunas) */
+.excel-picker {
+  position: relative;
+  display: inline-flex;
 }
 
-.dashboard-stage-picker {
+.excel-picker__popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 40;
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
-  padding: 0.7rem 0.9rem;
-  margin-bottom: 1rem;
+  gap: 0.55rem;
+  width: max-content;
+  min-width: 15rem;
+  max-width: min(26rem, 85vw);
+  padding: 0.75rem 0.85rem;
   border: 1px solid var(--border);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--bg) 88%, var(--border));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--bg) 96%, var(--border));
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.16);
+  text-align: left;
+  font-weight: 400;
 }
 
-.dashboard-stage-picker__list {
+.excel-picker__hint {
+  font-size: 0.8rem;
+  line-height: 1.35;
+}
+
+.excel-picker__search {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.4rem 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  font: inherit;
+  font-size: 0.85rem;
+}
+
+.excel-picker__list {
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
-  max-height: min(22rem, 55vh);
+  gap: 0.3rem;
+  max-height: min(16rem, 45vh);
   overflow-y: auto;
   padding-right: 0.25rem;
 }
 
-.dashboard-stage-picker__list .field--inline {
+.excel-picker__list .field--inline {
   align-items: flex-start;
   width: 100%;
   margin: 0;
+  white-space: normal;
 }
 
-.dashboard-stage-picker__list .field--inline span {
+.excel-picker__list .field--inline span {
   line-height: 1.35;
 }
 
-.dashboard-stage-picker__head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem 1rem;
-  flex: 0 0 auto;
-  margin-bottom: 0;
+.excel-picker__select-all {
+  padding-bottom: 0.35rem;
+  border-bottom: 1px solid var(--border);
 }
 
-.dashboard-stage-picker__actions {
+.excel-picker__footer {
   display: flex;
-  gap: 0.9rem;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  padding-top: 0.4rem;
+  border-top: 1px solid var(--border);
+}
+
+.dashboard-export-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  min-width: 8.5rem;
+  color: #fff;
+  background: #7c3aed;
+  border-color: #7c3aed;
+  font-weight: 600;
+  box-shadow: 0 3px 9px rgba(124, 58, 237, 0.2);
+  transition:
+    transform 0.12s ease,
+    background-color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.dashboard-export-button:hover:not(:disabled) {
+  background: #6d28d9;
+  border-color: #6d28d9;
+  box-shadow: 0 5px 14px rgba(109, 40, 217, 0.3);
+}
+
+.dashboard-export-button:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.dashboard-export-button:disabled {
+  cursor: progress;
+}
+
+.dashboard-export-notice {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  width: fit-content;
+  margin: 0 0 0.85rem;
+  padding: 0.45rem 0.65rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border));
+  border-radius: 7px;
+  color: var(--text);
+  background: color-mix(in srgb, var(--accent) 7%, var(--bg));
+  font-size: 0.8rem;
+  line-height: 1.35;
+}
+
+/* Enquanto aplica: lista e busca ficam inertes e esmaecidas */
+.excel-picker__popover--pending .excel-picker__list,
+.excel-picker__popover--pending .excel-picker__search {
+  pointer-events: none;
+  opacity: 0.55;
+}
+
+.excel-picker__ok {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 4.5rem;
+  justify-content: center;
+}
+
+.excel-picker__ok:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+.excel-picker__ok:disabled {
+  opacity: 0.85;
+  cursor: progress;
+}
+
+.excel-picker__spinner {
+  width: 0.85rem;
+  height: 0.85rem;
+  flex: 0 0 auto;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: excel-picker-spin 0.7s linear infinite;
+}
+
+@keyframes excel-picker-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .dashboard-sortable {
