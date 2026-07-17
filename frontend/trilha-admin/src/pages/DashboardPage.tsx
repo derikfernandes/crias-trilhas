@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, useTransition } from 'react'
 import { Link } from 'react-router-dom'
 import * as XLSX from 'xlsx'
 import { collection, getDocs, onSnapshot, query, where } from 'firebase/firestore'
@@ -643,6 +643,180 @@ function appendLessonsProgressSheet(
     })
   })
   XLSX.utils.book_append_sheet(workbook, sheet, 'Aulas')
+}
+
+type ExcelPickerItem = { id: string; label: string }
+
+/**
+ * Popover estilo AutoFiltro do Excel: busca, "(Selecionar tudo)" com estado
+ * intermediário, lista rolável de checkboxes e OK/Cancelar. As mudanças só
+ * são aplicadas ao clicar em OK; fechar (Cancelar, Esc ou clique fora)
+ * descarta o rascunho.
+ */
+function ExcelFilterPopover({
+  hint,
+  items,
+  selectedIds,
+  emptyMessage,
+  onApply,
+  onClose,
+}: {
+  hint?: string
+  items: ExcelPickerItem[]
+  selectedIds: Set<string>
+  emptyMessage: string
+  onApply: (next: Set<string>) => void
+  onClose: () => void
+}) {
+  const [draft, setDraft] = useState<Set<string>>(() => new Set(selectedIds))
+  const [search, setSearch] = useState('')
+  const [isPending, startTransition] = useTransition()
+  const rootRef = useRef<HTMLDivElement | null>(null)
+  const selectAllRef = useRef<HTMLInputElement | null>(null)
+
+  const filteredItems = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    if (!q) return items
+    return items.filter((it) => it.label.toLowerCase().includes(q))
+  }, [items, search])
+
+  const allFilteredSelected =
+    filteredItems.length > 0 && filteredItems.every((it) => draft.has(it.id))
+  const someFilteredSelected = filteredItems.some((it) => draft.has(it.id))
+
+  useEffect(() => {
+    if (selectAllRef.current) {
+      selectAllRef.current.indeterminate =
+        someFilteredSelected && !allFilteredSelected
+    }
+  }, [someFilteredSelected, allFilteredSelected])
+
+  useEffect(() => {
+    // Enquanto o OK está aplicando, ignora Esc/clique fora para o popover
+    // não sumir antes do feedback de conclusão.
+    if (isPending) return
+    const onDocMouseDown = (e: MouseEvent) => {
+      const root = rootRef.current
+      if (!root) return
+      // O wrapper inclui o botão que abre o popover; clique nele não conta
+      // como "fora" (o próprio onClick do botão faz o toggle).
+      const wrapper = root.parentElement ?? root
+      if (e.target instanceof Node && !wrapper.contains(e.target)) onClose()
+    }
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
+    document.addEventListener('mousedown', onDocMouseDown)
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', onDocMouseDown)
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [onClose, isPending])
+
+  function toggleItem(id: string) {
+    setDraft((curr) => {
+      const next = new Set(curr)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  function toggleSelectAll() {
+    setDraft((curr) => {
+      const next = new Set(curr)
+      if (allFilteredSelected) {
+        for (const it of filteredItems) next.delete(it.id)
+      } else {
+        for (const it of filteredItems) next.add(it.id)
+      }
+      return next
+    })
+  }
+
+  return (
+    <div
+      ref={rootRef}
+      className={`excel-picker__popover${
+        isPending ? ' excel-picker__popover--pending' : ''
+      }`}
+      role="dialog"
+      aria-busy={isPending}
+    >
+      {hint ? <span className="muted excel-picker__hint">{hint}</span> : null}
+      <input
+        type="search"
+        className="excel-picker__search"
+        placeholder="Pesquisar…"
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+      />
+      <div className="excel-picker__list">
+        {items.length === 0 ? (
+          <span className="muted">{emptyMessage}</span>
+        ) : (
+          <>
+            <label className="field field--inline excel-picker__select-all">
+              <input
+                ref={selectAllRef}
+                type="checkbox"
+                checked={allFilteredSelected}
+                onChange={toggleSelectAll}
+                disabled={filteredItems.length === 0}
+              />
+              <span>(Selecionar tudo)</span>
+            </label>
+            {filteredItems.length === 0 ? (
+              <span className="muted">Nenhum item encontrado.</span>
+            ) : (
+              filteredItems.map((it) => (
+                <label key={it.id} className="field field--inline">
+                  <input
+                    type="checkbox"
+                    checked={draft.has(it.id)}
+                    onChange={() => toggleItem(it.id)}
+                  />
+                  <span>{it.label}</span>
+                </label>
+              ))
+            )}
+          </>
+        )}
+      </div>
+      <div className="excel-picker__footer">
+        <button
+          type="button"
+          className="btn btn--small excel-picker__ok"
+          disabled={isPending}
+          onClick={() => {
+            // O fechamento do popover acontece dentro do onApply do pai;
+            // como está na transição, só ocorre quando o recálculo termina.
+            startTransition(() => {
+              onApply(draft)
+            })
+          }}
+        >
+          {isPending ? (
+            <>
+              <span className="excel-picker__spinner" aria-hidden="true" />
+              Aplicando…
+            </>
+          ) : (
+            'OK'
+          )}
+        </button>
+        <button
+          type="button"
+          className="btn btn--small btn--ghost"
+          disabled={isPending}
+          onClick={onClose}
+        >
+          Cancelar
+        </button>
+      </div>
+    </div>
+  )
 }
 
 export function DashboardPage() {
@@ -1451,11 +1625,11 @@ export function DashboardPage() {
     return { start, end }
   }, [sortedFilteredStudentRows.length, studentPage])
 
-  // Cards de resumo
+  // Cards de resumo — refletem os filtros da tabela de alunos
+  // (busca, matéria e faixa de % conclusão).
   const summary = useMemo(() => {
-    const activeStudents = students.filter((s) => s.active)
-    const completionVals = studentRows
-      .filter((r) => r.student.active)
+    const activeRows = filteredStudentRows.filter((r) => r.student.active)
+    const completionVals = activeRows
       .map((r) => r.completionPct)
       .filter((v): v is number => v !== null)
     const avgCompletion =
@@ -1468,18 +1642,18 @@ export function DashboardPage() {
 
     let correct = 0
     let total = 0
-    for (const row of studentRows.filter((r) => r.student.active)) {
+    for (const row of activeRows) {
       correct += row.correct
       total += row.correct + row.wrong
     }
 
     return {
-      activeStudents: activeStudents.length,
+      activeStudents: activeRows.length,
       activeTrails: activeTrails.length,
       avgCompletion,
       avgAccuracy: pct(correct, total),
     }
-  }, [students, studentRows, activeTrails])
+  }, [filteredStudentRows, activeTrails])
 
   // Ranking de pílulas — itera só respostas existentes no mapa
   const gradablePillQuestions = useMemo(() => {
@@ -1648,33 +1822,6 @@ export function DashboardPage() {
     return studentSort.dir === 'asc' ? ' ↑' : ' ↓'
   }
 
-  function toggleColumn(key: StudentColumnKey) {
-    setHiddenColumns((curr) => {
-      const next = new Set(curr)
-      if (next.has(key)) next.delete(key)
-      else next.add(key)
-      return next
-    })
-  }
-
-  function toggleStage(key: string) {
-    setDeselectedStages((curr) => {
-      const next = new Set(curr)
-      if (next.has(key)) next.delete(key)
-      else next.add(key)
-      return next
-    })
-  }
-
-  function toggleQuestion(questionNumber: number) {
-    setDeselectedQuestions((curr) => {
-      const next = new Set(curr)
-      if (next.has(questionNumber)) next.delete(questionNumber)
-      else next.add(questionNumber)
-      return next
-    })
-  }
-
   function computeTrailMetrics(
     studentId: string,
     trailId: string,
@@ -1711,12 +1858,26 @@ export function DashboardPage() {
     setExportError(null)
     setExportingTrailId(trail.id)
     try {
+      // Dá tempo para o navegador renderizar o estado "Gerando…" antes do
+      // processamento síncrono do XLSX bloquear a thread principal.
+      await new Promise<void>((resolve) => {
+        window.requestAnimationFrame(() => {
+          window.requestAnimationFrame(() => resolve())
+        })
+      })
+
       // Reutiliza os agregados já carregados no dashboard (mesmos alunos e
       // trilhas da instituição), sem refazer o download de logs.
       const answersByKey = studentAnswerMap
       const exportDoneByStudent = doneQuestionsByStudent
 
-      const answerColumns = allQuestionColumnsByTrail.get(trail.id) ?? []
+      const answerColumns = (
+        allQuestionColumnsByTrail.get(trail.id) ?? []
+      ).filter(
+        (p) =>
+          !deselectedStages.has(`${trail.id}|${p.stage}`) &&
+          !deselectedQuestions.has(p.question),
+      )
       const fixedHeaders = [
         'Nome',
         'Telefone',
@@ -1731,11 +1892,9 @@ export function DashboardPage() {
         ),
       ]
 
-      const sortedStudents = [...students].sort((a, b) =>
-        (a.name || '').localeCompare(b.name || '', 'pt-BR', {
-          sensitivity: 'base',
-        }),
-      )
+      // Exporta todas as linhas que correspondem aos filtros atuais, não
+      // apenas os 20 alunos da página visível.
+      const sortedStudents = sortedFilteredStudentRows.map((row) => row.student)
 
       const rows = sortedStudents.map((student) => {
         const metrics = computeTrailMetrics(
@@ -1751,12 +1910,6 @@ export function DashboardPage() {
           formatPctExport(metrics.completionPct),
         ]
         for (const p of answerColumns) {
-          const stageExcluded = deselectedStages.has(`${trail.id}|${p.stage}`)
-          const questionExcluded = deselectedQuestions.has(p.question)
-          if (stageExcluded || questionExcluded) {
-            row.push('')
-            continue
-          }
           const answerKey = `${student.id}|${trail.id}|${p.stage}|${p.question}`
           row.push(answersByKey.get(answerKey) ?? '')
         }
@@ -1886,6 +2039,14 @@ export function DashboardPage() {
   const visibleColumns = ALL_STUDENT_COLUMNS.filter(
     (c) => !hiddenColumns.has(c.key),
   )
+
+  const hasActiveStudentExportFilters =
+    nameFilter.trim().length > 0 ||
+    subjectFilter.length > 0 ||
+    pctMin !== 0 ||
+    pctMax !== 100 ||
+    selectedQuestionCount < availableQuestions.length ||
+    selectedStageCount < availableStages.length
 
   const isDashboardLoading =
     Boolean(selectedId) && (loadingData || loadingMeta || loadingLogs)
@@ -2065,173 +2226,175 @@ export function DashboardPage() {
                 <span className="muted">
                   {filteredStudentRows.length} de {studentRows.length} alunos
                 </span>
-                <button
-                  type="button"
-                  className="btn btn--small btn--ghost"
-                  onClick={() => {
-                    setShowQuestionPicker((v) => !v)
-                    setShowStagePicker(false)
-                  }}
-                >
-                  Aulas
-                  {availableQuestions.length > 0
-                    ? ` (${selectedQuestionCount}/${availableQuestions.length})`
-                    : ''}
-                </button>
-                <button
-                  type="button"
-                  className="btn btn--small btn--ghost"
-                  onClick={() => {
-                    setShowStagePicker((v) => !v)
-                    setShowQuestionPicker(false)
-                  }}
-                >
-                  Tópicos
-                  {availableStages.length > 0
-                    ? ` (${selectedStageCount}/${availableStages.length})`
-                    : ''}
-                </button>
-                <button
-                  type="button"
-                  className="btn btn--small btn--ghost"
-                  onClick={() => {
-                    setShowColumnPicker((v) => !v)
-                    setShowStagePicker(false)
-                    setShowQuestionPicker(false)
-                  }}
-                >
-                  Colunas
-                </button>
+                <span className="excel-picker">
+                  <button
+                    type="button"
+                    className="btn btn--small btn--ghost"
+                    onClick={() => {
+                      setShowQuestionPicker((v) => !v)
+                      setShowStagePicker(false)
+                      setShowColumnPicker(false)
+                    }}
+                  >
+                    Aulas
+                    {availableQuestions.length > 0
+                      ? ` (${selectedQuestionCount}/${availableQuestions.length})`
+                      : ''}
+                  </button>
+                  {showQuestionPicker ? (
+                    <ExcelFilterPopover
+                      hint="Aulas incluídas no cálculo (por número no tópico da aula: A1, A2…)."
+                      items={availableQuestions.map((n) => ({
+                        id: String(n),
+                        label: `Aula ${n}`,
+                      }))}
+                      selectedIds={
+                        new Set(
+                          availableQuestions
+                            .filter((n) => !deselectedQuestions.has(n))
+                            .map(String),
+                        )
+                      }
+                      emptyMessage="Nenhuma aula nas trilhas atuais."
+                      onApply={(next) => {
+                        setDeselectedQuestions(
+                          new Set(
+                            availableQuestions.filter(
+                              (n) => !next.has(String(n)),
+                            ),
+                          ),
+                        )
+                        setShowQuestionPicker(false)
+                      }}
+                      onClose={() => setShowQuestionPicker(false)}
+                    />
+                  ) : null}
+                </span>
+                <span className="excel-picker">
+                  <button
+                    type="button"
+                    className="btn btn--small btn--ghost"
+                    onClick={() => {
+                      setShowStagePicker((v) => !v)
+                      setShowQuestionPicker(false)
+                      setShowColumnPicker(false)
+                    }}
+                  >
+                    Tópicos
+                    {availableStages.length > 0
+                      ? ` (${selectedStageCount}/${availableStages.length})`
+                      : ''}
+                  </button>
+                  {showStagePicker ? (
+                    <ExcelFilterPopover
+                      hint="Tópicos da aula incluídos no cálculo de aulas liberadas/feitas."
+                      items={availableStages.map((s) => ({
+                        id: s.key,
+                        label: `${s.trailName} · Tópico ${s.stageNumber}${
+                          s.title ? ` — ${s.title}` : ''
+                        } (${s.stageType})`,
+                      }))}
+                      selectedIds={
+                        new Set(
+                          availableStages
+                            .map((s) => s.key)
+                            .filter((k) => !deselectedStages.has(k)),
+                        )
+                      }
+                      emptyMessage="Nenhum tópico da aula nas trilhas atuais."
+                      onApply={(next) => {
+                        setDeselectedStages(
+                          new Set(
+                            availableStages
+                              .map((s) => s.key)
+                              .filter((k) => !next.has(k)),
+                          ),
+                        )
+                        setShowStagePicker(false)
+                      }}
+                      onClose={() => setShowStagePicker(false)}
+                    />
+                  ) : null}
+                </span>
+                <span className="excel-picker">
+                  <button
+                    type="button"
+                    className="btn btn--small btn--ghost"
+                    onClick={() => {
+                      setShowColumnPicker((v) => !v)
+                      setShowStagePicker(false)
+                      setShowQuestionPicker(false)
+                    }}
+                  >
+                    Colunas
+                  </button>
+                  {showColumnPicker ? (
+                    <ExcelFilterPopover
+                      hint="Colunas visíveis na tabela de alunos."
+                      items={ALL_STUDENT_COLUMNS.map((c) => ({
+                        id: c.key,
+                        label: c.label,
+                      }))}
+                      selectedIds={
+                        new Set(
+                          ALL_STUDENT_COLUMNS.map((c) => c.key).filter(
+                            (k) => !hiddenColumns.has(k),
+                          ),
+                        )
+                      }
+                      emptyMessage="Nenhuma coluna disponível."
+                      onApply={(next) => {
+                        setHiddenColumns(
+                          new Set(
+                            ALL_STUDENT_COLUMNS.map((c) => c.key).filter(
+                              (k) => !next.has(k),
+                            ),
+                          ),
+                        )
+                        setShowColumnPicker(false)
+                      }}
+                      onClose={() => setShowColumnPicker(false)}
+                    />
+                  ) : null}
+                </span>
                 {relevantTrails.map((trail) => (
                   <button
                     key={trail.id}
                     type="button"
-                    className="btn btn--small btn--ghost"
+                    className="btn btn--small dashboard-export-button"
                     disabled={
-                      students.length === 0 || exportingTrailId !== null
+                      filteredStudentRows.length === 0 ||
+                      exportingTrailId !== null
                     }
                     onClick={() => void exportTrailHistoryXlsx(trail)}
-                    title="Respostas do aluno por aula e tópico da aula; métricas respeitam filtros Aulas/Tópicos"
+                    title="Exporta os alunos, aulas e tópicos correspondentes aos filtros atuais"
                   >
-                    {exportingTrailId === trail.id
-                      ? 'Gerando XLSX…'
-                      : `Baixar XLSX — ${trail.name || trail.id}`}
+                    {exportingTrailId === trail.id ? (
+                      <>
+                        <span
+                          className="excel-picker__spinner"
+                          aria-hidden="true"
+                        />
+                        Gerando…
+                      </>
+                    ) : (
+                      <>
+                        <span aria-hidden="true">↓</span>
+                        Exportar XLSX
+                      </>
+                    )}
                   </button>
                 ))}
               </p>
             </div>
 
-            {showQuestionPicker ? (
-              <div className="dashboard-column-picker">
-                <div className="dashboard-stage-picker__head">
-                  <span className="muted">
-                    Aulas incluídas no cálculo de liberadas/feitas (por
-                    número no tópico da aula: A1, A2…).
-                  </span>
-                  <span className="dashboard-stage-picker__actions">
-                    <button
-                      type="button"
-                      className="table__name-link table__name-link--button"
-                      onClick={() => setDeselectedQuestions(new Set())}
-                    >
-                      Marcar todas
-                    </button>
-                    <button
-                      type="button"
-                      className="table__name-link table__name-link--button"
-                      onClick={() =>
-                        setDeselectedQuestions(new Set(availableQuestions))
-                      }
-                    >
-                      Desmarcar todas
-                    </button>
-                  </span>
-                </div>
-                {availableQuestions.length === 0 ? (
-                  <span className="muted">
-                    Nenhuma aula nas trilhas atuais.
-                  </span>
-                ) : (
-                  availableQuestions.map((n) => (
-                    <label key={n} className="field field--inline">
-                      <input
-                        type="checkbox"
-                        checked={!deselectedQuestions.has(n)}
-                        onChange={() => toggleQuestion(n)}
-                      />
-                      <span>Aula {n}</span>
-                    </label>
-                  ))
-                )}
-              </div>
-            ) : null}
-
-            {showStagePicker ? (
-              <div className="dashboard-stage-picker">
-                <div className="dashboard-stage-picker__head">
-                  <span className="muted">
-                    Tópicos da aula incluídos no cálculo de aulas
-                    liberadas/feitas.
-                  </span>
-                  <span className="dashboard-stage-picker__actions">
-                    <button
-                      type="button"
-                      className="table__name-link table__name-link--button"
-                      onClick={() => setDeselectedStages(new Set())}
-                    >
-                      Marcar todos
-                    </button>
-                    <button
-                      type="button"
-                      className="table__name-link table__name-link--button"
-                      onClick={() =>
-                        setDeselectedStages(
-                          new Set(availableStages.map((s) => s.key)),
-                        )
-                      }
-                    >
-                      Desmarcar todos
-                    </button>
-                  </span>
-                </div>
-                <div className="dashboard-stage-picker__list">
-                  {availableStages.length === 0 ? (
-                    <span className="muted">
-                      Nenhum tópico da aula nas trilhas atuais.
-                    </span>
-                  ) : (
-                    availableStages.map((s) => (
-                      <label key={s.key} className="field field--inline">
-                        <input
-                          type="checkbox"
-                          checked={!deselectedStages.has(s.key)}
-                          onChange={() => toggleStage(s.key)}
-                        />
-                        <span>
-                          {s.trailName} · Tópico {s.stageNumber}
-                          {s.title ? ` — ${s.title}` : ''}{' '}
-                          <span className="muted">({s.stageType})</span>
-                        </span>
-                      </label>
-                    ))
-                  )}
-                </div>
-              </div>
-            ) : null}
-
-            {showColumnPicker ? (
-              <div className="dashboard-column-picker">
-                {ALL_STUDENT_COLUMNS.map((c) => (
-                  <label key={c.key} className="field field--inline">
-                    <input
-                      type="checkbox"
-                      checked={!hiddenColumns.has(c.key)}
-                      onChange={() => toggleColumn(c.key)}
-                    />
-                    <span>{c.label}</span>
-                  </label>
-                ))}
-              </div>
+            {hasActiveStudentExportFilters ? (
+              <p className="dashboard-export-notice" role="status">
+                <span aria-hidden="true">ⓘ</span>
+                Filtros ativos: o arquivo incluirá os{' '}
+                <strong>{filteredStudentRows.length} alunos</strong> exibidos e
+                somente as aulas e tópicos selecionados.
+              </p>
             ) : null}
 
             <div className="dashboard-filters">
