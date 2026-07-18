@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, useTransition } from 'react'
 import { Link } from 'react-router-dom'
-import * as XLSX from 'xlsx'
+import type * as XLSX from 'xlsx'
 import { collection, getDocs, onSnapshot, query, where } from 'firebase/firestore'
 import { db } from '../lib/firebase'
 import {
@@ -422,13 +422,25 @@ async function fetchConversationLogsForStudents(
   return [...byId.values()]
 }
 
+// A biblioteca xlsx (~424 kB) só é necessária ao exportar planilhas; o import
+// dinâmico a mantém fora do bundle inicial sem alterar o resultado gerado.
+type XlsxModule = typeof import('xlsx')
+
+let xlsxModulePromise: Promise<XlsxModule> | null = null
+
+function loadXlsx(): Promise<XlsxModule> {
+  xlsxModulePromise ??= import('xlsx')
+  return xlsxModulePromise
+}
+
 function forceWorksheetCellString(
+  xlsx: XlsxModule,
   worksheet: XLSX.WorkSheet,
   row: number,
   col: number,
   value: string,
 ) {
-  const ref = XLSX.utils.encode_cell({ r: row, c: col })
+  const ref = xlsx.utils.encode_cell({ r: row, c: col })
   worksheet[ref] = { t: 's', v: value }
 }
 
@@ -451,6 +463,7 @@ function buildTrailCorrespondenceRows(
 }
 
 function appendCorrespondenceSheet(
+  xlsx: XlsxModule,
   workbook: XLSX.WorkBook,
   trailId: string,
   positions: { stage: number; question: number }[],
@@ -463,21 +476,21 @@ function appendCorrespondenceSheet(
     stageByKey,
     questionByKey,
   )
-  const legendSheet = XLSX.utils.aoa_to_sheet([
+  const legendSheet = xlsx.utils.aoa_to_sheet([
     [...CORRESPONDENCE_HEADERS],
     ...legendRows,
   ])
   CORRESPONDENCE_HEADERS.forEach((header, colIndex) => {
-    forceWorksheetCellString(legendSheet, 0, colIndex, header)
+    forceWorksheetCellString(xlsx, legendSheet, 0, colIndex, header)
   })
   legendRows.forEach((row, rowIndex) => {
     row.forEach((value, colIndex) => {
       if (value.length > 0) {
-        forceWorksheetCellString(legendSheet, rowIndex + 1, colIndex, value)
+        forceWorksheetCellString(xlsx, legendSheet, rowIndex + 1, colIndex, value)
       }
     })
   })
-  XLSX.utils.book_append_sheet(workbook, legendSheet, 'Correspondência')
+  xlsx.utils.book_append_sheet(workbook, legendSheet, 'Correspondência')
 }
 
 type TopicPosition = { stage: number; question: number }
@@ -567,6 +580,7 @@ function trailLessonNumbers(
 }
 
 function appendLessonsProgressSheet(
+  xlsx: XlsxModule,
   workbook: XLSX.WorkBook,
   trail: Trail,
   students: Student[],
@@ -631,18 +645,18 @@ function appendLessonsProgressSheet(
     ]
   })
 
-  const sheet = XLSX.utils.aoa_to_sheet([headers, ...rows])
+  const sheet = xlsx.utils.aoa_to_sheet([headers, ...rows])
   headers.forEach((header, colIndex) => {
-    forceWorksheetCellString(sheet, 0, colIndex, header)
+    forceWorksheetCellString(xlsx, sheet, 0, colIndex, header)
   })
   rows.forEach((row, rowIndex) => {
     row.forEach((value, colIndex) => {
       if (typeof value === 'string' && value.length > 0) {
-        forceWorksheetCellString(sheet, rowIndex + 1, colIndex, value)
+        forceWorksheetCellString(xlsx, sheet, rowIndex + 1, colIndex, value)
       }
     })
   })
-  XLSX.utils.book_append_sheet(workbook, sheet, 'Aulas')
+  xlsx.utils.book_append_sheet(workbook, sheet, 'Aulas')
 }
 
 type ExcelPickerItem = { id: string; label: string }
@@ -1858,6 +1872,8 @@ export function DashboardPage() {
     setExportError(null)
     setExportingTrailId(trail.id)
     try {
+      const xlsx = await loadXlsx()
+
       // Dá tempo para o navegador renderizar o estado "Gerando…" antes do
       // processamento síncrono do XLSX bloquear a thread principal.
       await new Promise<void>((resolve) => {
@@ -1916,25 +1932,26 @@ export function DashboardPage() {
         return row
       })
 
-      const worksheet = XLSX.utils.aoa_to_sheet([headers, ...rows])
+      const worksheet = xlsx.utils.aoa_to_sheet([headers, ...rows])
       const fixedColCount = fixedHeaders.length
 
       headers.forEach((header, colIndex) => {
-        forceWorksheetCellString(worksheet, 0, colIndex, header)
+        forceWorksheetCellString(xlsx, worksheet, 0, colIndex, header)
       })
 
       rows.forEach((row, rowIndex) => {
         for (let colIndex = fixedColCount; colIndex < headers.length; colIndex++) {
           const value = row[colIndex]
           if (typeof value === 'string' && value.length > 0) {
-            forceWorksheetCellString(worksheet, rowIndex + 1, colIndex, value)
+            forceWorksheetCellString(xlsx, worksheet, rowIndex + 1, colIndex, value)
           }
         }
       })
 
-      const workbook = XLSX.utils.book_new()
-      XLSX.utils.book_append_sheet(workbook, worksheet, 'Histórico')
+      const workbook = xlsx.utils.book_new()
+      xlsx.utils.book_append_sheet(workbook, worksheet, 'Histórico')
       appendCorrespondenceSheet(
+        xlsx,
         workbook,
         trail.id,
         answerColumns,
@@ -1942,6 +1959,7 @@ export function DashboardPage() {
         questionByKey,
       )
       appendLessonsProgressSheet(
+        xlsx,
         workbook,
         trail,
         sortedStudents,
@@ -1951,7 +1969,7 @@ export function DashboardPage() {
         deselectedQuestions,
       )
       const trailSlug = slugFileName(trail.name || trail.id)
-      XLSX.writeFile(workbook, `historico-alunos-${trailSlug}.xlsx`)
+      xlsx.writeFile(workbook, `historico-alunos-${trailSlug}.xlsx`)
     } catch (err) {
       setExportError(
         err instanceof Error ? err.message : 'Erro ao gerar planilha.',
@@ -1961,11 +1979,12 @@ export function DashboardPage() {
     }
   }
 
-  function exportPillTrailXlsx(trail: Trail) {
+  async function exportPillTrailXlsx(trail: Trail) {
     if (exportingPillTrailId) return
     setExportError(null)
     setExportingPillTrailId(trail.id)
     try {
+      const xlsx = await loadXlsx()
       const rows = sortedPillRows.filter((p) => p.trailId === trail.id)
       const headers = [
         'Trilha',
@@ -1997,27 +2016,28 @@ export function DashboardPage() {
         `${p.accuracyPct}%`,
       ])
 
-      const worksheet = XLSX.utils.aoa_to_sheet([headers, ...data])
+      const worksheet = xlsx.utils.aoa_to_sheet([headers, ...data])
       headers.forEach((header, colIndex) => {
-        forceWorksheetCellString(worksheet, 0, colIndex, header)
+        forceWorksheetCellString(xlsx, worksheet, 0, colIndex, header)
       })
       data.forEach((row, rowIndex) => {
         const enunciado = row[4]
         if (typeof enunciado === 'string' && enunciado.length > 0) {
-          forceWorksheetCellString(worksheet, rowIndex + 1, 4, enunciado)
+          forceWorksheetCellString(xlsx, worksheet, rowIndex + 1, 4, enunciado)
         }
         const gabarito = row[5]
         if (typeof gabarito === 'string' && gabarito.length > 0) {
-          forceWorksheetCellString(worksheet, rowIndex + 1, 5, gabarito)
+          forceWorksheetCellString(xlsx, worksheet, rowIndex + 1, 5, gabarito)
         }
       })
 
-      const workbook = XLSX.utils.book_new()
-      XLSX.utils.book_append_sheet(workbook, worksheet, 'Aulas')
+      const workbook = xlsx.utils.book_new()
+      xlsx.utils.book_append_sheet(workbook, worksheet, 'Aulas')
       const correspondencePositions =
         allQuestionColumnsByTrail.get(trail.id) ?? []
       if (correspondencePositions.length > 0) {
         appendCorrespondenceSheet(
+          xlsx,
           workbook,
           trail.id,
           correspondencePositions,
@@ -2026,7 +2046,7 @@ export function DashboardPage() {
         )
       }
       const trailSlug = slugFileName(trail.name || trail.id)
-      XLSX.writeFile(workbook, `aulas-acertos-erros-${trailSlug}.xlsx`)
+      xlsx.writeFile(workbook, `aulas-acertos-erros-${trailSlug}.xlsx`)
     } catch (err) {
       setExportError(
         err instanceof Error ? err.message : 'Erro ao gerar planilha.',
@@ -2615,7 +2635,7 @@ export function DashboardPage() {
                     disabled={
                       pillRows.length === 0 || exportingPillTrailId !== null
                     }
-                    onClick={() => exportPillTrailXlsx(trail)}
+                    onClick={() => void exportPillTrailXlsx(trail)}
                     title="Desempenho por aula; respeita filtros de matéria e mínimo de respostas"
                   >
                     {exportingPillTrailId === trail.id

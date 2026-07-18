@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import * as XLSX from 'xlsx'
 import {
   collection,
   doc,
@@ -70,6 +69,17 @@ import {
   type ContentPhase,
   type StructurePhase,
 } from '../lib/trailEditor'
+
+// A biblioteca xlsx (~424 kB) só é necessária ao exportar/importar planilhas;
+// o import dinâmico a mantém fora do bundle inicial sem alterar o resultado.
+type XlsxModule = typeof import('xlsx')
+
+let xlsxModulePromise: Promise<XlsxModule> | null = null
+
+function loadXlsx(): Promise<XlsxModule> {
+  xlsxModulePromise ??= import('xlsx')
+  return xlsxModulePromise
+}
 
 export function TrailDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -783,8 +793,9 @@ export function TrailDetailPage() {
     setContentDirty(true)
   }
 
-  function exportStudentTrailsXlsx() {
+  async function exportStudentTrailsXlsx() {
     if (sortedStudentTrails.length === 0) return
+    const XLSX = await loadXlsx()
     const rows = sortedStudentTrails.map((row) => ({
       Aluno: studentNameById.get(row.student_id) ?? row.student_id,
       Telefone: studentPhoneById.get(row.student_id) ?? '',
@@ -805,8 +816,9 @@ export function TrailDetailPage() {
     XLSX.writeFile(workbook, `alunos-trilha-${id}.xlsx`)
   }
 
-  function downloadBulkTemplate() {
+  async function downloadBulkTemplate() {
     if (!id || structurePhases.length === 0) return
+    const XLSX = await loadXlsx()
     const workbook = XLSX.utils.book_new()
     const instructions = buildBulkInstructionsRows(structurePhases)
     const templateHeaders = bulkTemplateHeadersForStructure(structurePhases)
@@ -834,6 +846,7 @@ export function TrailDetailPage() {
     setImportingBulk(true)
     setContentError(null)
     try {
+      const XLSX = await loadXlsx()
       const buf = await file.arrayBuffer()
       const workbook = XLSX.read(buf, { type: 'array' })
       const sheet = workbook.Sheets.ConteudosModelo
