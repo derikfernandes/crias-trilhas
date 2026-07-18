@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { lazy, Suspense, type ReactNode } from 'react'
 import {
   BrowserRouter,
   Link,
@@ -13,21 +13,62 @@ import { usePermissions } from './hooks/usePermissions'
 import { NAV_ITEMS, navPermissionForPath } from './lib/adminPermissions'
 import { db, firebaseConfigError } from './lib/firebase'
 import { PRODUCTION_APP_ORIGIN } from './lib/site'
-import { AdminPage } from './pages/AdminPage'
-import { DashboardPage } from './pages/DashboardPage'
-import { DocPage } from './pages/DocPage'
-import { GabaritoPage } from './pages/GabaritoPage'
-import { HomePage } from './pages/HomePage'
-import { InstitutionDetailPage } from './pages/InstitutionDetailPage'
-import { InstitutionNewPage } from './pages/InstitutionNewPage'
 import { LoginPage } from './pages/LoginPage'
-import { TrailDetailPage } from './pages/TrailDetailPage'
-import { TrailStageQuestionsPage } from './pages/TrailStageQuestionsPage'
-import { TrailNewPage } from './pages/TrailNewPage'
-import { StudentDetailPage } from './pages/StudentDetailPage'
-import { StudentNewPage } from './pages/StudentNewPage'
-import { GerenciamentoPage } from './pages/GerenciamentoPage'
 import './styles/app.css'
+
+// Code splitting: cada página vira um chunk próprio, carregado sob demanda.
+// Os componentes e o comportamento das páginas permanecem idênticos.
+const AdminPage = lazy(() =>
+  import('./pages/AdminPage').then((m) => ({ default: m.AdminPage })),
+)
+const DashboardPage = lazy(() =>
+  import('./pages/DashboardPage').then((m) => ({ default: m.DashboardPage })),
+)
+const DocPage = lazy(() =>
+  import('./pages/DocPage').then((m) => ({ default: m.DocPage })),
+)
+const GabaritoPage = lazy(() =>
+  import('./pages/GabaritoPage').then((m) => ({ default: m.GabaritoPage })),
+)
+const HomePage = lazy(() =>
+  import('./pages/HomePage').then((m) => ({ default: m.HomePage })),
+)
+const InstitutionDetailPage = lazy(() =>
+  import('./pages/InstitutionDetailPage').then((m) => ({
+    default: m.InstitutionDetailPage,
+  })),
+)
+const InstitutionNewPage = lazy(() =>
+  import('./pages/InstitutionNewPage').then((m) => ({
+    default: m.InstitutionNewPage,
+  })),
+)
+const TrailDetailPage = lazy(() =>
+  import('./pages/TrailDetailPage').then((m) => ({
+    default: m.TrailDetailPage,
+  })),
+)
+const TrailStageQuestionsPage = lazy(() =>
+  import('./pages/TrailStageQuestionsPage').then((m) => ({
+    default: m.TrailStageQuestionsPage,
+  })),
+)
+const TrailNewPage = lazy(() =>
+  import('./pages/TrailNewPage').then((m) => ({ default: m.TrailNewPage })),
+)
+const StudentDetailPage = lazy(() =>
+  import('./pages/StudentDetailPage').then((m) => ({
+    default: m.StudentDetailPage,
+  })),
+)
+const StudentNewPage = lazy(() =>
+  import('./pages/StudentNewPage').then((m) => ({ default: m.StudentNewPage })),
+)
+const GerenciamentoPage = lazy(() =>
+  import('./pages/GerenciamentoPage').then((m) => ({
+    default: m.GerenciamentoPage,
+  })),
+)
 
 const routerBasename =
   import.meta.env.BASE_URL === '/'
@@ -161,7 +202,8 @@ function ProtectedPage({ children }: { children: ReactNode }) {
 function AppRoutes() {
   return (
     <Layout>
-      <Routes>
+      <Suspense fallback={<p className="muted">Carregando…</p>}>
+        <Routes>
         <Route path="/doc" element={<DocPage />} />
         <Route
           path="/"
@@ -260,7 +302,8 @@ function AppRoutes() {
           }
         />
         <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
+        </Routes>
+      </Suspense>
     </Layout>
   )
 }
