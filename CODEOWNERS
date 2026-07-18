@@ -1,0 +1,48 @@
+# CODEOWNERS — aprovação obrigatória do responsável técnico
+#
+# Substitua @RESPONSAVEL-TECNICO pelo usuário real do GitHub antes de ativar
+# a proteção de branch (Settings → Branches → Require review from Code Owners).
+#
+# Para o GitHub aplicar estas regras, este arquivo também pode ser copiado para
+# .github/CODEOWNERS (ambos os locais são suportados).
+
+# Backend (funções serverless da Vercel — contrato público da API)
+/api/                                        @RESPONSAVEL-TECNICO
+
+# Serviços, validações e regras de negócio do backend
+/server/                                     @RESPONSAVEL-TECNICO
+
+# Scripts de auditoria e manutenção
+/scripts/                                    @RESPONSAVEL-TECNICO
+
+# Configuração de rotas públicas (rewrites) e deploy
+/vercel.json                                 @RESPONSAVEL-TECNICO
+/frontend/trilha-admin/vercel.json           @RESPONSAVEL-TECNICO
+
+# Firebase / Firestore (configuração, regras de segurança e índices)
+/firebase.json                               @RESPONSAVEL-TECNICO
+/firestore.rules                             @RESPONSAVEL-TECNICO
+/firestore.indexes.json                      @RESPONSAVEL-TECNICO
+
+# Camada de dados, autenticação e tipos do frontend
+/frontend/trilha-admin/src/lib/              @RESPONSAVEL-TECNICO
+/frontend/trilha-admin/src/contexts/         @RESPONSAVEL-TECNICO
+/frontend/trilha-admin/src/hooks/            @RESPONSAVEL-TECNICO
+/frontend/trilha-admin/src/types/            @RESPONSAVEL-TECNICO
+
+# Dependências e configuração de build/lint/typecheck
+/package.json                                @RESPONSAVEL-TECNICO
+/package-lock.json                           @RESPONSAVEL-TECNICO
+/frontend/trilha-admin/package.json          @RESPONSAVEL-TECNICO
+/frontend/trilha-admin/tsconfig.json         @RESPONSAVEL-TECNICO
+/frontend/trilha-admin/tsconfig.app.json     @RESPONSAVEL-TECNICO
+/frontend/trilha-admin/tsconfig.node.json    @RESPONSAVEL-TECNICO
+/frontend/trilha-admin/vite.config.ts        @RESPONSAVEL-TECNICO
+/frontend/trilha-admin/eslint.config.js      @RESPONSAVEL-TECNICO
+
+# Variáveis de ambiente (nunca commitar valores)
+.env*                                        @RESPONSAVEL-TECNICO
+
+# Regras de arquitetura e proteção
+/ARCHITECTURE_RULES.md                       @RESPONSAVEL-TECNICO
+/CODEOWNERS                                  @RESPONSAVEL-TECNICO
