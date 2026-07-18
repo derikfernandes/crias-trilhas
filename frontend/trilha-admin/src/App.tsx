@@ -27,7 +27,7 @@ import { TrailNewPage } from './pages/TrailNewPage'
 import { StudentDetailPage } from './pages/StudentDetailPage'
 import { StudentNewPage } from './pages/StudentNewPage'
 import { GerenciamentoPage } from './pages/GerenciamentoPage'
-import './App.css'
+import './styles/app.css'
 
 const routerBasename =
   import.meta.env.BASE_URL === '/'
