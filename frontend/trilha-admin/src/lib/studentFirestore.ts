@@ -1,7 +1,14 @@
-import type {
-  DocumentSnapshot,
-  QueryDocumentSnapshot,
+import {
+  collection,
+  deleteDoc,
+  doc,
+  runTransaction,
+  serverTimestamp,
+  updateDoc,
+  type DocumentSnapshot,
+  type QueryDocumentSnapshot,
 } from 'firebase/firestore'
+import { db } from './firebase'
 import type { Student } from '../types/student'
 
 export const STUDENTS_COLLECTION = 'students'
@@ -60,5 +67,92 @@ export function formatStudentTs(value: Student['created_at']): string {
   } catch {
     return '—'
   }
+}
+
+// ---------------------------------------------------------------------------
+// Wrappers de escrita usados pelos componentes visuais. A lógica foi extraída
+// de StudentForm sem nenhuma alteração de comportamento: mesma coleção,
+// mesmos campos e mesmos payloads.
+// ---------------------------------------------------------------------------
+
+export type StudentFormData = {
+  institution_id: string
+  name: string
+  phone_number: string
+  school_level: Student['school_level']
+  school_grade: string
+  student_level: 1 | 2 | 3
+  active: boolean
+}
+
+export async function updateStudent(
+  docId: string,
+  data: StudentFormData,
+): Promise<void> {
+  if (!db) return
+  await updateDoc(doc(db, STUDENTS_COLLECTION, docId), {
+    institution_id: data.institution_id,
+    name: data.name,
+    phone_number: data.phone_number,
+    school_level: data.school_level,
+    school_grade: data.school_grade,
+    student_level: data.student_level,
+    active: data.active,
+    updated_at: serverTimestamp(),
+  })
+}
+
+/**
+ * Cria aluno com ID sequencial (s1, s2, s3...) usando transação com contador
+ * em counters/students { next: number }. Devolve null se o Firebase não
+ * estiver inicializado.
+ */
+export async function createStudentSequential(
+  data: StudentFormData,
+): Promise<string | null> {
+  if (!db) return null
+  const dbOk = db
+
+  return runTransaction(dbOk, async (tx) => {
+    const counterRef = doc(dbOk, 'counters', 'students')
+    const counterSnap = await tx.get(counterRef)
+    const counterData = counterSnap.exists() ? counterSnap.data() : {}
+    const rawNext = (counterData as { next?: unknown }).next
+    const next =
+      typeof rawNext === 'number' && Number.isFinite(rawNext) && rawNext >= 1
+        ? Math.floor(rawNext)
+        : 1
+
+    const studentId = `s${next}`
+    const studentRef = doc(collection(dbOk, STUDENTS_COLLECTION), studentId)
+
+    const existing = await tx.get(studentRef)
+    if (existing.exists()) {
+      throw new Error(
+        `Conflito ao gerar id sequencial (${studentId}). Verifique counters/students.next.`,
+      )
+    }
+
+    tx.set(studentRef, {
+      institution_id: data.institution_id,
+      name: data.name,
+      phone_number: data.phone_number,
+      school_level: data.school_level,
+      school_grade: data.school_grade,
+      student_level: data.student_level,
+      active: data.active,
+      created_at: serverTimestamp(),
+      updated_at: serverTimestamp(),
+    })
+
+    tx.set(counterRef, { next: next + 1 }, { merge: true })
+
+    return studentId
+  })
+}
+
+export async function deleteStudent(docId: string): Promise<void> {
+  if (!db) return
+  await deleteDoc(doc(db, STUDENTS_COLLECTION, docId))
 }
 

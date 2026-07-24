@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { useSearchParams } from 'react-router-dom'
 import { collection, onSnapshot } from 'firebase/firestore'
 import { TrailForm } from '../components/TrailForm'
+import { TrailNewPageView } from '../design/views/TrailNewPageView'
 import { usePermissions } from '../hooks/usePermissions'
 import { db } from '../lib/firebase'
 import { INSTITUTIONS_COLLECTION } from '../lib/institutionFirestore'
@@ -53,33 +54,19 @@ export function TrailNewPage() {
     [effectiveInstitutionId, institutions],
   )
 
+  const institutionLabel = effectiveInstitutionId
+    ? `${selectedInstitution?.name?.trim() || 'Sem nome'} (${effectiveInstitutionId})`
+    : 'não selecionada'
+
   return (
-    <>
-      <header className="admin__header">
-        <div className="trail-new-header__top-row">
-          <p className="trail-new-header__left">
-            <Link className="btn btn--ghost" to="/gerenciamento">
-              ← Gerenciamento
-            </Link>
-          </p>
-          <h1 className="trail-new-header__title">Nova trilha</h1>
-          <p className="trail-new-header__institution muted">
-            {effectiveInstitutionId
-              ? `${selectedInstitution?.name?.trim() || 'Sem nome'} (${effectiveInstitutionId})`
-              : 'não selecionada'}
-          </p>
-        </div>
-      </header>
-      {effectiveInstitutionId ? (
-        <TrailForm fixedInstitutionId={effectiveInstitutionId} />
-      ) : (
-        <section className="panel">
-          <p className="banner banner--error" role="alert">
-            Selecione uma instituição em Gerenciamento para criar a trilha.
-          </p>
-        </section>
-      )}
-    </>
+    <TrailNewPageView
+      institutionLabel={institutionLabel}
+      hasInstitution={Boolean(effectiveInstitutionId)}
+      formSlot={
+        effectiveInstitutionId ? (
+          <TrailForm fixedInstitutionId={effectiveInstitutionId} />
+        ) : null
+      }
+    />
   )
 }
-

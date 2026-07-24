@@ -8,6 +8,8 @@ import {
   setDoc,
   updateDoc,
 } from 'firebase/firestore'
+import { AdminPageView } from '../design/views/AdminPageView'
+import type { AdminUserRow } from '../design/types/adminPageView'
 import { db } from '../lib/firebase'
 import {
   adminUserDocId,
@@ -241,230 +243,75 @@ export function AdminPage() {
   }
 
   if (permissionsLoading) {
-    return <p className="muted">Carregando permissões…</p>
+    return <AdminPageView status="loading" />
   }
 
   if (!canNav('admin')) {
-    return (
-      <p className="banner banner--error" role="alert">
-        Você não tem permissão para acessar o painel de administração.
-      </p>
-    )
+    return <AdminPageView status="forbidden" />
   }
 
+  const userRows: AdminUserRow[] = sortedUsers.map((user) => ({
+    id: user.id,
+    email: user.email,
+    activeLabel: user.active ? 'Sim' : 'Não',
+    scopeLabel: user.is_super_admin
+      ? 'Super admin'
+      : user.all_institutions
+        ? 'Todas instituições'
+        : `${user.institution_ids.length} instituição(ões)`,
+    menuLabel: user.is_super_admin
+      ? 'Todos'
+      : user.nav_permissions.length > 0
+        ? String(user.nav_permissions.length)
+        : '—',
+    deleting: deletingId === user.id,
+  }))
+
   return (
-    <>
-      <header className="admin__header">
-        <h1>Admin — permissões por login</h1>
-        <p className="admin__lede">
-          Defina quais tópicos do menu cada e-mail pode ver e quais instituições
-          ele pode acessar. O e-mail deve ser o mesmo da conta Firebase Auth.
-          Logins <strong>sem registro aqui</strong> continuam com acesso total
-          até você configurá-los.
-        </p>
-      </header>
-
-      {listError ? (
-        <p className="banner banner--error" role="alert">
-          {listError}
-        </p>
-      ) : null}
-
-      <div className="admin-permissions">
-        <section className="panel admin-permissions__form-panel">
-          <div className="panel__head">
-            <h2>{editingId ? 'Editar login' : 'Novo login'}</h2>
-            {editingId ? (
-              <button
-                type="button"
-                className="btn btn--ghost btn--small"
-                onClick={startCreate}
-              >
-                Cancelar edição
-              </button>
-            ) : null}
-          </div>
-
-          <form className="form admin-permissions__form" onSubmit={handleSubmit}>
-            <label className="field">
-              <span>E-mail do login</span>
-              <input
-                type="email"
-                value={form.email}
-                onChange={(e) => setForm((prev) => ({ ...prev, email: e.target.value }))}
-                placeholder="usuario@escola.com"
-                disabled={Boolean(editingId)}
-                required
-              />
-            </label>
-
-            <label className="field field--inline">
-              <input
-                type="checkbox"
-                checked={form.active}
-                onChange={(e) =>
-                  setForm((prev) => ({ ...prev, active: e.target.checked }))
-                }
-              />
-              <span>Login ativo</span>
-            </label>
-
-            <label className="field field--inline">
-              <input
-                type="checkbox"
-                checked={form.is_super_admin}
-                onChange={(e) =>
-                  setForm((prev) => ({
-                    ...prev,
-                    is_super_admin: e.target.checked,
-                    all_institutions: e.target.checked ? true : prev.all_institutions,
-                  }))
-                }
-              />
-              <span>Super admin (acesso total)</span>
-            </label>
-
-            {!form.is_super_admin ? (
-              <>
-                <fieldset className="admin-permissions__fieldset">
-                  <legend>Tópicos do menu</legend>
-                  <div className="admin-permissions__checks">
-                    {NAV_ITEMS.map((item) => (
-                      <label key={item.key} className="field field--inline">
-                        <input
-                          type="checkbox"
-                          checked={form.nav_permissions.includes(item.key)}
-                          onChange={() => toggleNav(item.key)}
-                        />
-                        <span>{item.label}</span>
-                      </label>
-                    ))}
-                  </div>
-                </fieldset>
-
-                <label className="field field--inline">
-                  <input
-                    type="checkbox"
-                    checked={form.all_institutions}
-                    onChange={(e) =>
-                      setForm((prev) => ({
-                        ...prev,
-                        all_institutions: e.target.checked,
-                        institution_ids: e.target.checked ? [] : prev.institution_ids,
-                      }))
-                    }
-                  />
-                  <span>Todas as instituições</span>
-                </label>
-
-                {!form.all_institutions ? (
-                  <fieldset className="admin-permissions__fieldset">
-                    <legend>Instituições permitidas</legend>
-                    {sortedInstitutions.length === 0 ? (
-                      <p className="muted">Nenhuma instituição cadastrada.</p>
-                    ) : (
-                      <div className="admin-permissions__checks">
-                        {sortedInstitutions.map((inst) => (
-                          <label key={inst.id} className="field field--inline">
-                            <input
-                              type="checkbox"
-                              checked={form.institution_ids.includes(inst.id)}
-                              onChange={() => toggleInstitution(inst.id)}
-                            />
-                            <span>
-                              {inst.name || inst.id}{' '}
-                              <span className="muted">({inst.id})</span>
-                            </span>
-                          </label>
-                        ))}
-                      </div>
-                    )}
-                  </fieldset>
-                ) : null}
-              </>
-            ) : null}
-
-            {formError ? (
-              <p className="form__error" role="alert">
-                {formError}
-              </p>
-            ) : null}
-
-            <div className="form__actions">
-              <button type="submit" className="btn btn--primary" disabled={saving}>
-                {saving ? 'Salvando…' : editingId ? 'Salvar alterações' : 'Adicionar login'}
-              </button>
-            </div>
-          </form>
-        </section>
-
-        <section className="panel">
-          <div className="panel__head">
-            <h2>Logins configurados</h2>
-            {loadingUsers ? <span className="muted">Carregando…</span> : null}
-          </div>
-          <div className="table-wrap">
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>E-mail</th>
-                  <th>Ativo</th>
-                  <th>Escopo</th>
-                  <th>Menu</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {sortedUsers.length === 0 && !loadingUsers ? (
-                  <tr>
-                    <td colSpan={5} className="muted table__empty">
-                      Nenhum login configurado. Adicione o primeiro ao lado.
-                    </td>
-                  </tr>
-                ) : (
-                  sortedUsers.map((user) => (
-                    <tr key={user.id}>
-                      <td>{user.email}</td>
-                      <td>{user.active ? 'Sim' : 'Não'}</td>
-                      <td>
-                        {user.is_super_admin
-                          ? 'Super admin'
-                          : user.all_institutions
-                            ? 'Todas instituições'
-                            : `${user.institution_ids.length} instituição(ões)`}
-                      </td>
-                      <td>
-                        {user.is_super_admin
-                          ? 'Todos'
-                          : user.nav_permissions.length > 0
-                            ? user.nav_permissions.length
-                            : '—'}
-                      </td>
-                      <td className="table__actions">
-                        <button
-                          type="button"
-                          className="btn btn--small btn--ghost"
-                          onClick={() => startEdit(user)}
-                        >
-                          Editar
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn--small btn--ghost"
-                          onClick={() => void handleDelete(user)}
-                          disabled={deletingId === user.id}
-                        >
-                          {deletingId === user.id ? 'Removendo…' : 'Remover'}
-                        </button>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </section>
-      </div>
-    </>
+    <AdminPageView
+      status="ok"
+      listError={listError}
+      editingId={editingId}
+      form={form}
+      formError={formError}
+      saving={saving}
+      loadingUsers={loadingUsers}
+      navItems={NAV_ITEMS.map((item) => ({ key: item.key, label: item.label }))}
+      institutions={sortedInstitutions.map((inst) => ({
+        id: inst.id,
+        label: inst.name || inst.id,
+      }))}
+      users={userRows}
+      onStartCreate={startCreate}
+      onEmailChange={(value) => setForm((prev) => ({ ...prev, email: value }))}
+      onActiveChange={(checked) =>
+        setForm((prev) => ({ ...prev, active: checked }))
+      }
+      onSuperAdminChange={(checked) =>
+        setForm((prev) => ({
+          ...prev,
+          is_super_admin: checked,
+          all_institutions: checked ? true : prev.all_institutions,
+        }))
+      }
+      onAllInstitutionsChange={(checked) =>
+        setForm((prev) => ({
+          ...prev,
+          all_institutions: checked,
+          institution_ids: checked ? [] : prev.institution_ids,
+        }))
+      }
+      onToggleNav={(key) => toggleNav(key as NavPermission)}
+      onToggleInstitution={toggleInstitution}
+      onSubmit={(e) => void handleSubmit(e)}
+      onEditUser={(userId) => {
+        const user = users.find((u) => u.id === userId)
+        if (user) startEdit(user)
+      }}
+      onDeleteUser={(userId) => {
+        const user = users.find((u) => u.id === userId)
+        if (user) void handleDelete(user)
+      }}
+    />
   )
 }

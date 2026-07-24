@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { useParams } from 'react-router-dom'
 import {
   collection,
   doc,
@@ -47,6 +47,8 @@ import {
   ConversationChat,
   LOGS_PAGE_SIZE,
 } from '../components/ConversationChat'
+import { TrailDetailPageView } from '../design/views/TrailDetailPageView'
+import type { TrailDetailStudentTrailRow } from '../design/types/trailDetailPageView'
 import type { Trail } from '../types/trail'
 import type { TrailStage } from '../types/trailStage'
 import type { StudentTrail } from '../types/studentTrail'
@@ -54,6 +56,7 @@ import type { ConversationLog } from '../types/conversationLog'
 import type { Student } from '../types/student'
 import type { TrailStageQuestion } from '../types/trailStageQuestion'
 import { studentPath } from '../lib/paths'
+import { loadXlsx } from '../lib/loadXlsx'
 import {
   buildBulkInstructionsRows,
   buildBulkTemplateRows,
@@ -69,17 +72,6 @@ import {
   type ContentPhase,
   type StructurePhase,
 } from '../lib/trailEditor'
-
-// A biblioteca xlsx (~424 kB) só é necessária ao exportar/importar planilhas;
-// o import dinâmico a mantém fora do bundle inicial sem alterar o resultado.
-type XlsxModule = typeof import('xlsx')
-
-let xlsxModulePromise: Promise<XlsxModule> | null = null
-
-function loadXlsx(): Promise<XlsxModule> {
-  xlsxModulePromise ??= import('xlsx')
-  return xlsxModulePromise
-}
 
 export function TrailDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -1119,559 +1111,212 @@ export function TrailDetailPage() {
   }
 
   if (!id) {
-    return (
-      <p className="banner banner--error" role="alert">
-        ID ausente na URL.
-      </p>
-    )
+    return <TrailDetailPageView status="missing-id" />
   }
 
+  const canWrite = Boolean(db)
+
+  const institutionLabel = trail?.institution_id
+    ? institutions.find((inst) => inst.id === trail.institution_id)?.name ||
+      trail.institution_id
+    : '—'
+
+  const cadastro = trail
+    ? {
+        name: trail.name || 'Trilha',
+        id: trail.id,
+        subject: trail.subject || '—',
+        description: trail.description || '—',
+        activeLabel: trail.active ? 'Sim' : 'Não',
+        createdAtLabel: formatTrailTs(trail.created_at),
+        updatedAtLabel: formatTrailTs(trail.updated_at),
+      }
+    : null
+
+  const studentTrailRows: TrailDetailStudentTrailRow[] = filteredStudentTrails.map(
+    (row) => {
+      const nameFromMap = studentNameById.get(row.student_id)
+      return {
+        id: row.id,
+        studentHref: studentPath(row.student_id),
+        studentName: nameFromMap ?? null,
+        studentId: row.student_id,
+        phoneLabel: studentPhoneById.get(row.student_id) ?? null,
+        stageDisplay: row.current_stage_number,
+        questionDisplay: row.current_question_number,
+        status: row.status,
+        startedAtLabel: row.started_at?.toDate
+          ? row.started_at.toDate().toLocaleString('pt-BR')
+          : '—',
+        lastInteractionAtLabel: row.last_interaction_at?.toDate
+          ? row.last_interaction_at.toDate().toLocaleString('pt-BR')
+          : '—',
+        selected: selectedStudentTrailIds.has(row.id),
+        selectAriaLabel: `Selecionar ${nameFromMap ?? row.student_id}`,
+      }
+    },
+  )
+
   return (
-    <>
-      <header className="admin__header">
-        <h1>Trilha</h1>
-        <p className="admin__actions trail-header-actions">
-          <Link className="btn btn--ghost" to="/gerenciamento">
-            ← Gerenciamento
-          </Link>
-          <label className="trail-header-select">
-            <span className="muted">Instituição</span>
-            <input
-              value={
-                trail?.institution_id
-                  ? (institutions.find((inst) => inst.id === trail.institution_id)?.name ||
-                      trail.institution_id)
-                  : '—'
-              }
-              readOnly
-              disabled
-            />
-          </label>
-        </p>
-      </header>
-
-      {error ? (
-        <p className="banner banner--error" role="alert">
-          {error}
-        </p>
-      ) : null}
-
-      {loading ? (
-        <p className="muted">Carregando…</p>
-      ) : !trail ? (
-        <p className="banner banner--error" role="alert">
-          Registro não encontrado.
-        </p>
-      ) : (
-        <>
-          <section className="panel trail-cadastro-panel">
-            <div className="trail-cadastro-summary">
-              <div className="trail-cadastro-top">
-                <p className="trail-cadastro-title">
-                  {trail.name || 'Trilha'}{' '}
-                  <span className="muted trail-cadastro-id">({trail.id})</span>
-                </p>
-                <button
-                  type="button"
-                  className="btn btn--ghost btn--small"
-                  onClick={() => setShowTrailForm((open) => !open)}
-                >
-                  {showTrailForm ? 'Fechar cadastro' : 'Abrir cadastro'}
-                </button>
-              </div>
-              <dl className="trail-cadastro-details">
-                <div className="trail-cadastro-details__row">
-                  <dt>Matéria</dt>
-                  <dd>{trail.subject || '—'}</dd>
-                </div>
-                <div className="trail-cadastro-details__row">
-                  <dt>Descrição</dt>
-                  <dd
-                    className="trail-cadastro-ellipsis"
-                    title={trail.description || '—'}
-                  >
-                    {trail.description || '—'}
-                  </dd>
-                </div>
-                <div className="trail-cadastro-details__row">
-                  <dt>Ativa</dt>
-                  <dd>{trail.active ? 'Sim' : 'Não'}</dd>
-                </div>
-                <div className="trail-cadastro-details__row">
-                  <dt>Criada em</dt>
-                  <dd>{formatTrailTs(trail.created_at)}</dd>
-                </div>
-                <div className="trail-cadastro-details__row">
-                  <dt>Atualizada em</dt>
-                  <dd>{formatTrailTs(trail.updated_at)}</dd>
-                </div>
-              </dl>
-            </div>
-          </section>
-
-          {showTrailForm ? (
-            <TrailForm
-              docId={id}
-              initial={trail}
-              onSaved={() => setShowTrailForm(false)}
-            />
-          ) : null}
-
-          <section className="panel">
-            {loadingStages ? <p className="muted">Carregando estrutura…</p> : null}
-            {stagesError ? (
-              <p className="banner banner--error" role="alert">
-                {stagesError}
-              </p>
-            ) : null}
-            {structureError ? (
-              <p className="banner banner--error" role="alert">
-                {structureError}
-              </p>
-            ) : null}
-
-            <TrailStructureEditor
-              structurePhases={structurePhases}
-              active={trailActiveDraft}
-              onToggleActive={(next) => {
-                setTrailActiveDraft(next)
-                setStructureDirty(true)
-              }}
-              onAddPhase={addStructurePhase}
-              onRemovePhase={removeStructurePhase}
-              onUpdatePhase={updateStructurePhase}
-              onSubmit={() => void saveStructureAndContinueToContent()}
-              submitLabel="Salvar estrutura"
-              submitting={savingStructure}
-              footerPrompt="Salvar alterações da estrutura da trilha?"
-            />
-          </section>
-
-          <section className="panel">
-            {loadingStageQuestions ? (
-              <p className="muted">Carregando conteúdos…</p>
-            ) : null}
-            {stageQuestionsError ? (
-              <p className="banner banner--error" role="alert">
-                {stageQuestionsError}
-              </p>
-            ) : null}
-            <TrailContentEditor
-              contentEtapas={contentEtapas}
-              selectedEtapaId={selectedEtapaId}
-              selectedQuestionId={selectedQuestionId}
-              phaseSaved={phaseSaved}
-              saving={savingContentDraft}
-              error={contentError}
-              bulkPreview={bulkPreview}
-              importingBulk={importingBulk}
-              hasPendingImportedContent={Boolean(pendingBulkContent?.length)}
-              onDownloadTemplate={downloadBulkTemplate}
-              onImportFile={(file) => {
-                void importBulkTemplate(file)
-              }}
-              onApplyImportedContent={applyBulkImport}
-              onAddEtapa={addEtapa}
-              onRemoveEtapa={removeEtapa}
-              onSelectEtapa={setSelectedEtapaId}
-              onSelectQuestion={setSelectedQuestionId}
-              onToggleEtapaReleased={toggleEtapaReleased}
-              onUpdateQuestionTitle={updateQuestionTitle}
-              onUpdateQuestionPhase={updateQuestionPhase}
-              onMarkPhaseSaved={markPhaseSaved}
-              onBack={() => {
-                setStructureDirty(false)
-              }}
-              onSave={() => void saveTrailContents()}
-              backLabel="Estrutura salva"
-              saveLabel="Salvar conteúdos"
-            />
-          </section>
-
-          <section className="panel">
-            <div className="panel__head">
-              <h2>Alunos na trilha (student_trails)</h2>
-              <div className="trail-panel-head__aside">
-                {loadingStudentTrails ? (
-                  <span className="muted">Carregando progresso…</span>
-                ) : null}
-                <button
-                  type="button"
-                  className="btn btn--ghost btn--small"
-                  disabled={sortedStudentTrails.length === 0}
-                  onClick={exportStudentTrailsXlsx}
-                >
-                  Exportar XLSX
-                </button>
-                <button
-                  type="button"
-                  className="btn btn--ghost btn--small"
-                  disabled={sortedStudentTrails.length === 0 || !db}
-                  onClick={() => setShowBulkEditor((open) => !open)}
-                >
-                  {showBulkEditor
-                    ? 'Fechar alteração em lote'
-                    : 'Alterar em lote stage e questão'}
-                </button>
-                <button
-                  type="button"
-                  className="btn btn--primary btn--small"
-                  disabled={!trail.institution_id?.trim() || !db}
-                  onClick={() =>
-                    setShowAddStudentPicker((open) => !open)
-                  }
-                >
-                  {showAddStudentPicker ? 'Fechar' : 'Adicionar aluno'}
-                </button>
-              </div>
-            </div>
-
-            {showAddStudentPicker ? (
-              <div className="trail-add-students">
-                {!trail.institution_id?.trim() ? (
-                  <p className="muted" role="status">
-                    Defina a instituição da trilha no formulário acima para listar
-                    alunos.
-                  </p>
-                ) : institutionStudentsError ? (
-                  <p className="banner banner--error" role="alert">
-                    {institutionStudentsError}
-                  </p>
-                ) : loadingInstitutionStudents ? (
-                  <p className="muted" role="status">
-                    Carregando alunos da instituição…
-                  </p>
-                ) : (
-                  <>
-                    <p className="muted" style={{ margin: '0 0 0.75rem' }}>
-                      Alunos da mesma instituição da trilha que ainda não têm registro
-                      em <code>student_trails</code>. A inclusão grava direto no
-                      Firestore (sem API nova).
-                    </p>
-                    <div className="trail-add-students__filter">
-                      <label className="muted" htmlFor="trail-add-student-filter">
-                        Filtrar por nome ou ID
-                      </label>
-                      <input
-                        id="trail-add-student-filter"
-                        type="search"
-                        autoComplete="off"
-                        placeholder="Ex.: nome ou parte do ID"
-                        value={studentPickerFilter}
-                        onChange={(e) => setStudentPickerFilter(e.target.value)}
-                      />
-                    </div>
-                    {addStudentError ? (
-                      <p className="banner banner--error" role="alert">
-                        {addStudentError}
-                      </p>
-                    ) : null}
-                    {eligibleStudentsToAdd.length === 0 ? (
-                      <p className="muted" role="status">
-                        {institutionStudents.length === 0
-                          ? 'Não há alunos cadastrados nesta instituição.'
-                          : 'Todos os alunos desta instituição já estão nesta trilha.'}
-                      </p>
-                    ) : filteredEligibleStudents.length === 0 ? (
-                      <p className="muted" role="status">
-                        Nenhum aluno corresponde ao filtro.
-                      </p>
-                    ) : (
-                      <ul className="trail-add-students__list">
-                        {filteredEligibleStudents.map((s) => (
-                          <li key={s.id}>
-                            <div className="trail-add-students__row">
-                              <span>
-                                <strong>{s.name || '—'}</strong>{' '}
-                                <code className="muted">{s.id}</code>
-                              </span>
-                              <button
-                                type="button"
-                                className="btn btn--small btn--ghost"
-                                disabled={addingStudentId !== null || !db}
-                                onClick={() => void addStudentToTrail(s.id)}
-                              >
-                                {addingStudentId === s.id
-                                  ? 'Adicionando…'
-                                  : 'Incluir na trilha'}
-                              </button>
-                            </div>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </>
-                )}
-              </div>
-            ) : null}
-
-            {showBulkEditor ? (
-              <div className="trail-add-students">
-                <p className="muted" style={{ margin: '0 0 0.75rem' }}>
-                  Use os filtros da tabela e marque os alunos desejados. Em seguida
-                  escolha o stage e a questão de destino e aplique. A alteração grava
-                  direto em <code>student_trails</code>.
-                </p>
-                <div className="trail-bulk-edit">
-                  <label className="trail-bulk-edit__field">
-                    <span className="muted">Stage de destino</span>
-                    <select
-                      value={bulkStage}
-                      onChange={(e) => {
-                        setBulkStage(e.target.value)
-                        setBulkSuccess(null)
-                      }}
-                    >
-                      <option value="" disabled>
-                        Selecione…
-                      </option>
-                      {stageOptions.map((n) => (
-                        <option key={n} value={String(n)}>
-                          {n}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="trail-bulk-edit__field">
-                    <span className="muted">Questão de destino</span>
-                    <select
-                      value={bulkQuestion}
-                      onChange={(e) => {
-                        setBulkQuestion(e.target.value)
-                        setBulkSuccess(null)
-                      }}
-                    >
-                      <option value="" disabled>
-                        Selecione…
-                      </option>
-                      {questionOptions.map((n) => (
-                        <option key={n} value={String(n)}>
-                          {n}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <button
-                    type="button"
-                    className="btn btn--primary btn--small"
-                    disabled={
-                      bulkBusy ||
-                      selectedStudentTrailIds.size === 0 ||
-                      !bulkStage ||
-                      !bulkQuestion
-                    }
-                    onClick={() => void applyBulkPosition()}
-                  >
-                    {bulkBusy
-                      ? 'Aplicando…'
-                      : `Aplicar a ${selectedStudentTrailIds.size} aluno(s)`}
-                  </button>
-                </div>
-                {bulkError ? (
-                  <p className="banner banner--error" role="alert">
-                    {bulkError}
-                  </p>
-                ) : null}
-                {bulkSuccess ? (
-                  <p className="banner banner--success" role="status">
-                    {bulkSuccess}
-                  </p>
-                ) : null}
-              </div>
-            ) : null}
-
-            {studentTrailsError ? (
-              <p className="banner banner--error" role="alert">
-                {studentTrailsError}
-              </p>
-            ) : null}
-
-            {!loadingStudentTrails && sortedStudentTrails.length === 0 ? (
-              <p className="muted">
-                Nenhum aluno com progresso registrado nesta trilha ainda. Use{' '}
-                <strong>Adicionar aluno</strong> para criar o vínculo ou aguarde o
-                chatbot criar/atualizar <code>student_trails</code> quando o aluno
-                avançar.
-              </p>
-            ) : null}
-
-            {sortedStudentTrails.length > 0 ? (
-              <>
-                <div className="trail-students-filter">
-                  <label className="trail-bulk-edit__field">
-                    <span className="muted">Filtrar por stage</span>
-                    <select
-                      value={filterStage}
-                      onChange={(e) => setFilterStage(e.target.value)}
-                    >
-                      <option value="">Todos</option>
-                      {stageOptions.map((n) => (
-                        <option key={n} value={String(n)}>
-                          {n}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="trail-bulk-edit__field">
-                    <span className="muted">Filtrar por questão</span>
-                    <select
-                      value={filterQuestion}
-                      onChange={(e) => setFilterQuestion(e.target.value)}
-                    >
-                      <option value="">Todas</option>
-                      {questionOptions.map((n) => (
-                        <option key={n} value={String(n)}>
-                          {n}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  {filterStage || filterQuestion ? (
-                    <button
-                      type="button"
-                      className="btn btn--ghost btn--small"
-                      onClick={() => {
-                        setFilterStage('')
-                        setFilterQuestion('')
-                      }}
-                    >
-                      Limpar filtro
-                    </button>
-                  ) : null}
-                  <span className="muted trail-students-filter__count">
-                    {filteredStudentTrails.length} de {sortedStudentTrails.length}{' '}
-                    aluno(s)
-                  </span>
-                </div>
-
-                {filteredStudentTrails.length === 0 ? (
-                  <p className="muted" role="status">
-                    Nenhum aluno corresponde ao filtro selecionado.
-                  </p>
-                ) : (
-                  <div className="table-wrap">
-                    <table className="table">
-                      <thead>
-                        <tr>
-                          {showBulkEditor ? (
-                            <th className="table__checkbox-cell">
-                              <input
-                                type="checkbox"
-                                aria-label="Selecionar todos os alunos filtrados"
-                                checked={allStudentTrailsSelected}
-                                onChange={toggleSelectAllStudentTrails}
-                              />
-                            </th>
-                          ) : null}
-                          <th>Aluno</th>
-                          <th>Stage atual</th>
-                          <th>Questão atual</th>
-                          <th>Status</th>
-                          <th>Início</th>
-                          <th>Última interação</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {filteredStudentTrails.map((row) => (
-                      <tr
-                        key={row.id}
-                        className={
-                          showBulkEditor && selectedStudentTrailIds.has(row.id)
-                            ? 'table__row--selected'
-                            : undefined
-                        }
-                      >
-                        {showBulkEditor ? (
-                          <td className="table__checkbox-cell">
-                            <input
-                              type="checkbox"
-                              aria-label={`Selecionar ${
-                                studentNameById.get(row.student_id) ??
-                                row.student_id
-                              }`}
-                              checked={selectedStudentTrailIds.has(row.id)}
-                              onChange={() => toggleStudentTrailSelection(row.id)}
-                            />
-                          </td>
-                        ) : null}
-                        <td>
-                          <Link
-                            className="table__name-link"
-                            to={studentPath(row.student_id)}
-                          >
-                            {studentNameById.get(row.student_id) ?? (
-                              <code>{row.student_id}</code>
-                            )}
-                          </Link>
-                          {studentPhoneById.get(row.student_id) ? (
-                            <div className="muted table__subtext">
-                              {studentPhoneById.get(row.student_id)}
-                            </div>
-                          ) : null}
-                        </td>
-                        <td>{row.current_stage_number}</td>
-                        <td>{row.current_question_number}</td>
-                        <td>
-                          <code>{row.status}</code>
-                        </td>
-                        <td>
-                          {row.started_at?.toDate
-                            ? row.started_at.toDate().toLocaleString('pt-BR')
-                            : '—'}
-                        </td>
-                        <td>
-                          {row.last_interaction_at?.toDate
-                            ? row.last_interaction_at.toDate().toLocaleString('pt-BR')
-                            : '—'}
-                        </td>
-                      </tr>
-                    ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </>
-            ) : null}
-          </section>
-
-          <section className="panel">
-            <div className="panel__head">
-              <h2>Histórico de conversa na trilha (conversation_logs)</h2>
-              {loadingLogs ? (
-                <span className="muted">Carregando histórico…</span>
-              ) : null}
-            </div>
-
-            {logsError ? (
-              <p className="banner banner--error" role="alert">
-                {logsError}
-              </p>
-            ) : null}
-
-            {!loadingLogs && logs.length === 0 ? (
-              <p className="muted">
-                Nenhum log de conversa encontrado para esta trilha ainda. Cada mensagem
-                trocada pelo chatbot gera um registro em <code>conversation_logs</code>.
-              </p>
-            ) : null}
-
-            {logs.length > 0 ? (
-              <ConversationChat
-                logs={logs}
-                visibleCount={logsVisibleCount}
-                showStudent
-                onLoadMore={() =>
-                  setLogsVisibleCount((count) =>
-                    Math.min(count + LOGS_PAGE_SIZE, logs.length),
-                  )
-                }
-              />
-            ) : null}
-          </section>
-
-        </>
-      )}
-    </>
+    <TrailDetailPageView
+      status="ok"
+      error={error}
+      loading={loading}
+      notFound={!trail}
+      institutionLabel={institutionLabel}
+      showTrailForm={showTrailForm}
+      onToggleTrailForm={() => setShowTrailForm((open) => !open)}
+      cadastro={cadastro}
+      editFormSlot={
+        trail ? (
+          <TrailForm
+            docId={id}
+            initial={trail}
+            onSaved={() => setShowTrailForm(false)}
+          />
+        ) : null
+      }
+      loadingStages={loadingStages}
+      stagesError={stagesError}
+      structureError={structureError}
+      structureEditorSlot={
+        <TrailStructureEditor
+          structurePhases={structurePhases}
+          active={trailActiveDraft}
+          onToggleActive={(next) => {
+            setTrailActiveDraft(next)
+            setStructureDirty(true)
+          }}
+          onAddPhase={addStructurePhase}
+          onRemovePhase={removeStructurePhase}
+          onUpdatePhase={updateStructurePhase}
+          onSubmit={() => void saveStructureAndContinueToContent()}
+          submitLabel="Salvar estrutura"
+          submitting={savingStructure}
+          footerPrompt="Salvar alterações da estrutura da trilha?"
+        />
+      }
+      loadingStageQuestions={loadingStageQuestions}
+      stageQuestionsError={stageQuestionsError}
+      contentEditorSlot={
+        <TrailContentEditor
+          contentEtapas={contentEtapas}
+          selectedEtapaId={selectedEtapaId}
+          selectedQuestionId={selectedQuestionId}
+          phaseSaved={phaseSaved}
+          saving={savingContentDraft}
+          error={contentError}
+          bulkPreview={bulkPreview}
+          importingBulk={importingBulk}
+          hasPendingImportedContent={Boolean(pendingBulkContent?.length)}
+          onDownloadTemplate={downloadBulkTemplate}
+          onImportFile={(file) => {
+            void importBulkTemplate(file)
+          }}
+          onApplyImportedContent={applyBulkImport}
+          onAddEtapa={addEtapa}
+          onRemoveEtapa={removeEtapa}
+          onSelectEtapa={setSelectedEtapaId}
+          onSelectQuestion={setSelectedQuestionId}
+          onToggleEtapaReleased={toggleEtapaReleased}
+          onUpdateQuestionTitle={updateQuestionTitle}
+          onUpdateQuestionPhase={updateQuestionPhase}
+          onMarkPhaseSaved={markPhaseSaved}
+          onBack={() => {
+            setStructureDirty(false)
+          }}
+          onSave={() => void saveTrailContents()}
+          backLabel="Estrutura salva"
+          saveLabel="Salvar conteúdos"
+        />
+      }
+      loadingStudentTrails={loadingStudentTrails}
+      canExportXlsx={sortedStudentTrails.length > 0}
+      onExportXlsx={() => {
+        void exportStudentTrailsXlsx()
+      }}
+      showBulkEditor={showBulkEditor}
+      canToggleBulkEditor={sortedStudentTrails.length > 0 && canWrite}
+      onToggleBulkEditor={() => setShowBulkEditor((open) => !open)}
+      showAddStudentPicker={showAddStudentPicker}
+      canAddStudent={Boolean(trail?.institution_id?.trim()) && canWrite}
+      onToggleAddStudentPicker={() =>
+        setShowAddStudentPicker((open) => !open)
+      }
+      missingInstitution={!trail?.institution_id?.trim()}
+      institutionStudentsError={institutionStudentsError}
+      loadingInstitutionStudents={loadingInstitutionStudents}
+      studentPickerFilter={studentPickerFilter}
+      onStudentPickerFilterChange={setStudentPickerFilter}
+      addStudentError={addStudentError}
+      institutionStudentsCount={institutionStudents.length}
+      eligibleStudentsCount={eligibleStudentsToAdd.length}
+      filteredEligibleStudents={filteredEligibleStudents.map((s) => ({
+        id: s.id,
+        name: s.name || '—',
+        isAdding: addingStudentId === s.id,
+      }))}
+      canMutateStudents={canWrite}
+      addingStudentId={addingStudentId}
+      onAddStudent={(studentId) => {
+        void addStudentToTrail(studentId)
+      }}
+      bulkStage={bulkStage}
+      onBulkStageChange={(value) => {
+        setBulkStage(value)
+        setBulkSuccess(null)
+      }}
+      bulkQuestion={bulkQuestion}
+      onBulkQuestionChange={(value) => {
+        setBulkQuestion(value)
+        setBulkSuccess(null)
+      }}
+      stageOptions={stageOptions}
+      questionOptions={questionOptions}
+      bulkBusy={bulkBusy}
+      selectedCount={selectedStudentTrailIds.size}
+      canApplyBulk={
+        !bulkBusy &&
+        selectedStudentTrailIds.size > 0 &&
+        Boolean(bulkStage) &&
+        Boolean(bulkQuestion)
+      }
+      onApplyBulk={() => {
+        void applyBulkPosition()
+      }}
+      bulkError={bulkError}
+      bulkSuccess={bulkSuccess}
+      studentTrailsError={studentTrailsError}
+      hasStudentTrails={sortedStudentTrails.length > 0}
+      totalStudentTrailsCount={sortedStudentTrails.length}
+      filterStage={filterStage}
+      onFilterStageChange={setFilterStage}
+      filterQuestion={filterQuestion}
+      onFilterQuestionChange={setFilterQuestion}
+      onClearFilters={() => {
+        setFilterStage('')
+        setFilterQuestion('')
+      }}
+      filteredStudentTrailsCount={filteredStudentTrails.length}
+      studentTrailRows={studentTrailRows}
+      allStudentTrailsSelected={allStudentTrailsSelected}
+      onToggleSelectAllStudentTrails={toggleSelectAllStudentTrails}
+      onToggleStudentTrailSelection={toggleStudentTrailSelection}
+      loadingLogs={loadingLogs}
+      logsError={logsError}
+      logsEmpty={logs.length === 0}
+      chatSlot={
+        <ConversationChat
+          logs={logs}
+          visibleCount={logsVisibleCount}
+          showStudent
+          onLoadMore={() =>
+            setLogsVisibleCount((count) =>
+              Math.min(count + LOGS_PAGE_SIZE, logs.length),
+            )
+          }
+        />
+      }
+    />
   )
 }
-

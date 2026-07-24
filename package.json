@@ -8,6 +8,9 @@
     "dev": "npm run dev -w trilha-admin",
     "build": "npm run build -w trilha-admin",
     "lint": "npm run lint -w trilha-admin",
+    "typecheck": "npm run typecheck -w trilha-admin",
+    "test": "node --test scripts/contract-*.test.mjs scripts/check-design-boundaries.mjs",
+    "check:design-boundaries": "node --test scripts/check-design-boundaries.mjs",
     "preview": "npm run preview -w trilha-admin",
     "audit:trilha-integrity": "node scripts/audit-trilha-integrity.js"
   },

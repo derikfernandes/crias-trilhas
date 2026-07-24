@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
-import { deleteDoc, doc, runTransaction, serverTimestamp, updateDoc } from 'firebase/firestore'
-import { db } from '../lib/firebase'
+import { dataLayerReady } from '../lib/public/dataLayer'
 import {
-  TRAIL_STAGES_COLLECTION,
-  trailStageDocId,
-} from '../lib/trailStageFirestore'
+  createTrailStage,
+  deleteTrailStage,
+  updateTrailStage,
+} from '../lib/public/trailStages'
 import {
   trailStageCreateSchema,
   trailStageUpdateSchema,
@@ -82,11 +82,10 @@ export function TrailStageForm({
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
-    if (!db) {
+    if (!dataLayerReady) {
       setFormError('Firebase não inicializado.')
       return
     }
-    const dbOk = db
 
     const trimmedTitle = title.trim()
     if (!trimmedTitle) {
@@ -126,13 +125,12 @@ export function TrailStageForm({
       setSaving(true)
       setFormError(null)
       try {
-        await updateDoc(doc(dbOk, TRAIL_STAGES_COLLECTION, docId), {
+        await updateTrailStage(docId, {
           title: trimmedTitle,
           stage_type: stageType,
           prompt: stageType === 'ai' ? prompt.trim() : null,
           is_released: isReleased,
           active,
-          updated_at: serverTimestamp(),
         })
         onSaved?.()
       } catch (err) {
@@ -166,32 +164,15 @@ export function TrailStageForm({
       return
     }
 
-    const newDocId = trailStageDocId(trailId, stageNumberInt)
-    const now = serverTimestamp()
-
     setSaving(true)
     setFormError(null)
     try {
-      await runTransaction(dbOk, async (tx) => {
-        const ref = doc(dbOk, TRAIL_STAGES_COLLECTION, newDocId)
-        const existing = await tx.get(ref)
-        if (existing.exists()) {
-          throw new Error(
-            `Já existe um stage_number ${stageNumberInt} para trail_id "${trailId}".`,
-          )
-        }
-
-        tx.set(ref, {
-          trail_id: trailId,
-          stage_number: stageNumberInt,
-          title: trimmedTitle,
-          stage_type: stageType,
-          prompt: stageType === 'ai' ? prompt.trim() : null,
-          is_released: false,
-          active: true,
-          created_at: now,
-          updated_at: now,
-        })
+      await createTrailStage({
+        trail_id: trailId,
+        stage_number: stageNumberInt,
+        title: trimmedTitle,
+        stage_type: stageType,
+        prompt: stageType === 'ai' ? prompt.trim() : null,
       })
 
       onSaved?.()
@@ -203,7 +184,7 @@ export function TrailStageForm({
   }
 
   async function handleDelete() {
-    if (!db || !docId) return
+    if (!dataLayerReady || !docId) return
     if (!initial) return
     const ok = window.confirm(
       `Excluir stage "${initial.title || docId}"? Esta ação não pode ser desfeita.`,
@@ -213,7 +194,7 @@ export function TrailStageForm({
     setSaving(true)
     setFormError(null)
     try {
-      await deleteDoc(doc(db, TRAIL_STAGES_COLLECTION, docId))
+      await deleteTrailStage(docId)
       onSaved?.()
     } catch (err) {
       setFormError(err instanceof Error ? err.message : 'Erro ao excluir.')
@@ -328,7 +309,11 @@ export function TrailStageForm({
         )}
 
         <div className="form__actions">
-          <button type="submit" className="btn btn--primary" disabled={saving || !db}>
+          <button
+            type="submit"
+            className="btn btn--primary"
+            disabled={saving || !dataLayerReady}
+          >
             {saving ? 'Salvando…' : 'Salvar'}
           </button>
           {onCancel ? (

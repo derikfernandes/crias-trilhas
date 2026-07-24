@@ -3,8 +3,10 @@
 # Substitua @RESPONSAVEL-TECNICO pelo usuário real do GitHub antes de ativar
 # a proteção de branch (Settings → Branches → Require review from Code Owners).
 #
-# Para o GitHub aplicar estas regras, este arquivo também pode ser copiado para
-# .github/CODEOWNERS (ambos os locais são suportados).
+# design/ NÃO exige aprovação do responsável técnico (área liberada para UI).
+
+# Área liberada (design) — sem owner técnico obrigatório
+# /frontend/trilha-admin/src/design/
 
 # Backend (funções serverless da Vercel — contrato público da API)
 /api/                                        @RESPONSAVEL-TECNICO
@@ -12,23 +14,28 @@
 # Serviços, validações e regras de negócio do backend
 /server/                                     @RESPONSAVEL-TECNICO
 
-# Scripts de auditoria e manutenção
+# Scripts de auditoria, contrato e barreiras
 /scripts/                                    @RESPONSAVEL-TECNICO
 
 # Configuração de rotas públicas (rewrites) e deploy
 /vercel.json                                 @RESPONSAVEL-TECNICO
 /frontend/trilha-admin/vercel.json           @RESPONSAVEL-TECNICO
 
-# Firebase / Firestore (configuração, regras de segurança e índices)
+# Firebase / Firestore
 /firebase.json                               @RESPONSAVEL-TECNICO
 /firestore.rules                             @RESPONSAVEL-TECNICO
 /firestore.indexes.json                      @RESPONSAVEL-TECNICO
+/firebase*                                   @RESPONSAVEL-TECNICO
+/firestore*                                  @RESPONSAVEL-TECNICO
 
-# Camada de dados, autenticação e tipos do frontend
+# Frontend protegido (lógica, dados, auth)
+/frontend/trilha-admin/src/pages/            @RESPONSAVEL-TECNICO
 /frontend/trilha-admin/src/lib/              @RESPONSAVEL-TECNICO
-/frontend/trilha-admin/src/contexts/         @RESPONSAVEL-TECNICO
 /frontend/trilha-admin/src/hooks/            @RESPONSAVEL-TECNICO
+/frontend/trilha-admin/src/contexts/         @RESPONSAVEL-TECNICO
 /frontend/trilha-admin/src/types/            @RESPONSAVEL-TECNICO
+/frontend/trilha-admin/src/layouts/          @RESPONSAVEL-TECNICO
+/frontend/trilha-admin/src/components/       @RESPONSAVEL-TECNICO
 
 # Dependências e configuração de build/lint/typecheck
 /package.json                                @RESPONSAVEL-TECNICO
@@ -46,3 +53,4 @@
 # Regras de arquitetura e proteção
 /ARCHITECTURE_RULES.md                       @RESPONSAVEL-TECNICO
 /CODEOWNERS                                  @RESPONSAVEL-TECNICO
+/REFACTOR_OPPORTUNITIES.md                   @RESPONSAVEL-TECNICO
