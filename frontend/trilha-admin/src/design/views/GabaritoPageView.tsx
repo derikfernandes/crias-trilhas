@@ -20,6 +20,23 @@ function sortAria(
   return sortDir === 'asc' ? 'ascending' : 'descending'
 }
 
+function statusBadge(q: GabaritoPageViewProps['rows'][number]) {
+  if (q.statusBadge === 'anulada') {
+    return (
+      <span
+        className="badge badge--annulled"
+        title={q.annulledReason || undefined}
+      >
+        anulada
+      </span>
+    )
+  }
+  if (q.statusBadge === 'faltando') {
+    return <span className="badge badge--warn">faltando</span>
+  }
+  return <span className="badge badge--ok">{q.statusBadge}</span>
+}
+
 export function GabaritoPageView({
   loadingTrails,
   trailOptions,
@@ -37,6 +54,8 @@ export function GabaritoPageView({
   saveBanner,
   onlyMissing,
   onOnlyMissingChange,
+  onlyAnnulled,
+  onOnlyAnnulledChange,
   filterStage,
   onFilterStageChange,
   filterQuestion,
@@ -50,6 +69,8 @@ export function GabaritoPageView({
   rows,
   emptyMessage,
   onDraftChange,
+  onToggleAnnulled,
+  annullingId,
 }: GabaritoPageViewProps) {
   return (
     <>
@@ -58,7 +79,8 @@ export function GabaritoPageView({
         <p className="admin__lede muted">
           Preencha a resposta correta (<code>correct_option</code>) das questões
           de exercício em massa. Sem gabarito, as respostas dos alunos não geram
-          acertos/erros.
+          acertos/erros. Questões anuladas ficam rastreadas e fora do
+          denominador de acerto/erro.
         </p>
         <div className="gerenciamento-toolbar">
           <Link className="btn btn--ghost" to="/">
@@ -152,6 +174,14 @@ export function GabaritoPageView({
                 onChange={(e) => onOnlyMissingChange(e.target.checked)}
               />
               <span>só sem gabarito</span>
+            </label>
+            <label className="field field--inline gabarito-filters__check">
+              <input
+                type="checkbox"
+                checked={onlyAnnulled}
+                onChange={(e) => onOnlyAnnulledChange(e.target.checked)}
+              />
+              <span>só anuladas</span>
             </label>
             <label className="gabarito-filter-select">
               <span className="muted">Stage</span>
@@ -248,24 +278,28 @@ export function GabaritoPageView({
                   <th>Conteúdo</th>
                   <th>Resposta correta</th>
                   <th className="gabarito-col-status">Status</th>
+                  <th className="gabarito-col-actions">Ação</th>
                 </tr>
               </thead>
               <tbody>
                 {loadingData ? (
                   <tr>
-                    <td colSpan={6} className="muted table__empty">
+                    <td colSpan={7} className="muted table__empty">
                       Carregando questões…
                     </td>
                   </tr>
                 ) : rows.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="muted table__empty">
+                    <td colSpan={7} className="muted table__empty">
                       {emptyMessage}
                     </td>
                   </tr>
                 ) : (
                   rows.map((q) => (
-                    <tr key={q.id}>
+                    <tr
+                      key={q.id}
+                      className={q.annulled ? 'gabarito-row--annulled' : undefined}
+                    >
                       <td className="gabarito-col-num">{q.stageNumber}</td>
                       <td className="gabarito-col-num">{q.questionNumber}</td>
                       <td className="gabarito-text-cell">{q.title}</td>
@@ -284,17 +318,40 @@ export function GabaritoPageView({
                           onChange={(e) => onDraftChange(q.id, e.target.value)}
                           placeholder={q.placeholder}
                           aria-label={q.ariaLabel}
+                          disabled={q.inputDisabled}
                         />
                         {q.inputError ? (
                           <span className="gabarito-input-error">{q.inputError}</span>
                         ) : null}
+                        {q.annulled && q.annulledReason ? (
+                          <span className="gabarito-annulled-reason muted">
+                            Motivo: {q.annulledReason}
+                          </span>
+                        ) : null}
                       </td>
-                      <td className="gabarito-col-status">
-                        {q.statusBadge === 'faltando' ? (
-                          <span className="badge badge--warn">faltando</span>
-                        ) : (
-                          <span className="badge badge--ok">{q.statusBadge}</span>
-                        )}
+                      <td className="gabarito-col-status">{statusBadge(q)}</td>
+                      <td className="gabarito-col-actions">
+                        <button
+                          type="button"
+                          className={
+                            q.annulled
+                              ? 'btn btn--small btn--ghost'
+                              : 'btn btn--small btn--ghost gabarito-annul-btn'
+                          }
+                          onClick={() => onToggleAnnulled(q.id)}
+                          disabled={annullingId === q.id || loadingData}
+                          title={
+                            q.annulled
+                              ? 'Remover anulação e voltar a contar no gabarito'
+                              : 'Anular questão (não conta como acerto/erro)'
+                          }
+                        >
+                          {annullingId === q.id
+                            ? '…'
+                            : q.annulled
+                              ? 'Desanular'
+                              : 'Anular'}
+                        </button>
                       </td>
                     </tr>
                   ))

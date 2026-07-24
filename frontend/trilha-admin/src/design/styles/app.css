@@ -2955,6 +2955,15 @@
   border-color: color-mix(in srgb, #d97706 70%, var(--border));
 }
 
+.dashboard-card--muted {
+  background: color-mix(in srgb, #64748b 10%, var(--bg));
+  border-color: color-mix(in srgb, #64748b 40%, var(--border));
+}
+
+.dashboard-card--muted:hover {
+  border-color: color-mix(in srgb, #64748b 65%, var(--border));
+}
+
 .dashboard-filters {
   display: flex;
   flex-wrap: wrap;
@@ -3399,6 +3408,29 @@
   text-align: center;
 }
 
+.gabarito-col-actions {
+  width: 1%;
+  white-space: nowrap;
+  text-align: center;
+  vertical-align: middle;
+}
+
+.gabarito-row--annulled td {
+  opacity: 0.78;
+}
+
+.gabarito-annulled-reason {
+  display: block;
+  margin-top: 0.3rem;
+  font-size: 0.76rem;
+  line-height: 1.35;
+  white-space: normal;
+}
+
+.gabarito-annul-btn {
+  color: #b45309;
+}
+
 .gabarito-sort-th {
   padding: 0;
 }
@@ -3506,6 +3538,12 @@
 .badge--warn {
   background: color-mix(in srgb, #d97706 16%, var(--bg));
   border: 1px solid color-mix(in srgb, #d97706 50%, var(--border));
+  color: var(--text-h);
+}
+
+.badge--annulled {
+  background: color-mix(in srgb, #64748b 16%, var(--bg));
+  border: 1px solid color-mix(in srgb, #64748b 45%, var(--border));
   color: var(--text-h);
 }
 

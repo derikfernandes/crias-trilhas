@@ -438,60 +438,91 @@ async function handleRequest(request: Request): Promise<Response> {
         })
       }
 
-      const stageResolved = await loadStageTypeForQuestion(
-        db,
-        existingTrailId,
-        existingStageNumber,
+      const contentKeys = [
+        'title',
+        'content',
+        'explanation',
+        'correct_option',
+        'options',
+        'is_released',
+        'active',
+      ] as const
+      const touchesContent = contentKeys.some((k) =>
+        Object.prototype.hasOwnProperty.call(updates, k),
       )
-      if (stageResolved.ok === false) return respond(400, { error: stageResolved.error })
-
-      const mergedForValidate = {
-        trail_id: existingTrailId,
-        stage_number: existingStageNumber,
-        question_number: existingQuestionNumber,
-        title: updates.title ?? (typeof existing.title === 'string' ? existing.title : ''),
-        content: updates.content ?? (typeof existing.content === 'string' ? existing.content : ''),
-        explanation: Object.prototype.hasOwnProperty.call(updates, 'explanation')
-          ? updates.explanation
-          : typeof existing.explanation === 'string' || existing.explanation === null
-            ? existing.explanation
-            : null,
-        correct_option: Object.prototype.hasOwnProperty.call(updates, 'correct_option')
-          ? updates.correct_option
-          : existing.correct_option !== undefined
-            ? existing.correct_option
-            : null,
-        options: Object.prototype.hasOwnProperty.call(updates, 'options')
-          ? updates.options
-          : parseOptionsFromDoc(existing.options),
-        is_released: Object.prototype.hasOwnProperty.call(updates, 'is_released')
-          ? updates.is_released
-          : typeof existing.is_released === 'boolean'
-            ? existing.is_released
-            : existingQuestionNumber === 1,
-      }
-
-      const validated = validateTrailStageQuestionCreate(
-        mergedForValidate,
-        stageResolved.stageType,
-      )
-      if (validated.ok === false) return respond(400, { error: validated.error })
 
       const patch: Record<string, unknown> = {}
-      if (updates.title !== undefined) patch.title = validated.data.title
-      if (updates.content !== undefined) patch.content = validated.data.content
-      if (Object.prototype.hasOwnProperty.call(updates, 'explanation')) {
-        patch.explanation = validated.data.explanation
+
+      if (touchesContent) {
+        const stageResolved = await loadStageTypeForQuestion(
+          db,
+          existingTrailId,
+          existingStageNumber,
+        )
+        if (stageResolved.ok === false) return respond(400, { error: stageResolved.error })
+
+        const mergedForValidate = {
+          trail_id: existingTrailId,
+          stage_number: existingStageNumber,
+          question_number: existingQuestionNumber,
+          title: updates.title ?? (typeof existing.title === 'string' ? existing.title : ''),
+          content: updates.content ?? (typeof existing.content === 'string' ? existing.content : ''),
+          explanation: Object.prototype.hasOwnProperty.call(updates, 'explanation')
+            ? updates.explanation
+            : typeof existing.explanation === 'string' || existing.explanation === null
+              ? existing.explanation
+              : null,
+          correct_option: Object.prototype.hasOwnProperty.call(updates, 'correct_option')
+            ? updates.correct_option
+            : existing.correct_option !== undefined
+              ? existing.correct_option
+              : null,
+          options: Object.prototype.hasOwnProperty.call(updates, 'options')
+            ? updates.options
+            : parseOptionsFromDoc(existing.options),
+          is_released: Object.prototype.hasOwnProperty.call(updates, 'is_released')
+            ? updates.is_released
+            : typeof existing.is_released === 'boolean'
+              ? existing.is_released
+              : existingQuestionNumber === 1,
+        }
+
+        const validated = validateTrailStageQuestionCreate(
+          mergedForValidate,
+          stageResolved.stageType,
+        )
+        if (validated.ok === false) return respond(400, { error: validated.error })
+
+        if (updates.title !== undefined) patch.title = validated.data.title
+        if (updates.content !== undefined) patch.content = validated.data.content
+        if (Object.prototype.hasOwnProperty.call(updates, 'explanation')) {
+          patch.explanation = validated.data.explanation
+        }
+        if (
+          Object.prototype.hasOwnProperty.call(updates, 'correct_option') ||
+          Object.prototype.hasOwnProperty.call(updates, 'options')
+        ) {
+          patch.correct_option = validated.data.correct_option
+          patch.options = validated.data.options
+        }
+        if (updates.active !== undefined) patch.active = updates.active
+        patch.is_released = validated.data.is_released
+      } else if (updates.active !== undefined) {
+        patch.active = updates.active
       }
-      if (
-        Object.prototype.hasOwnProperty.call(updates, 'correct_option') ||
-        Object.prototype.hasOwnProperty.call(updates, 'options')
-      ) {
-        patch.correct_option = validated.data.correct_option
-        patch.options = validated.data.options
+
+      if (updates.annulled !== undefined) {
+        patch.annulled = updates.annulled
+        if (updates.annulled) {
+          patch.annulled_at = FieldValue.serverTimestamp()
+          patch.annulled_reason = updates.annulled_reason ?? null
+        } else {
+          patch.annulled_at = null
+          patch.annulled_reason = null
+        }
+      } else if (Object.prototype.hasOwnProperty.call(updates, 'annulled_reason')) {
+        patch.annulled_reason = updates.annulled_reason
       }
-      if (updates.active !== undefined) patch.active = updates.active
-      patch.is_released = validated.data.is_released
 
       // Remove campos legados migrados para trail_stages (idempotente no Firestore)
       patch.question_type = FieldValue.delete()

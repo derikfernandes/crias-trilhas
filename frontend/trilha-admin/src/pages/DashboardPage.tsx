@@ -258,6 +258,7 @@ function scoreStudentFromAnswerMap(
     const trailId = rest.slice(0, sep1)
     const stage = Number(rest.slice(sep1 + 1, sep2))
     const question = Number(rest.slice(sep2 + 1))
+    if (!Number.isFinite(stage) || !Number.isFinite(question)) continue
     if (!enrolledTrailIds.has(trailId)) continue
     if (deselectedStages.has(`${trailId}|${stage}`)) continue
     if (deselectedQuestions.has(question)) continue
@@ -265,9 +266,10 @@ function scoreStudentFromAnswerMap(
     const stageRec = stageByKey.get(`${trailId}|${stage}`)
     if (stageRec?.stage_type !== 'exercise') continue
 
-    const gabarito = (
-      questionByKey.get(`${trailId}|${stage}|${question}`)?.correct_option ?? ''
-    ).trim()
+    const questionRec = questionByKey.get(`${trailId}|${stage}|${question}`)
+    // Questão anulada: fora do denominador (nem acerto nem erro).
+    if (questionRec?.annulled === true) continue
+    const gabarito = (questionRec?.correct_option ?? '').trim()
     if (!gabarito) continue
 
     if (answersMatch(answer, gabarito)) correct += 1
@@ -1084,10 +1086,27 @@ export function DashboardPage() {
       if (!activeIds.has(q.trail_id)) continue
       const stage = stageByKey.get(`${q.trail_id}|${q.stage_number}`)
       if (stage?.stage_type !== 'exercise') continue
+      if (q.annulled === true) continue
       if (!(q.correct_option ?? '').trim()) count += 1
     }
     return count
   }, [questions, activeTrails, stageByKey])
+
+  /** Questões de exercício anuladas nas trilhas ativas (visíveis no cálculo). */
+  const annulledQuestionKeys = useMemo(() => {
+    const activeIds = new Set(activeTrails.map((t) => t.id))
+    const keys = new Set<string>()
+    for (const q of questions) {
+      if (!activeIds.has(q.trail_id)) continue
+      if (q.annulled !== true) continue
+      const stage = stageByKey.get(`${q.trail_id}|${q.stage_number}`)
+      if (stage?.stage_type !== 'exercise') continue
+      keys.add(`${q.trail_id}|${q.stage_number}|${q.question_number}`)
+    }
+    return keys
+  }, [questions, activeTrails, stageByKey])
+
+  const annulledGabaritoCount = annulledQuestionKeys.size
 
   /** Trilhas consideradas nos números da tabela de alunos (filtro de matéria). */
   const relevantTrails = useMemo(() => {
@@ -1144,6 +1163,23 @@ export function DashboardPage() {
 
   const doneQuestionsByStudent = logAggregates.doneByStudent
   const studentAnswerMap = logAggregates.answerMap
+
+  /**
+   * Quantas respostas de alunos estão em questão anulada e saem do
+   * denominador de acerto/erro.
+   */
+  const annulledAnswersExcluded = useMemo(() => {
+    if (annulledQuestionKeys.size === 0) return 0
+    let count = 0
+    for (const [answerKey, answer] of studentAnswerMap) {
+      if (!answer.trim()) continue
+      const first = answerKey.indexOf('|')
+      if (first < 0) continue
+      const qKey = answerKey.slice(first + 1)
+      if (annulledQuestionKeys.has(qKey)) count += 1
+    }
+    return count
+  }, [studentAnswerMap, annulledQuestionKeys])
 
   /**
    * Todas as questões ativas da trilha (colunas de resposta no XLSX), agrupadas
@@ -1403,7 +1439,9 @@ export function DashboardPage() {
         if (stage?.stage_type !== 'exercise') continue
 
         const key = `${trail.id}|${p.stage}|${p.question}`
-        const gabarito = (questionByKey.get(key)?.correct_option ?? '').trim()
+        const question = questionByKey.get(key)
+        if (question?.annulled === true) continue
+        const gabarito = (question?.correct_option ?? '').trim()
         if (!gabarito) continue
         map.set(key, gabarito)
       }
@@ -1906,6 +1944,8 @@ export function DashboardPage() {
       onRetryLogs={() => setLogsRetryKey((k) => k + 1)}
       summary={summary}
       missingGabaritoCount={missingGabaritoCount}
+      annulledGabaritoCount={annulledGabaritoCount}
+      annulledAnswersExcluded={annulledAnswersExcluded}
       filteredStudentCount={filteredStudentRows.length}
       totalStudentCount={studentRows.length}
       questionPickerLabel={questionPickerLabel}

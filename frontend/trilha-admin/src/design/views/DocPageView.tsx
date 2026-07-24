@@ -1762,7 +1762,7 @@ const EXERCISE_ATTEMPT_ENDPOINTS: DocEndpoint[] = [
     path: '/exercise_attempts/',
     title: 'Registrar tentativa de exercício',
     description:
-      'Cria um registro em `exercise_attempts` para uma questão do tipo exercise. A API busca a questão em `trail_stage_questions`, copia `correct_option`, calcula `is_correct`, define `score` (1 ou 0) e incrementa `attempt_number` para a combinação student_id + trail_id + stage_number + question_number.',
+      'Cria um registro em `exercise_attempts` para uma questão do tipo exercise. A API busca a questão em `trail_stage_questions`, copia `correct_option`, calcula `is_correct`, define `score` (1 ou 0) e incrementa `attempt_number` para a combinação student_id + trail_id + stage_number + question_number. Questões com `annulled: true` não aceitam tentativa.',
     auth: true,
     bodyFields: [
       {
@@ -1843,7 +1843,7 @@ const EXERCISE_ATTEMPT_ENDPOINTS: DocEndpoint[] = [
       {
         code: '409',
         description:
-          'Questão não é do tipo exercise ou está sem correct_option configurado.',
+          'Questão não é do tipo exercise, está sem correct_option configurado, ou está anulada.',
       },
     ],
   },

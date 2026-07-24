@@ -27,7 +27,10 @@ export type GabaritoQuestionRow = {
   placeholder: string
   ariaLabel: string
   inputError: string | null
-  statusBadge: 'editado' | 'preenchido' | 'faltando'
+  inputDisabled: boolean
+  statusBadge: 'editado' | 'preenchido' | 'faltando' | 'anulada'
+  annulledReason: string | null
+  annulled: boolean
 }
 
 export type GabaritoPageViewProps = {
@@ -47,6 +50,8 @@ export type GabaritoPageViewProps = {
   saveBanner: GabaritoSaveBanner
   onlyMissing: boolean
   onOnlyMissingChange: (checked: boolean) => void
+  onlyAnnulled: boolean
+  onOnlyAnnulledChange: (checked: boolean) => void
   filterStage: number | ''
   onFilterStageChange: (value: number | '') => void
   filterQuestion: number | ''
@@ -60,4 +65,6 @@ export type GabaritoPageViewProps = {
   rows: GabaritoQuestionRow[]
   emptyMessage: string
   onDraftChange: (questionId: string, value: string) => void
+  onToggleAnnulled: (questionId: string) => void
+  annullingId: string | null
 }

@@ -30,6 +30,7 @@ type QuestionDocData = {
   stage_number?: number
   question_number?: number
   correct_option?: string | null
+  annulled?: boolean
 }
 
 function readQuestionData(snap: DocumentSnapshot): QuestionDocData {
@@ -54,6 +55,7 @@ function readQuestionData(snap: DocumentSnapshot): QuestionDocData {
         ? (raw.question_number as number)
         : undefined,
     correct_option,
+    annulled: raw.annulled === true,
   }
 }
 
@@ -176,6 +178,12 @@ export async function createExerciseAttemptWithQuestionLookup(
     }
 
     const q = readQuestionData(questionSnap)
+
+    if (q.annulled) {
+      throw new Error(
+        'Questão anulada. Não é possível registrar tentativa nem pontuar acerto/erro.',
+      )
+    }
 
     if (!q.correct_option) {
       throw new Error(

@@ -35,6 +35,8 @@ export function DashboardPageView({
   onRetryLogs,
   summary,
   missingGabaritoCount,
+  annulledGabaritoCount,
+  annulledAnswersExcluded,
   filteredStudentCount,
   totalStudentCount,
   questionPickerLabel,
@@ -238,6 +240,21 @@ export function DashboardPageView({
                 {formatPct(summary.avgAccuracy)}
               </span>
             </div>
+            {annulledGabaritoCount > 0 ? (
+              <Link to="/gabarito" className="dashboard-card dashboard-card--muted">
+                <span className="dashboard-card__label">
+                  Questões anuladas
+                </span>
+                <span className="dashboard-card__value">
+                  {annulledGabaritoCount}
+                </span>
+                <span className="dashboard-card__hint">
+                  {annulledAnswersExcluded > 0
+                    ? `${annulledAnswersExcluded} resposta${annulledAnswersExcluded === 1 ? '' : 's'} fora do % de acerto`
+                    : 'Nenhuma resposta de aluno nessas questões ainda'}
+                </span>
+              </Link>
+            ) : null}
             {missingGabaritoCount > 0 ? (
               <Link to="/gabarito" className="dashboard-card dashboard-card--warn">
                 <span className="dashboard-card__label">
