@@ -307,6 +307,8 @@ export type TrailStageQuestionUpdateFields = Partial<{
   explanation: string | null
   active: boolean
   is_released: boolean
+  annulled: boolean
+  annulled_reason: string | null
 }>
 
 export function parseTrailStageQuestionUpdatePayload(payload: unknown):
@@ -358,6 +360,31 @@ export function parseTrailStageQuestionUpdatePayload(payload: unknown):
     updates.is_released = rel
   }
 
+  if ('annulled' in body && body.annulled !== undefined) {
+    const annulled = parseBoolean(body.annulled)
+    if (annulled === null) {
+      return { ok: false, error: 'Campo "annulled" deve ser boolean' }
+    }
+    updates.annulled = annulled
+  }
+
+  if ('annulled_reason' in body) {
+    if (body.annulled_reason === undefined) {
+      // ignora
+    } else if (body.annulled_reason === null) {
+      updates.annulled_reason = null
+    } else {
+      const reason = sanitizeString(body.annulled_reason)
+      if (!reason) {
+        return {
+          ok: false,
+          error: 'Campo "annulled_reason" deve ser string não vazia ou null',
+        }
+      }
+      updates.annulled_reason = reason
+    }
+  }
+
   if ('correct_option' in body) {
     if (body.correct_option === undefined) {
       // ignora
@@ -383,6 +410,21 @@ export function parseTrailStageQuestionUpdatePayload(payload: unknown):
         }
       }
       updates.options = parsed && parsed.length > 0 ? parsed : null
+    }
+  }
+
+  if (
+    updates.annulled === true &&
+    !(
+      Object.prototype.hasOwnProperty.call(updates, 'annulled_reason') &&
+      typeof updates.annulled_reason === 'string' &&
+      updates.annulled_reason.trim()
+    )
+  ) {
+    return {
+      ok: false,
+      error:
+        'Campo "annulled_reason" é obrigatório (string não vazia) ao anular uma questão.',
     }
   }
 

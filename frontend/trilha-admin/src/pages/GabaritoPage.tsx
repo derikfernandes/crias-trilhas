@@ -17,6 +17,10 @@ import type {
 } from '../design/types/gabaritoPageView'
 import { db } from '../lib/firebase'
 import {
+  INSTITUTIONS_COLLECTION,
+  snapshotToInstitution,
+} from '../lib/institutionFirestore'
+import {
   snapshotToTrail,
   TRAILS_COLLECTION,
 } from '../lib/trailFirestore'
@@ -28,6 +32,7 @@ import {
   snapshotToTrailStageQuestion,
   TRAIL_STAGE_QUESTIONS_COLLECTION,
 } from '../lib/trailStageQuestionFirestore'
+import type { Institution } from '../types/institution'
 import type { Trail } from '../types/trail'
 import type { TrailStage } from '../types/trailStage'
 import type { TrailStageQuestion } from '../types/trailStageQuestion'
@@ -42,6 +47,7 @@ type SaveState =
 
 export function GabaritoPage() {
   const [trails, setTrails] = useState<Trail[]>([])
+  const [institutions, setInstitutions] = useState<Institution[]>([])
   const [loadingTrails, setLoadingTrails] = useState(true)
   const [trailsError, setTrailsError] = useState<string | null>(null)
   const [onlyActiveTrails, setOnlyActiveTrails] = useState(true)
@@ -56,6 +62,7 @@ export function GabaritoPage() {
   const [dataError, setDataError] = useState<string | null>(null)
 
   const [onlyMissing, setOnlyMissing] = useState(false)
+  const [onlyAnnulled, setOnlyAnnulled] = useState(false)
   const [filterStage, setFilterStage] = useState<number | ''>('')
   const [filterQuestion, setFilterQuestion] = useState<number | ''>('')
   const [sortBy, setSortBy] = useState<GabaritoSortBy>('stage')
@@ -63,13 +70,14 @@ export function GabaritoPage() {
   /** Edições pendentes: docId -> valor digitado de correct_option. */
   const [drafts, setDrafts] = useState<Record<string, string>>({})
   const [saveState, setSaveState] = useState<SaveState>({ kind: 'idle' })
+  const [annullingId, setAnnullingId] = useState<string | null>(null)
 
   useEffect(() => {
     if (!db) {
       setLoadingTrails(false)
       return
     }
-    const unsub = onSnapshot(
+    const unsubTrails = onSnapshot(
       collection(db, TRAILS_COLLECTION),
       (snap) => {
         const list = snap.docs.map(snapshotToTrail)
@@ -87,8 +95,28 @@ export function GabaritoPage() {
         setLoadingTrails(false)
       },
     )
-    return () => unsub()
+    const unsubInstitutions = onSnapshot(
+      collection(db, INSTITUTIONS_COLLECTION),
+      (snap) => {
+        setInstitutions(snap.docs.map(snapshotToInstitution))
+      },
+      () => {
+        setInstitutions([])
+      },
+    )
+    return () => {
+      unsubTrails()
+      unsubInstitutions()
+    }
   }, [])
+
+  const institutionNameById = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const inst of institutions) {
+      map.set(inst.id, inst.name?.trim() || inst.id)
+    }
+    return map
+  }, [institutions])
 
   const visibleTrails = useMemo(
     () => (onlyActiveTrails ? trails.filter((t) => t.active) : trails),
@@ -115,8 +143,11 @@ export function GabaritoPage() {
     setSaveState({ kind: 'idle' })
     setFilterStage('')
     setFilterQuestion('')
+    setOnlyMissing(false)
+    setOnlyAnnulled(false)
     setSortBy('stage')
     setSortDir('asc')
+    setAnnullingId(null)
 
     if (!db || !selectedTrailId) {
       setStages([])
@@ -186,7 +217,14 @@ export function GabaritoPage() {
 
   const missingCount = useMemo(
     () =>
-      exerciseQuestions.filter((q) => !(q.correct_option ?? '').trim()).length,
+      exerciseQuestions.filter(
+        (q) => !q.annulled && !(q.correct_option ?? '').trim(),
+      ).length,
+    [exerciseQuestions],
+  )
+
+  const annulledCount = useMemo(
+    () => exerciseQuestions.filter((q) => q.annulled).length,
     [exerciseQuestions],
   )
 
@@ -215,8 +253,12 @@ export function GabaritoPage() {
 
   const visibleQuestions = useMemo(() => {
     let list = exerciseQuestions
-    if (onlyMissing) {
-      list = list.filter((q) => !(q.correct_option ?? '').trim())
+    if (onlyAnnulled) {
+      list = list.filter((q) => q.annulled)
+    } else if (onlyMissing) {
+      list = list.filter(
+        (q) => !q.annulled && !(q.correct_option ?? '').trim(),
+      )
     }
     if (filterStage !== '') {
       list = list.filter((q) => q.stage_number === filterStage)
@@ -238,6 +280,7 @@ export function GabaritoPage() {
   }, [
     exerciseQuestions,
     onlyMissing,
+    onlyAnnulled,
     filterStage,
     filterQuestion,
     sortBy,
@@ -255,7 +298,7 @@ export function GabaritoPage() {
   }
 
   const dirtyQuestions = useMemo(
-    () => exerciseQuestions.filter((q) => isDirty(q)),
+    () => exerciseQuestions.filter((q) => !q.annulled && isDirty(q)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [exerciseQuestions, drafts],
   )
@@ -315,6 +358,76 @@ export function GabaritoPage() {
     }
   }
 
+  async function handleToggleAnnulled(questionId: string) {
+    if (!db) return
+    const q = exerciseQuestions.find((item) => item.id === questionId)
+    if (!q) return
+
+    if (q.annulled) {
+      const ok = window.confirm(
+        `Desanular a questão s${q.stage_number} q${q.question_number}? Ela voltará a contar no gabarito.`,
+      )
+      if (!ok) return
+      setAnnullingId(questionId)
+      try {
+        await updateDoc(doc(db, TRAIL_STAGE_QUESTIONS_COLLECTION, questionId), {
+          annulled: false,
+          annulled_at: null,
+          annulled_reason: null,
+          updated_at: serverTimestamp(),
+        })
+        setSaveState({ kind: 'idle' })
+      } catch (err) {
+        setSaveState({
+          kind: 'error',
+          message:
+            err instanceof Error ? err.message : 'Erro ao desanular questão.',
+        })
+      } finally {
+        setAnnullingId(null)
+      }
+      return
+    }
+
+    const reasonRaw = window.prompt(
+      `Motivo da anulação (s${q.stage_number} q${q.question_number}). A questão não contará como acerto nem erro.`,
+      q.annulled_reason ?? '',
+    )
+    if (reasonRaw === null) return
+    const reason = reasonRaw.trim()
+    if (!reason) {
+      setSaveState({
+        kind: 'error',
+        message: 'Informe um motivo para anular a questão.',
+      })
+      return
+    }
+
+    setAnnullingId(questionId)
+    try {
+      await updateDoc(doc(db, TRAIL_STAGE_QUESTIONS_COLLECTION, questionId), {
+        annulled: true,
+        annulled_at: serverTimestamp(),
+        annulled_reason: reason,
+        updated_at: serverTimestamp(),
+      })
+      setDrafts((d) => {
+        if (!(questionId in d)) return d
+        const next = { ...d }
+        delete next[questionId]
+        return next
+      })
+      setSaveState({ kind: 'idle' })
+    } catch (err) {
+      setSaveState({
+        kind: 'error',
+        message: err instanceof Error ? err.message : 'Erro ao anular questão.',
+      })
+    } finally {
+      setAnnullingId(null)
+    }
+  }
+
   const selectedTrail = useMemo(
     () => trails.find((t) => t.id === selectedTrailId) ?? null,
     [trails, selectedTrailId],
@@ -344,29 +457,47 @@ export function GabaritoPage() {
           ? { kind: 'saving' }
           : { kind: 'idle' }
 
-  const filtersSummary =
-    (exerciseQuestions.length === 0
-      ? 'Nenhuma questão de exercício nesta trilha.'
-      : missingCount === 0
-        ? `Todas as ${exerciseQuestions.length} questões têm gabarito.`
-        : `${missingCount} de ${exerciseQuestions.length} sem gabarito.`) +
-    (visibleQuestions.length !== exerciseQuestions.length &&
+  const filtersSummaryParts: string[] = []
+  if (exerciseQuestions.length === 0) {
+    filtersSummaryParts.push('Nenhuma questão de exercício nesta trilha.')
+  } else {
+    if (missingCount === 0) {
+      filtersSummaryParts.push(
+        `Todas as questões não anuladas têm gabarito (${exerciseQuestions.length} no total).`,
+      )
+    } else {
+      filtersSummaryParts.push(
+        `${missingCount} de ${exerciseQuestions.length} sem gabarito.`,
+      )
+    }
+    if (annulledCount > 0) {
+      filtersSummaryParts.push(
+        `${annulledCount} anulada${annulledCount === 1 ? '' : 's'}.`,
+      )
+    }
+  }
+  if (
+    visibleQuestions.length !== exerciseQuestions.length &&
     exerciseQuestions.length > 0
-      ? ` Exibindo ${visibleQuestions.length}.`
-      : '')
+  ) {
+    filtersSummaryParts.push(`Exibindo ${visibleQuestions.length}.`)
+  }
+  const filtersSummary = filtersSummaryParts.join(' ')
 
   const emptyMessage =
     exerciseQuestions.length === 0
       ? 'Esta trilha não tem questões em stages do tipo exercise.'
-      : onlyMissing
-        ? 'Nenhuma questão sem gabarito com os filtros atuais.'
-        : 'Nenhuma questão corresponde aos filtros.'
+      : onlyAnnulled
+        ? 'Nenhuma questão anulada com os filtros atuais.'
+        : onlyMissing
+          ? 'Nenhuma questão sem gabarito com os filtros atuais.'
+          : 'Nenhuma questão corresponde aos filtros.'
 
   const rows: GabaritoQuestionRow[] = visibleQuestions.map((q) => {
     const saved = (q.correct_option ?? '').trim()
     const value = inputValue(q)
     const dirty = isDirty(q)
-    const err = dirty ? validateDraft(q, value) : null
+    const err = !q.annulled && dirty ? validateDraft(q, value) : null
     const filled = dirty ? value.trim() !== '' : saved !== ''
     return {
       id: q.id,
@@ -381,17 +512,30 @@ export function GabaritoPage() {
           : 'Resposta correta',
       ariaLabel: `Resposta correta de stage ${q.stage_number} questão ${q.question_number}`,
       inputError: err,
-      statusBadge: filled ? (dirty ? 'editado' : 'preenchido') : 'faltando',
+      inputDisabled: q.annulled || annullingId === q.id,
+      statusBadge: q.annulled
+        ? 'anulada'
+        : filled
+          ? dirty
+            ? 'editado'
+            : 'preenchido'
+          : 'faltando',
+      annulledReason: q.annulled_reason,
+      annulled: q.annulled,
     }
   })
 
   return (
     <GabaritoPageView
       loadingTrails={loadingTrails}
-      trailOptions={visibleTrails.map((t) => ({
-        id: t.id,
-        label: `${t.name || t.id}${t.active ? '' : ' (inativa)'}`,
-      }))}
+      trailOptions={visibleTrails.map((t) => {
+        const instName =
+          institutionNameById.get(t.institution_id) || t.institution_id || '—'
+        return {
+          id: t.id,
+          label: `${t.name || t.id} · ${instName}${t.active ? '' : ' (inativa)'}`,
+        }
+      })}
       selectedTrailId={selectedTrailId}
       onSelectTrail={setSelectedTrailId}
       onlyActiveTrails={onlyActiveTrails}
@@ -411,7 +555,15 @@ export function GabaritoPage() {
       dataError={dataError}
       saveBanner={saveBanner}
       onlyMissing={onlyMissing}
-      onOnlyMissingChange={setOnlyMissing}
+      onOnlyMissingChange={(checked) => {
+        setOnlyMissing(checked)
+        if (checked) setOnlyAnnulled(false)
+      }}
+      onlyAnnulled={onlyAnnulled}
+      onOnlyAnnulledChange={(checked) => {
+        setOnlyAnnulled(checked)
+        if (checked) setOnlyMissing(false)
+      }}
       filterStage={filterStage}
       onFilterStageChange={setFilterStage}
       filterQuestion={filterQuestion}
@@ -439,6 +591,10 @@ export function GabaritoPage() {
           setSaveState({ kind: 'idle' })
         }
       }}
+      onToggleAnnulled={(questionId) => {
+        void handleToggleAnnulled(questionId)
+      }}
+      annullingId={annullingId}
     />
   )
 }

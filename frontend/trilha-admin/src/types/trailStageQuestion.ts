@@ -19,6 +19,13 @@ export type TrailStageQuestion = {
   correct_option: string | null
   options: TrailStageQuestionOption[] | null
   explanation: string | null
+  /**
+   * Questão anulada (ex.: gabarito do contrato veio errado).
+   * Não entra no denominador de acerto/erro; distinta de “sem gabarito”.
+   */
+  annulled: boolean
+  annulled_at: Timestamp | null
+  annulled_reason: string | null
   /** Liberada para o aluno no fluxo (substitui controle só no stage). */
   is_released: boolean
   active: boolean

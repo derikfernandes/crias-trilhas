@@ -105,6 +105,8 @@ export type DashboardPageViewProps = {
   onRetryLogs: () => void
   summary: DashboardSummaryView
   missingGabaritoCount: number
+  annulledGabaritoCount: number
+  annulledAnswersExcluded: number
   filteredStudentCount: number
   totalStudentCount: number
   questionPickerLabel: string

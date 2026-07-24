@@ -49,6 +49,9 @@ export function snapshotToTrailStageQuestion(
       correct_option: null,
       options: null,
       explanation: null,
+      annulled: false,
+      annulled_at: null,
+      annulled_reason: null,
       is_released: false,
       active: false,
       created_at: null,
@@ -79,6 +82,10 @@ export function snapshotToTrailStageQuestion(
         : data.explanation === null
           ? null
           : null,
+    annulled: data.annulled === true,
+    annulled_at: data.annulled_at ?? null,
+    annulled_reason:
+      typeof data.annulled_reason === 'string' ? data.annulled_reason : null,
     is_released:
       typeof data.is_released === 'boolean'
         ? data.is_released
@@ -180,6 +187,9 @@ export async function createTrailStageQuestion(
       correct_option: data.correct_option,
       options: data.options,
       explanation: data.explanation,
+      annulled: false,
+      annulled_at: null,
+      annulled_reason: null,
       is_released: data.is_released,
       active: true,
       created_at: now,
