@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { useParams } from 'react-router-dom'
 import {
   collection,
   doc,
@@ -21,6 +21,8 @@ import {
 } from '../lib/trailStageQuestionFirestore'
 import { trailPath, trailStageQuestionsPath } from '../lib/paths'
 import { TrailStageQuestionForm } from '../components/TrailStageQuestionForm'
+import { TrailStageQuestionsPageView } from '../design/views/TrailStageQuestionsPageView'
+import type { TrailStageQuestionsRow } from '../design/types/trailStageQuestionsPageView'
 import type { Trail } from '../types/trail'
 import type { TrailStage } from '../types/trailStage'
 import type { TrailStageQuestion } from '../types/trailStageQuestion'
@@ -159,193 +161,114 @@ export function TrailStageQuestionsPage() {
   }, [trailId, stageNumber])
 
   if (!trailId) {
-    return (
-      <p className="banner banner--error" role="alert">
-        ID da trilha ausente na URL.
-      </p>
-    )
+    return <TrailStageQuestionsPageView status="missing-trail-id" />
   }
 
   if (!Number.isFinite(stageNumber)) {
-    return (
-      <p className="banner banner--error" role="alert">
-        Número de stage inválido na URL.
-      </p>
-    )
+    return <TrailStageQuestionsPageView status="invalid-stage" />
   }
 
   const trailTitle = trail?.name?.trim() || trailId
   const listPath = trailStageQuestionsPath(trailId, stageNumber)
 
+  const formLoading = Boolean(showForm && editDocId && !editing)
+
+  let formSlot = null
+  if (showForm && trailStage && !formLoading) {
+    if (editDocId && editing) {
+      formSlot = (
+        <TrailStageQuestionForm
+          trailId={trailId}
+          stageNumber={stageNumber}
+          stageType={trailStage.stage_type}
+          docId={editDocId}
+          initial={editing}
+          suggestedQuestionNumber={suggestedNextQuestionNumber}
+          onCancel={() => {
+            setShowForm(false)
+            setEditDocId(null)
+          }}
+          onSaved={() => {
+            setShowForm(false)
+            setEditDocId(null)
+          }}
+        />
+      )
+    } else if (!editDocId) {
+      formSlot = (
+        <TrailStageQuestionForm
+          trailId={trailId}
+          stageNumber={stageNumber}
+          stageType={trailStage.stage_type}
+          suggestedQuestionNumber={suggestedNextQuestionNumber}
+          onCancel={() => setShowForm(false)}
+          onSaved={() => setShowForm(false)}
+        />
+      )
+    }
+  }
+
+  const questionRows: TrailStageQuestionsRow[] = questions.map((q) => ({
+    id: q.id,
+    questionNumber: q.question_number,
+    title: q.title || '—',
+    releasedLabel: q.is_released ? 'Sim' : 'Não',
+    activeLabel: q.active ? 'Sim' : 'Não',
+    updatedAtLabel: formatTrailStageQuestionTs(q.updated_at ?? q.created_at),
+  }))
+
+  const trailLede =
+    trail ? (
+      <p className="admin__lede muted">
+        Trilha <strong>{trail.name || trailId}</strong> · stage{' '}
+        <strong>{stageNumber}</strong>
+        {trailStage ? (
+          <>
+            {' '}
+            · comportamento: <code>stage_type={trailStage.stage_type}</code>
+            {trailStage.stage_type === 'ai' ? (
+              <>
+                {' '}
+                (prompt no stage: {trailStage.prompt ? 'definido' : 'ausente'})
+              </>
+            ) : null}
+          </>
+        ) : null}
+        <br />
+        <span>
+          Collection conteúdo: <code>trail_stage_questions</code> — sem{' '}
+          <code>question_type</code> nem <code>prompt</code>.
+        </span>
+      </p>
+    ) : null
+
   return (
-    <>
-      <header className="admin__header">
-        <h1>Questões do stage</h1>
-        <p className="admin__actions">
-          <Link className="btn btn--ghost" to={trailPath(trailId)}>
-            ← Trilha: {trailTitle}
-          </Link>
-        </p>
-      </header>
-
-      {trailError ? (
-        <p className="banner banner--error" role="alert">
-          {trailError}
-        </p>
-      ) : null}
-
-      {loadingTrail ? (
-        <p className="muted">Carregando trilha…</p>
-      ) : !trail ? (
-        <p className="banner banner--error" role="alert">
-          Trilha não encontrada.
-        </p>
-      ) : (
-        <p className="admin__lede muted">
-          Trilha <strong>{trail.name || trailId}</strong> · stage{' '}
-          <strong>{stageNumber}</strong>
-          {trailStage ? (
-            <>
-              {' '}
-              · comportamento: <code>stage_type={trailStage.stage_type}</code>
-              {trailStage.stage_type === 'ai' ? (
-                <>
-                  {' '}
-                  (prompt no stage: {trailStage.prompt ? 'definido' : 'ausente'})
-                </>
-              ) : null}
-            </>
-          ) : null}
-          <br />
-          <span>
-            Collection conteúdo: <code>trail_stage_questions</code> — sem{' '}
-            <code>question_type</code> nem <code>prompt</code>.
-          </span>
-        </p>
-      )}
-
-      {stageError ? (
-        <p className="banner banner--error" role="alert">
-          {stageError}
-        </p>
-      ) : null}
-
-      {loadingStage ? (
-        <p className="muted">Carregando stage…</p>
-      ) : !trailStage ? (
-        <p className="banner banner--error" role="alert">
-          Stage não encontrado. Cadastre-o na trilha antes das questões.
-        </p>
-      ) : (
-        <section className="panel">
-          <div className="panel__head">
-            <h2>Etapas e exercícios (conteúdo)</h2>
-            <p className="panel__actions">
-              <button
-                type="button"
-                className="btn btn--primary"
-                onClick={() => {
-                  setEditDocId(null)
-                  setShowForm(true)
-                }}
-              >
-                + Nova questão
-              </button>
-            </p>
-          </div>
-
-          {showForm && trailStage ? (
-            editDocId ? (
-              editing ? (
-                <TrailStageQuestionForm
-                  trailId={trailId}
-                  stageNumber={stageNumber}
-                  stageType={trailStage.stage_type}
-                  docId={editDocId}
-                  initial={editing}
-                  suggestedQuestionNumber={suggestedNextQuestionNumber}
-                  onCancel={() => {
-                    setShowForm(false)
-                    setEditDocId(null)
-                  }}
-                  onSaved={() => {
-                    setShowForm(false)
-                    setEditDocId(null)
-                  }}
-                />
-              ) : (
-                <p className="muted">Carregando questão…</p>
-              )
-            ) : (
-              <TrailStageQuestionForm
-                trailId={trailId}
-                stageNumber={stageNumber}
-                stageType={trailStage.stage_type}
-                suggestedQuestionNumber={suggestedNextQuestionNumber}
-                onCancel={() => setShowForm(false)}
-                onSaved={() => setShowForm(false)}
-              />
-            )
-          ) : null}
-
-          {loadingQuestions ? (
-            <p className="muted">Carregando questões…</p>
-          ) : questionsError ? (
-            <p className="banner banner--error" role="alert">
-              {questionsError}
-            </p>
-          ) : (
-            <div className="table-wrap">
-              <table className="table">
-                <thead>
-                  <tr>
-                    <th>#</th>
-                    <th>Título</th>
-                    <th>Liberada</th>
-                    <th>Ativa</th>
-                    <th>Atualizado</th>
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {questions.length === 0 ? (
-                    <tr>
-                      <td colSpan={6} className="muted table__empty">
-                        Nenhuma questão neste stage. Link direto desta tela:{' '}
-                        <code>{listPath}</code>
-                      </td>
-                    </tr>
-                  ) : (
-                    questions.map((q) => (
-                      <tr key={q.id}>
-                        <td>{q.question_number}</td>
-                        <td>{q.title || '—'}</td>
-                        <td>{q.is_released ? 'Sim' : 'Não'}</td>
-                        <td>{q.active ? 'Sim' : 'Não'}</td>
-                        <td>
-                          {formatTrailStageQuestionTs(q.updated_at ?? q.created_at)}
-                        </td>
-                        <td className="table__actions">
-                          <button
-                            type="button"
-                            className="btn btn--small btn--ghost"
-                            onClick={() => {
-                              setEditDocId(q.id)
-                              setShowForm(true)
-                            }}
-                          >
-                            Editar
-                          </button>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </section>
-      )}
-    </>
+    <TrailStageQuestionsPageView
+      status="ok"
+      trailBackHref={trailPath(trailId)}
+      trailBackLabel={trailTitle}
+      trailError={trailError}
+      loadingTrail={loadingTrail}
+      trailNotFound={!trail}
+      trailLede={trailLede}
+      stageError={stageError}
+      loadingStage={loadingStage}
+      stageNotFound={!trailStage}
+      showForm={showForm && Boolean(trailStage)}
+      formSlot={formSlot}
+      formLoading={formLoading}
+      loadingQuestions={loadingQuestions}
+      questionsError={questionsError}
+      questionRows={questionRows}
+      emptyListPath={listPath}
+      onNewQuestion={() => {
+        setEditDocId(null)
+        setShowForm(true)
+      }}
+      onEditQuestion={(questionId) => {
+        setEditDocId(questionId)
+        setShowForm(true)
+      }}
+    />
   )
 }

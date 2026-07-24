@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
-import { doc, runTransaction, serverTimestamp, updateDoc } from 'firebase/firestore'
-import { db } from '../lib/firebase'
+import { dataLayerReady } from '../lib/public/dataLayer'
 import {
-  TRAIL_STAGE_QUESTIONS_COLLECTION,
-  trailStageQuestionDocId,
-} from '../lib/trailStageQuestionFirestore'
+  createTrailStageQuestion,
+  updateTrailStageQuestion,
+} from '../lib/public/trailStageQuestions'
 import type { TrailStageType } from '../types/trailStage'
 import type { TrailStageQuestion } from '../types/trailStageQuestion'
 
@@ -112,11 +111,10 @@ export function TrailStageQuestionForm({
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
-    if (!db) {
+    if (!dataLayerReady) {
       setFormError('Firebase não inicializado.')
       return
     }
-    const dbOk = db
 
     const trimmedTitle = title.trim()
     const trimmedContent = content.trim()
@@ -157,7 +155,7 @@ export function TrailStageQuestionForm({
               }))
             : null
 
-        await updateDoc(doc(dbOk, TRAIL_STAGE_QUESTIONS_COLLECTION, docId), {
+        await updateTrailStageQuestion(docId, {
           title: trimmedTitle,
           content: trimmedContent,
           explanation: expl,
@@ -165,7 +163,6 @@ export function TrailStageQuestionForm({
           options: optionsPayload,
           is_released: isReleased,
           active,
-          updated_at: serverTimestamp(),
         })
         onSaved?.()
       } catch (err) {
@@ -182,8 +179,6 @@ export function TrailStageQuestionForm({
       return
     }
 
-    const newDocId = trailStageQuestionDocId(trailId, stageNumber, qn)
-    const now = serverTimestamp()
     const correct = isExerciseStage ? correctOption.trim() : null
     const optionsPayload =
       isExerciseStage && optionRows.length > 0
@@ -196,28 +191,16 @@ export function TrailStageQuestionForm({
     setSaving(true)
     setFormError(null)
     try {
-      await runTransaction(dbOk, async (tx) => {
-        const ref = doc(dbOk, TRAIL_STAGE_QUESTIONS_COLLECTION, newDocId)
-        const existing = await tx.get(ref)
-        if (existing.exists()) {
-          throw new Error(
-            `Já existe question_number ${qn} neste stage (trail "${trailId}", stage ${stageNumber}).`,
-          )
-        }
-        tx.set(ref, {
-          trail_id: trailId,
-          stage_number: stageNumber,
-          question_number: qn,
-          title: trimmedTitle,
-          content: trimmedContent,
-          correct_option: correct,
-          options: optionsPayload,
-          explanation: expl,
-          is_released: isReleased,
-          active: true,
-          created_at: now,
-          updated_at: now,
-        })
+      await createTrailStageQuestion({
+        trail_id: trailId,
+        stage_number: stageNumber,
+        question_number: qn,
+        title: trimmedTitle,
+        content: trimmedContent,
+        correct_option: correct,
+        options: optionsPayload,
+        explanation: expl,
+        is_released: isReleased,
       })
       onSaved?.()
     } catch (err) {
@@ -386,7 +369,11 @@ export function TrailStageQuestionForm({
         )}
 
         <div className="form__actions">
-          <button type="submit" className="btn btn--primary" disabled={saving || !db}>
+          <button
+            type="submit"
+            className="btn btn--primary"
+            disabled={saving || !dataLayerReady}
+          >
             {saving ? 'Salvando…' : 'Salvar'}
           </button>
           {onCancel ? (

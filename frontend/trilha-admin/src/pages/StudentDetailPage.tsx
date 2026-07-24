@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { useParams } from 'react-router-dom'
 import {
   collection,
   doc,
@@ -27,6 +27,8 @@ import {
   ConversationChat,
   LOGS_PAGE_SIZE,
 } from '../components/ConversationChat'
+import { StudentDetailPageView } from '../design/views/StudentDetailPageView'
+import type { StudentDetailTrailRow } from '../design/types/studentDetailPageView'
 import type { Student } from '../types/student'
 import type { StudentTrail, StudentTrailStatus } from '../types/studentTrail'
 import type { ConversationLog } from '../types/conversationLog'
@@ -337,292 +339,80 @@ export function StudentDetailPage() {
   }
 
   if (!id) {
-    return (
-      <p className="banner banner--error" role="alert">
-        ID ausente na URL.
-      </p>
-    )
+    return <StudentDetailPageView status="missing-id" />
   }
 
+  const trailRows: StudentDetailTrailRow[] = sortedTrails.map((row) => {
+    const meta = trailById.get(row.trail_id)
+    const label = meta?.name?.trim() ? meta.name : row.trail_id
+    return {
+      id: row.id,
+      trailHref: trailPath(row.trail_id),
+      trailLabel: label,
+      trailIdSecondary: meta?.name?.trim() ? row.trail_id : null,
+      inactiveHint: Boolean(meta?.name?.trim() && !meta.active),
+      isEditing: editingTrailId === row.id,
+      stageDisplay: row.current_stage_number,
+      questionDisplay: row.current_question_number,
+      status: row.status,
+      startedAtLabel: row.started_at?.toDate
+        ? row.started_at.toDate().toLocaleString('pt-BR')
+        : '—',
+      lastInteractionAtLabel: row.last_interaction_at?.toDate
+        ? row.last_interaction_at.toDate().toLocaleString('pt-BR')
+        : '—',
+    }
+  })
+
   return (
-    <>
-      <header className="admin__header">
-        <h1>Aluno</h1>
-        <p className="admin__actions">
-          <Link className="btn btn--ghost" to="/">
-            ← Voltar ao início
-          </Link>
-        </p>
-      </header>
-
-      {error ? (
-        <p className="banner banner--error" role="alert">
-          {error}
-        </p>
-      ) : null}
-
-      {loading ? (
-        <p className="muted">Carregando…</p>
-      ) : !stu ? (
-        <p className="banner banner--error" role="alert">
-          Registro não encontrado.
-        </p>
-      ) : (
-        <StudentForm docId={id} initial={stu} />
-      )}
-
-      <section className="panel">
-        <div className="panel__head">
-          <h2>Trilhas vinculadas (student_trails)</h2>
-          {loadingTrails ? (
-            <span className="muted">Carregando progresso…</span>
-          ) : null}
-        </div>
-
-        <p className="muted" style={{ marginTop: 0 }}>
-          Abaixo aparecem as trilhas em que este aluno tem registro de progresso.
-          Você pode vincular manualmente trilhas da mesma instituição do aluno.
-        </p>
-
-        {trailsError ? (
-          <p className="banner banner--error" role="alert">
-            {trailsError}
-          </p>
-        ) : null}
-        {editError ? (
-          <p className="banner banner--error" role="alert">
-            {editError}
-          </p>
-        ) : null}
-
-        {!loadingTrails && sortedTrails.length === 0 ? (
-          <p className="muted">
-            Nenhuma trilha vinculada ainda. Use o formulário abaixo para vincular,
-            ou o chatbot pode criar e atualizar registros em{' '}
-            <code>student_trails</code> automaticamente.
-          </p>
-        ) : null}
-
-        {sortedTrails.length > 0 ? (
-          <div className="table-wrap">
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>Trilha</th>
-                  <th>Stage atual</th>
-                  <th>Questão atual</th>
-                  <th>Status</th>
-                  <th>Início</th>
-                  <th>Última interação</th>
-                  <th>Ações</th>
-                </tr>
-              </thead>
-              <tbody>
-                {sortedTrails.map((row) => {
-                  const meta = trailById.get(row.trail_id)
-                  const label = meta?.name?.trim()
-                    ? meta.name
-                    : row.trail_id
-                  const isEditing = editingTrailId === row.id
-                  return (
-                    <tr key={row.id}>
-                      <td>
-                        <Link to={trailPath(row.trail_id)}>{label}</Link>
-                        {meta?.name?.trim() ? (
-                          <div className="muted" style={{ fontSize: '0.85em' }}>
-                            <code>{row.trail_id}</code>
-                            {!meta.active ? ' · inativa' : null}
-                          </div>
-                        ) : null}
-                      </td>
-                      <td>
-                        {isEditing ? (
-                          <input
-                            type="number"
-                            min={1}
-                            step={1}
-                            value={editStage}
-                            onChange={(e) => setEditStage(e.target.value)}
-                            disabled={editBusy}
-                            style={{ width: '6.5rem' }}
-                          />
-                        ) : (
-                          row.current_stage_number
-                        )}
-                      </td>
-                      <td>
-                        {isEditing ? (
-                          <input
-                            type="number"
-                            min={1}
-                            step={1}
-                            value={editQuestion}
-                            onChange={(e) => setEditQuestion(e.target.value)}
-                            disabled={editBusy}
-                            style={{ width: '6.5rem' }}
-                          />
-                        ) : (
-                          row.current_question_number
-                        )}
-                      </td>
-                      <td>
-                        <code>{row.status}</code>
-                      </td>
-                      <td>
-                        {row.started_at?.toDate
-                          ? row.started_at.toDate().toLocaleString('pt-BR')
-                          : '—'}
-                      </td>
-                      <td>
-                        {row.last_interaction_at?.toDate
-                          ? row.last_interaction_at
-                              .toDate()
-                              .toLocaleString('pt-BR')
-                          : '—'}
-                      </td>
-                      <td>
-                        <div className="table__actions">
-                          {isEditing ? (
-                            <>
-                              <button
-                                type="button"
-                                className="btn btn--small btn--primary"
-                                onClick={() => void handleSaveTrailPosition(row)}
-                                disabled={editBusy}
-                              >
-                                {editBusy ? 'Salvando…' : 'Salvar'}
-                              </button>
-                              <button
-                                type="button"
-                                className="btn btn--small btn--ghost"
-                                onClick={handleCancelEditTrail}
-                                disabled={editBusy}
-                              >
-                                Cancelar
-                              </button>
-                            </>
-                          ) : (
-                            <button
-                              type="button"
-                              className="btn btn--small btn--ghost"
-                              onClick={() => handleStartEditTrail(row)}
-                              disabled={editBusy}
-                            >
-                              Editar
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-        ) : null}
-
-        {stu ? (
-          <>
-            <h3 style={{ margin: '1.25rem 0 0.75rem', fontSize: '1.05rem' }}>
-              Vincular nova trilha
-            </h3>
-            {!stu.institution_id ? (
-              <p className="banner banner--error" role="alert">
-                Este aluno não tem <code>institution_id</code>. Defina a instituição
-                no cadastro acima antes de vincular trilhas.
-              </p>
-            ) : (
-              <form className="form" onSubmit={handleLinkTrail}>
-                {institutionTrailsError ? (
-                  <p className="banner banner--error" role="alert">
-                    {institutionTrailsError}
-                  </p>
-                ) : null}
-                {linkError ? (
-                  <p className="banner banner--error" role="alert">
-                    {linkError}
-                  </p>
-                ) : null}
-
-                <label className="field">
-                  <span>Trilha</span>
-                  <select
-                    value={linkTrailId}
-                    onChange={(e) => setLinkTrailId(e.target.value)}
-                    disabled={
-                      linkBusy || loadingInstitutionTrails || linkableTrails.length === 0
-                    }
-                  >
-                    <option value="">
-                      {loadingInstitutionTrails
-                        ? 'Carregando trilhas…'
-                        : linkableTrails.length === 0
-                          ? 'Nenhuma trilha disponível (todas vinculadas ou sem trilhas na instituição)'
-                          : 'Selecione…'}
-                    </option>
-                    {linkableTrails.map((t) => (
-                      <option key={t.id} value={t.id}>
-                        {t.name?.trim() ? `${t.name} (${t.id})` : t.id}
-                        {!t.active ? ' — inativa' : ''}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                <label className="field">
-                  <span>Status inicial</span>
-                  <select
-                    value={linkStatus}
-                    onChange={(e) =>
-                      setLinkStatus(e.target.value as StudentTrailStatus)
-                    }
-                    disabled={linkBusy}
-                  >
-                    <option value="not_started">not_started</option>
-                    <option value="in_progress">in_progress</option>
-                  </select>
-                </label>
-
-                <div className="form__actions">
-                  <button
-                    type="submit"
-                    className="btn btn--primary"
-                    disabled={
-                      linkBusy ||
-                      !linkTrailId ||
-                      loadingInstitutionTrails ||
-                      linkableTrails.length === 0
-                    }
-                  >
-                    {linkBusy ? 'Vinculando…' : 'Vincular trilha'}
-                  </button>
-                </div>
-              </form>
-            )}
-          </>
-        ) : null}
-      </section>
-
-      <section className="panel">
-        <div className="panel__head">
-          <h2>Histórico de conversa (conversation_logs)</h2>
-          {loadingLogs ? <span className="muted">Carregando histórico…</span> : null}
-        </div>
-
-        {logsError ? (
-          <p className="banner banner--error" role="alert">
-            {logsError}
-          </p>
-        ) : null}
-
-        {!loadingLogs && logs.length === 0 ? (
-          <p className="muted">
-            Nenhum log de conversa encontrado para este aluno ainda. Cada mensagem
-            trocada pelo chatbot gera um registro em <code>conversation_logs</code>.
-          </p>
-        ) : null}
-
-        {logs.length > 0 ? (
+    <StudentDetailPageView
+      status="ok"
+      error={error}
+      loading={loading}
+      notFound={!stu}
+      formSlot={stu ? <StudentForm docId={id} initial={stu} /> : null}
+      hasStudent={Boolean(stu)}
+      loadingTrails={loadingTrails}
+      trailsError={trailsError}
+      editError={editError}
+      trailRows={trailRows}
+      editStage={editStage}
+      editQuestion={editQuestion}
+      editBusy={editBusy}
+      onEditStageChange={setEditStage}
+      onEditQuestionChange={setEditQuestion}
+      onStartEditTrail={(rowId) => {
+        const row = trails.find((t) => t.id === rowId)
+        if (row) handleStartEditTrail(row)
+      }}
+      onCancelEditTrail={handleCancelEditTrail}
+      onSaveTrailPosition={(rowId) => {
+        const row = trails.find((t) => t.id === rowId)
+        if (row) void handleSaveTrailPosition(row)
+      }}
+      missingInstitutionId={!stu?.institution_id}
+      institutionTrailsError={institutionTrailsError}
+      linkError={linkError}
+      linkTrailId={linkTrailId}
+      onLinkTrailIdChange={setLinkTrailId}
+      linkStatus={linkStatus}
+      onLinkStatusChange={(value) =>
+        setLinkStatus(value as StudentTrailStatus)
+      }
+      linkBusy={linkBusy}
+      loadingInstitutionTrails={loadingInstitutionTrails}
+      linkableTrails={linkableTrails.map((t) => ({
+        id: t.id,
+        label: `${t.name?.trim() ? `${t.name} (${t.id})` : t.id}${
+          !t.active ? ' — inativa' : ''
+        }`,
+      }))}
+      onLinkTrailSubmit={(e) => void handleLinkTrail(e)}
+      loadingLogs={loadingLogs}
+      logsError={logsError}
+      logsEmpty={logs.length === 0}
+      chatSlot={
+        logs.length > 0 ? (
           <ConversationChat
             logs={logs}
             visibleCount={logsVisibleCount}
@@ -633,9 +423,8 @@ export function StudentDetailPage() {
               )
             }
           />
-        ) : null}
-      </section>
-    </>
+        ) : null
+      }
+    />
   )
 }
-

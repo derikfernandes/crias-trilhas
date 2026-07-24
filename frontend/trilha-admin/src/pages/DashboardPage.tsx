@@ -1,7 +1,13 @@
-import { useEffect, useMemo, useRef, useState, useTransition } from 'react'
-import { Link } from 'react-router-dom'
-import * as XLSX from 'xlsx'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import type * as XLSX from 'xlsx'
 import { collection, getDocs, onSnapshot, query, where } from 'firebase/firestore'
+import { DashboardPageView } from '../design/views/DashboardPageView'
+import {
+  DASHBOARD_STUDENT_COLUMNS,
+  type DashboardPillRowView,
+  type DashboardStudentColumnKey,
+  type DashboardStudentSortKey,
+} from '../design/types/dashboardPageView'
 import { db } from '../lib/firebase'
 import {
   INSTITUTIONS_COLLECTION,
@@ -26,6 +32,7 @@ import {
   snapshotToConversationLog,
 } from '../lib/conversationLogFirestore'
 import { fetchDashboardLogSummary } from '../lib/dashboardSummaryApi'
+import { loadXlsx } from '../lib/loadXlsx'
 import { studentPath, trailPath } from '../lib/paths'
 import { usePermissions } from '../hooks/usePermissions'
 import type { ConversationLog } from '../types/conversationLog'
@@ -38,29 +45,10 @@ import type { TrailStageQuestion } from '../types/trailStageQuestion'
 
 const LAST_INSTITUTION_ID_STORAGE_KEY = 'trilha_admin_selected_institution_id'
 const STUDENTS_PAGE_SIZE = 20
-const ENUNCIADO_PREVIEW_MAX = 100
+const ALL_STUDENT_COLUMNS = DASHBOARD_STUDENT_COLUMNS
 
-type ExpandedEnunciado = {
-  topicLabel: string
-  title: string
-  trailName: string
-  text: string
-}
-
-const ALL_STUDENT_COLUMNS = [
-  { key: 'phone', label: 'Telefone' },
-  { key: 'released', label: 'Tópicos liberados' },
-  { key: 'done', label: 'Tópicos feitos' },
-  { key: 'completionPct', label: '% conclusão (tópicos)' },
-  { key: 'lessonsReleased', label: 'Aulas liberadas' },
-  { key: 'lessonsDone', label: 'Aulas realizadas' },
-  { key: 'lessonsCompletionPct', label: '% conclusão (aulas)' },
-  { key: 'correct', label: 'Acertos' },
-  { key: 'wrong', label: 'Erros' },
-  { key: 'accuracyPct', label: '% de acerto' },
-] as const
-
-type StudentColumnKey = (typeof ALL_STUDENT_COLUMNS)[number]['key']
+type StudentColumnKey = DashboardStudentColumnKey
+type StudentSortKey = DashboardStudentSortKey
 
 type StudentRow = {
   student: Student
@@ -99,8 +87,6 @@ type PillSortKey =
   | 'wrong'
   | 'accuracyPct'
 
-type StudentSortKey = 'name' | StudentColumnKey
-
 function compareNullableNumber(a: number | null, b: number | null): number {
   if (a === null && b === null) return 0
   if (a === null) return 1
@@ -111,10 +97,6 @@ function compareNullableNumber(a: number | null, b: number | null): number {
 function pct(num: number, den: number): number | null {
   if (den <= 0) return null
   return Math.round((num / den) * 100)
-}
-
-function formatPct(v: number | null): string {
-  return v === null ? '—' : `${v}%`
 }
 
 function formatPctExport(v: number | null): string {
@@ -146,72 +128,6 @@ function lessonTopicColumnLabel(
   const code = lessonTopicColumn(topicNumber, lessonNumber)
   const stageTitle = stageByKey.get(`${trailId}|${topicNumber}`)?.title?.trim()
   return stageTitle ? `${code} - ${stageTitle}` : code
-}
-
-/** Código legível na UI do dashboard, ex.: T3 A1. */
-function formatLessonTopicCode(topicNumber: number, lessonNumber: number): string {
-  return `T${topicNumber} A${lessonNumber}`
-}
-
-function truncateEnunciadoPreview(text: string, max = ENUNCIADO_PREVIEW_MAX): string {
-  const normalized = text.replace(/\s+/g, ' ').trim()
-  if (!normalized) return ''
-  if (normalized.length <= max) return normalized
-  return `${normalized.slice(0, max).trimEnd()}…`
-}
-
-function EnunciadoPreviewCell({
-  content,
-  title,
-  onExpand,
-}: {
-  content: string
-  title: string
-  onExpand: () => void
-}) {
-  const fullText = content.trim() || title.trim()
-  if (!fullText) {
-    return <span className="muted">—</span>
-  }
-  const preview = truncateEnunciadoPreview(fullText)
-  const isTruncated = preview.endsWith('…')
-
-  return (
-    <button
-      type="button"
-      className="table__text-btn dashboard-enunciado-preview"
-      onClick={onExpand}
-      title={isTruncated ? 'Clique para ver o enunciado completo' : fullText}
-    >
-      {preview}
-    </button>
-  )
-}
-
-function LessonTopicCode({
-  topicNumber,
-  lessonNumber,
-  content,
-  title,
-}: {
-  topicNumber: number
-  lessonNumber: number
-  content: string
-  title?: string
-}) {
-  const label = formatLessonTopicCode(topicNumber, lessonNumber)
-  const enunciado = content.trim() || title?.trim() || ''
-  if (!enunciado) {
-    return <code>{label}</code>
-  }
-  return (
-    <span className="dashboard-lesson-topic-tip">
-      <code className="dashboard-lesson-topic-tip__code">{label}</code>
-      <span className="dashboard-lesson-topic-tip__popup" role="tooltip">
-        {enunciado}
-      </span>
-    </span>
-  )
 }
 
 const FIRESTORE_IN_LIMIT = 30
@@ -422,13 +338,16 @@ async function fetchConversationLogsForStudents(
   return [...byId.values()]
 }
 
+type XlsxModule = typeof import('xlsx')
+
 function forceWorksheetCellString(
+  xlsx: XlsxModule,
   worksheet: XLSX.WorkSheet,
   row: number,
   col: number,
   value: string,
 ) {
-  const ref = XLSX.utils.encode_cell({ r: row, c: col })
+  const ref = xlsx.utils.encode_cell({ r: row, c: col })
   worksheet[ref] = { t: 's', v: value }
 }
 
@@ -451,6 +370,7 @@ function buildTrailCorrespondenceRows(
 }
 
 function appendCorrespondenceSheet(
+  xlsx: XlsxModule,
   workbook: XLSX.WorkBook,
   trailId: string,
   positions: { stage: number; question: number }[],
@@ -463,21 +383,21 @@ function appendCorrespondenceSheet(
     stageByKey,
     questionByKey,
   )
-  const legendSheet = XLSX.utils.aoa_to_sheet([
+  const legendSheet = xlsx.utils.aoa_to_sheet([
     [...CORRESPONDENCE_HEADERS],
     ...legendRows,
   ])
   CORRESPONDENCE_HEADERS.forEach((header, colIndex) => {
-    forceWorksheetCellString(legendSheet, 0, colIndex, header)
+    forceWorksheetCellString(xlsx, legendSheet, 0, colIndex, header)
   })
   legendRows.forEach((row, rowIndex) => {
     row.forEach((value, colIndex) => {
       if (value.length > 0) {
-        forceWorksheetCellString(legendSheet, rowIndex + 1, colIndex, value)
+        forceWorksheetCellString(xlsx, legendSheet, rowIndex + 1, colIndex, value)
       }
     })
   })
-  XLSX.utils.book_append_sheet(workbook, legendSheet, 'Correspondência')
+  xlsx.utils.book_append_sheet(workbook, legendSheet, 'Correspondência')
 }
 
 type TopicPosition = { stage: number; question: number }
@@ -567,6 +487,7 @@ function trailLessonNumbers(
 }
 
 function appendLessonsProgressSheet(
+  xlsx: XlsxModule,
   workbook: XLSX.WorkBook,
   trail: Trail,
   students: Student[],
@@ -631,192 +552,18 @@ function appendLessonsProgressSheet(
     ]
   })
 
-  const sheet = XLSX.utils.aoa_to_sheet([headers, ...rows])
+  const sheet = xlsx.utils.aoa_to_sheet([headers, ...rows])
   headers.forEach((header, colIndex) => {
-    forceWorksheetCellString(sheet, 0, colIndex, header)
+    forceWorksheetCellString(xlsx, sheet, 0, colIndex, header)
   })
   rows.forEach((row, rowIndex) => {
     row.forEach((value, colIndex) => {
       if (typeof value === 'string' && value.length > 0) {
-        forceWorksheetCellString(sheet, rowIndex + 1, colIndex, value)
+        forceWorksheetCellString(xlsx, sheet, rowIndex + 1, colIndex, value)
       }
     })
   })
-  XLSX.utils.book_append_sheet(workbook, sheet, 'Aulas')
-}
-
-type ExcelPickerItem = { id: string; label: string }
-
-/**
- * Popover estilo AutoFiltro do Excel: busca, "(Selecionar tudo)" com estado
- * intermediário, lista rolável de checkboxes e OK/Cancelar. As mudanças só
- * são aplicadas ao clicar em OK; fechar (Cancelar, Esc ou clique fora)
- * descarta o rascunho.
- */
-function ExcelFilterPopover({
-  hint,
-  items,
-  selectedIds,
-  emptyMessage,
-  onApply,
-  onClose,
-}: {
-  hint?: string
-  items: ExcelPickerItem[]
-  selectedIds: Set<string>
-  emptyMessage: string
-  onApply: (next: Set<string>) => void
-  onClose: () => void
-}) {
-  const [draft, setDraft] = useState<Set<string>>(() => new Set(selectedIds))
-  const [search, setSearch] = useState('')
-  const [isPending, startTransition] = useTransition()
-  const rootRef = useRef<HTMLDivElement | null>(null)
-  const selectAllRef = useRef<HTMLInputElement | null>(null)
-
-  const filteredItems = useMemo(() => {
-    const q = search.trim().toLowerCase()
-    if (!q) return items
-    return items.filter((it) => it.label.toLowerCase().includes(q))
-  }, [items, search])
-
-  const allFilteredSelected =
-    filteredItems.length > 0 && filteredItems.every((it) => draft.has(it.id))
-  const someFilteredSelected = filteredItems.some((it) => draft.has(it.id))
-
-  useEffect(() => {
-    if (selectAllRef.current) {
-      selectAllRef.current.indeterminate =
-        someFilteredSelected && !allFilteredSelected
-    }
-  }, [someFilteredSelected, allFilteredSelected])
-
-  useEffect(() => {
-    // Enquanto o OK está aplicando, ignora Esc/clique fora para o popover
-    // não sumir antes do feedback de conclusão.
-    if (isPending) return
-    const onDocMouseDown = (e: MouseEvent) => {
-      const root = rootRef.current
-      if (!root) return
-      // O wrapper inclui o botão que abre o popover; clique nele não conta
-      // como "fora" (o próprio onClick do botão faz o toggle).
-      const wrapper = root.parentElement ?? root
-      if (e.target instanceof Node && !wrapper.contains(e.target)) onClose()
-    }
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
-    }
-    document.addEventListener('mousedown', onDocMouseDown)
-    document.addEventListener('keydown', onKeyDown)
-    return () => {
-      document.removeEventListener('mousedown', onDocMouseDown)
-      document.removeEventListener('keydown', onKeyDown)
-    }
-  }, [onClose, isPending])
-
-  function toggleItem(id: string) {
-    setDraft((curr) => {
-      const next = new Set(curr)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
-  }
-
-  function toggleSelectAll() {
-    setDraft((curr) => {
-      const next = new Set(curr)
-      if (allFilteredSelected) {
-        for (const it of filteredItems) next.delete(it.id)
-      } else {
-        for (const it of filteredItems) next.add(it.id)
-      }
-      return next
-    })
-  }
-
-  return (
-    <div
-      ref={rootRef}
-      className={`excel-picker__popover${
-        isPending ? ' excel-picker__popover--pending' : ''
-      }`}
-      role="dialog"
-      aria-busy={isPending}
-    >
-      {hint ? <span className="muted excel-picker__hint">{hint}</span> : null}
-      <input
-        type="search"
-        className="excel-picker__search"
-        placeholder="Pesquisar…"
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-      />
-      <div className="excel-picker__list">
-        {items.length === 0 ? (
-          <span className="muted">{emptyMessage}</span>
-        ) : (
-          <>
-            <label className="field field--inline excel-picker__select-all">
-              <input
-                ref={selectAllRef}
-                type="checkbox"
-                checked={allFilteredSelected}
-                onChange={toggleSelectAll}
-                disabled={filteredItems.length === 0}
-              />
-              <span>(Selecionar tudo)</span>
-            </label>
-            {filteredItems.length === 0 ? (
-              <span className="muted">Nenhum item encontrado.</span>
-            ) : (
-              filteredItems.map((it) => (
-                <label key={it.id} className="field field--inline">
-                  <input
-                    type="checkbox"
-                    checked={draft.has(it.id)}
-                    onChange={() => toggleItem(it.id)}
-                  />
-                  <span>{it.label}</span>
-                </label>
-              ))
-            )}
-          </>
-        )}
-      </div>
-      <div className="excel-picker__footer">
-        <button
-          type="button"
-          className="btn btn--small excel-picker__ok"
-          disabled={isPending}
-          onClick={() => {
-            // O fechamento do popover acontece dentro do onApply do pai;
-            // como está na transição, só ocorre quando o recálculo termina.
-            startTransition(() => {
-              onApply(draft)
-            })
-          }}
-        >
-          {isPending ? (
-            <>
-              <span className="excel-picker__spinner" aria-hidden="true" />
-              Aplicando…
-            </>
-          ) : (
-            'OK'
-          )}
-        </button>
-        <button
-          type="button"
-          className="btn btn--small btn--ghost"
-          disabled={isPending}
-          onClick={onClose}
-        >
-          Cancelar
-        </button>
-      </div>
-    </div>
-  )
+  xlsx.utils.book_append_sheet(workbook, sheet, 'Aulas')
 }
 
 export function DashboardPage() {
@@ -905,18 +652,6 @@ export function DashboardPage() {
     key: PillSortKey
     dir: 'asc' | 'desc'
   }>({ key: 'accuracyPct', dir: 'asc' })
-  const [expandedEnunciado, setExpandedEnunciado] =
-    useState<ExpandedEnunciado | null>(null)
-
-  useEffect(() => {
-    if (!expandedEnunciado) return
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setExpandedEnunciado(null)
-    }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [expandedEnunciado])
-
   useEffect(() => {
     let unsub: (() => void) | null = null
 
@@ -1853,11 +1588,14 @@ export function DashboardPage() {
     return { released, done, completionPct: pct(done, released) }
   }
 
-  async function exportTrailHistoryXlsx(trail: Trail) {
-    if (!db || exportingTrailId) return
+  async function exportTrailHistoryXlsx(trailId: string) {
+    const trail = trailById.get(trailId)
+    if (!db || !trail || exportingTrailId) return
     setExportError(null)
     setExportingTrailId(trail.id)
     try {
+      const xlsx = await loadXlsx()
+
       // Dá tempo para o navegador renderizar o estado "Gerando…" antes do
       // processamento síncrono do XLSX bloquear a thread principal.
       await new Promise<void>((resolve) => {
@@ -1916,25 +1654,26 @@ export function DashboardPage() {
         return row
       })
 
-      const worksheet = XLSX.utils.aoa_to_sheet([headers, ...rows])
+      const worksheet = xlsx.utils.aoa_to_sheet([headers, ...rows])
       const fixedColCount = fixedHeaders.length
 
       headers.forEach((header, colIndex) => {
-        forceWorksheetCellString(worksheet, 0, colIndex, header)
+        forceWorksheetCellString(xlsx, worksheet, 0, colIndex, header)
       })
 
       rows.forEach((row, rowIndex) => {
         for (let colIndex = fixedColCount; colIndex < headers.length; colIndex++) {
           const value = row[colIndex]
           if (typeof value === 'string' && value.length > 0) {
-            forceWorksheetCellString(worksheet, rowIndex + 1, colIndex, value)
+            forceWorksheetCellString(xlsx, worksheet, rowIndex + 1, colIndex, value)
           }
         }
       })
 
-      const workbook = XLSX.utils.book_new()
-      XLSX.utils.book_append_sheet(workbook, worksheet, 'Histórico')
+      const workbook = xlsx.utils.book_new()
+      xlsx.utils.book_append_sheet(workbook, worksheet, 'Histórico')
       appendCorrespondenceSheet(
+        xlsx,
         workbook,
         trail.id,
         answerColumns,
@@ -1942,6 +1681,7 @@ export function DashboardPage() {
         questionByKey,
       )
       appendLessonsProgressSheet(
+        xlsx,
         workbook,
         trail,
         sortedStudents,
@@ -1951,7 +1691,7 @@ export function DashboardPage() {
         deselectedQuestions,
       )
       const trailSlug = slugFileName(trail.name || trail.id)
-      XLSX.writeFile(workbook, `historico-alunos-${trailSlug}.xlsx`)
+      xlsx.writeFile(workbook, `historico-alunos-${trailSlug}.xlsx`)
     } catch (err) {
       setExportError(
         err instanceof Error ? err.message : 'Erro ao gerar planilha.',
@@ -1961,11 +1701,13 @@ export function DashboardPage() {
     }
   }
 
-  function exportPillTrailXlsx(trail: Trail) {
-    if (exportingPillTrailId) return
+  async function exportPillTrailXlsx(trailId: string) {
+    const trail = trailById.get(trailId)
+    if (!trail || exportingPillTrailId) return
     setExportError(null)
     setExportingPillTrailId(trail.id)
     try {
+      const xlsx = await loadXlsx()
       const rows = sortedPillRows.filter((p) => p.trailId === trail.id)
       const headers = [
         'Trilha',
@@ -1997,27 +1739,28 @@ export function DashboardPage() {
         `${p.accuracyPct}%`,
       ])
 
-      const worksheet = XLSX.utils.aoa_to_sheet([headers, ...data])
+      const worksheet = xlsx.utils.aoa_to_sheet([headers, ...data])
       headers.forEach((header, colIndex) => {
-        forceWorksheetCellString(worksheet, 0, colIndex, header)
+        forceWorksheetCellString(xlsx, worksheet, 0, colIndex, header)
       })
       data.forEach((row, rowIndex) => {
         const enunciado = row[4]
         if (typeof enunciado === 'string' && enunciado.length > 0) {
-          forceWorksheetCellString(worksheet, rowIndex + 1, 4, enunciado)
+          forceWorksheetCellString(xlsx, worksheet, rowIndex + 1, 4, enunciado)
         }
         const gabarito = row[5]
         if (typeof gabarito === 'string' && gabarito.length > 0) {
-          forceWorksheetCellString(worksheet, rowIndex + 1, 5, gabarito)
+          forceWorksheetCellString(xlsx, worksheet, rowIndex + 1, 5, gabarito)
         }
       })
 
-      const workbook = XLSX.utils.book_new()
-      XLSX.utils.book_append_sheet(workbook, worksheet, 'Aulas')
+      const workbook = xlsx.utils.book_new()
+      xlsx.utils.book_append_sheet(workbook, worksheet, 'Aulas')
       const correspondencePositions =
         allQuestionColumnsByTrail.get(trail.id) ?? []
       if (correspondencePositions.length > 0) {
         appendCorrespondenceSheet(
+          xlsx,
           workbook,
           trail.id,
           correspondencePositions,
@@ -2026,7 +1769,7 @@ export function DashboardPage() {
         )
       }
       const trailSlug = slugFileName(trail.name || trail.id)
-      XLSX.writeFile(workbook, `aulas-acertos-erros-${trailSlug}.xlsx`)
+      xlsx.writeFile(workbook, `aulas-acertos-erros-${trailSlug}.xlsx`)
     } catch (err) {
       setExportError(
         err instanceof Error ? err.message : 'Erro ao gerar planilha.',
@@ -2071,806 +1814,198 @@ export function DashboardPage() {
     return () => window.clearInterval(id)
   }, [isDashboardLoading, loadStepsDone, loadStepsTotal])
 
+  const institutionOptions = sortedInstitutions.map((inst) => ({
+    id: inst.id,
+    label: inst.name || inst.id,
+  }))
+
+  const questionPickerItems = availableQuestions.map((n) => ({
+    id: String(n),
+    label: `Aula ${n}`,
+  }))
+  const questionPickerSelectedIds = availableQuestions
+    .filter((n) => !deselectedQuestions.has(n))
+    .map(String)
+  const questionPickerLabel =
+    availableQuestions.length > 0
+      ? ` (${selectedQuestionCount}/${availableQuestions.length})`
+      : ''
+
+  const stagePickerItems = availableStages.map((s) => ({
+    id: s.key,
+    label: `${s.trailName} · Tópico ${s.stageNumber}${
+      s.title ? ` — ${s.title}` : ''
+    } (${s.stageType})`,
+  }))
+  const stagePickerSelectedIds = availableStages
+    .map((s) => s.key)
+    .filter((k) => !deselectedStages.has(k))
+  const stagePickerLabel =
+    availableStages.length > 0
+      ? ` (${selectedStageCount}/${availableStages.length})`
+      : ''
+
+  const columnPickerItems = ALL_STUDENT_COLUMNS.map((c) => ({
+    id: c.key,
+    label: c.label,
+  }))
+  const columnPickerSelectedIds = ALL_STUDENT_COLUMNS.map((c) => c.key).filter(
+    (k) => !hiddenColumns.has(k),
+  )
+
+  const studentExportTrails = relevantTrails.map((trail) => ({
+    id: trail.id,
+    label: trail.name || trail.id,
+  }))
+
+  const pillExportTrailOptions = pillExportTrails.map((trail) => ({
+    id: trail.id,
+    label: trail.name || trail.id,
+  }))
+
+  const toPillView = (p: PillRow): DashboardPillRowView => ({
+    ...p,
+    trailHref: trailPath(p.trailId),
+  })
+
+  const paginatedStudentRowsView = paginatedStudentRows.map((row) => ({
+    id: row.student.id,
+    name: row.student.name,
+    href: studentPath(row.student.id),
+    phone: row.student.phone_number || '',
+    released: row.released,
+    done: row.done,
+    completionPct: row.completionPct,
+    lessonsReleased: row.lessonsReleased,
+    lessonsDone: row.lessonsDone,
+    lessonsCompletionPct: row.lessonsCompletionPct,
+    correct: row.correct,
+    wrong: row.wrong,
+    accuracyPct: row.accuracyPct,
+  }))
+
+  const visibleColumnsView = visibleColumns.map((c) => ({
+    key: c.key,
+    label: c.label,
+    sortIndicator: studentSortIndicator(c.key),
+  }))
+
   return (
-    <>
-      <header className="admin__header">
-        <h1>Dashboard</h1>
-        {!isDashboardLoading ? (
-          <p className="admin__lede muted">
-            Visão geral de engajamento dos alunos e desempenho por aula
-            (exercício).
-          </p>
-        ) : null}
-        <div className="gerenciamento-toolbar">
-          <Link className="btn btn--ghost" to="/">
-            ← Início
-          </Link>
-          <label className="gerenciamento-select">
-            <span className="muted">Instituição</span>
-            <select
-              value={selectedId ?? ''}
-              onChange={(e) => {
-                const next = e.target.value.trim()
-                setSelectedId(next || null)
-              }}
-              disabled={loadingInst || sortedInstitutions.length === 0}
-            >
-              <option value="">
-                {loadingInst
-                  ? 'Carregando instituições…'
-                  : 'Selecione uma instituição'}
-              </option>
-              {sortedInstitutions.map((inst) => (
-                <option key={inst.id} value={inst.id}>
-                  {inst.name || inst.id}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-      </header>
-
-      {instError ? (
-        <p className="banner banner--error" role="alert">
-          {instError}
-        </p>
-      ) : null}
-      {dataError ? (
-        <p className="banner banner--error" role="alert">
-          {dataError}
-        </p>
-      ) : null}
-      {exportError ? (
-        <p className="banner banner--error" role="alert">
-          {exportError}
-        </p>
-      ) : null}
-
-      {!selectedId ? (
-        <section className="panel">
-          <p className="muted gerenciamento-placeholder">
-            Selecione uma instituição para ver o dashboard.
-          </p>
-        </section>
-      ) : isDashboardLoading ? (
-        <section
-          className="dashboard-load-progress dashboard-load-progress--gate panel"
-          aria-live="polite"
-          aria-busy="true"
-        >
-          <div className="dashboard-load-progress__head">
-            <span className="dashboard-load-progress__label">
-              {loadLabel || 'Carregando dashboard…'}
-            </span>
-            <span className="dashboard-load-progress__pct">{loadPercent}%</span>
-          </div>
-          <div
-            className="progress progress--wide"
-            role="progressbar"
-            aria-valuemin={0}
-            aria-valuemax={100}
-            aria-valuenow={loadPercent}
-            aria-label={loadLabel || 'Progresso do carregamento'}
-          >
-            <div className="progress__bar">
-              <div
-                className="progress__fill"
-                style={{ width: `${loadPercent}%` }}
-              />
-            </div>
-          </div>
-        </section>
-      ) : logsError ? (
-        <section className="panel">
-          <p className="banner banner--error" role="alert">
-            Não foi possível carregar as métricas dos alunos: {logsError}
-          </p>
-          <p className="muted">
-            Os totais de alunos e trilhas foram carregados, mas os percentuais
-            de conclusão e acerto ficariam zerados. Tente novamente.
-          </p>
-          <button
-            type="button"
-            className="btn"
-            onClick={() => setLogsRetryKey((k) => k + 1)}
-          >
-            Tentar novamente
-          </button>
-        </section>
-      ) : (
-        <>
-          <section className="dashboard-cards">
-            <div className="dashboard-card">
-              <span className="dashboard-card__label">Alunos ativos</span>
-              <span className="dashboard-card__value">
-                {summary.activeStudents}
-              </span>
-            </div>
-            <div className="dashboard-card">
-              <span className="dashboard-card__label">Trilhas ativas</span>
-              <span className="dashboard-card__value">
-                {summary.activeTrails}
-              </span>
-            </div>
-            <div className="dashboard-card">
-              <span className="dashboard-card__label">% médio de conclusão</span>
-              <span className="dashboard-card__value">
-                {formatPct(summary.avgCompletion)}
-              </span>
-            </div>
-            <div className="dashboard-card">
-              <span className="dashboard-card__label">% médio de acerto</span>
-              <span className="dashboard-card__value">
-                {formatPct(summary.avgAccuracy)}
-              </span>
-            </div>
-            {missingGabaritoCount > 0 ? (
-              <Link to="/gabarito" className="dashboard-card dashboard-card--warn">
-                <span className="dashboard-card__label">
-                  Aulas sem gabarito
-                </span>
-                <span className="dashboard-card__value">
-                  {missingGabaritoCount}
-                </span>
-                <span className="dashboard-card__hint">
-                  Preencher gabarito →
-                </span>
-              </Link>
-            ) : null}
-          </section>
-
-          <section className="panel">
-            <div className="panel__head">
-              <h2>Alunos</h2>
-              <p className="admin__actions gerenciamento-detail-actions">
-                <span className="muted">
-                  {filteredStudentRows.length} de {studentRows.length} alunos
-                </span>
-                <span className="excel-picker">
-                  <button
-                    type="button"
-                    className="btn btn--small btn--ghost"
-                    onClick={() => {
-                      setShowQuestionPicker((v) => !v)
-                      setShowStagePicker(false)
-                      setShowColumnPicker(false)
-                    }}
-                  >
-                    Aulas
-                    {availableQuestions.length > 0
-                      ? ` (${selectedQuestionCount}/${availableQuestions.length})`
-                      : ''}
-                  </button>
-                  {showQuestionPicker ? (
-                    <ExcelFilterPopover
-                      hint="Aulas incluídas no cálculo (por número no tópico da aula: A1, A2…)."
-                      items={availableQuestions.map((n) => ({
-                        id: String(n),
-                        label: `Aula ${n}`,
-                      }))}
-                      selectedIds={
-                        new Set(
-                          availableQuestions
-                            .filter((n) => !deselectedQuestions.has(n))
-                            .map(String),
-                        )
-                      }
-                      emptyMessage="Nenhuma aula nas trilhas atuais."
-                      onApply={(next) => {
-                        setDeselectedQuestions(
-                          new Set(
-                            availableQuestions.filter(
-                              (n) => !next.has(String(n)),
-                            ),
-                          ),
-                        )
-                        setShowQuestionPicker(false)
-                      }}
-                      onClose={() => setShowQuestionPicker(false)}
-                    />
-                  ) : null}
-                </span>
-                <span className="excel-picker">
-                  <button
-                    type="button"
-                    className="btn btn--small btn--ghost"
-                    onClick={() => {
-                      setShowStagePicker((v) => !v)
-                      setShowQuestionPicker(false)
-                      setShowColumnPicker(false)
-                    }}
-                  >
-                    Tópicos
-                    {availableStages.length > 0
-                      ? ` (${selectedStageCount}/${availableStages.length})`
-                      : ''}
-                  </button>
-                  {showStagePicker ? (
-                    <ExcelFilterPopover
-                      hint="Tópicos da aula incluídos no cálculo de aulas liberadas/feitas."
-                      items={availableStages.map((s) => ({
-                        id: s.key,
-                        label: `${s.trailName} · Tópico ${s.stageNumber}${
-                          s.title ? ` — ${s.title}` : ''
-                        } (${s.stageType})`,
-                      }))}
-                      selectedIds={
-                        new Set(
-                          availableStages
-                            .map((s) => s.key)
-                            .filter((k) => !deselectedStages.has(k)),
-                        )
-                      }
-                      emptyMessage="Nenhum tópico da aula nas trilhas atuais."
-                      onApply={(next) => {
-                        setDeselectedStages(
-                          new Set(
-                            availableStages
-                              .map((s) => s.key)
-                              .filter((k) => !next.has(k)),
-                          ),
-                        )
-                        setShowStagePicker(false)
-                      }}
-                      onClose={() => setShowStagePicker(false)}
-                    />
-                  ) : null}
-                </span>
-                <span className="excel-picker">
-                  <button
-                    type="button"
-                    className="btn btn--small btn--ghost"
-                    onClick={() => {
-                      setShowColumnPicker((v) => !v)
-                      setShowStagePicker(false)
-                      setShowQuestionPicker(false)
-                    }}
-                  >
-                    Colunas
-                  </button>
-                  {showColumnPicker ? (
-                    <ExcelFilterPopover
-                      hint="Colunas visíveis na tabela de alunos."
-                      items={ALL_STUDENT_COLUMNS.map((c) => ({
-                        id: c.key,
-                        label: c.label,
-                      }))}
-                      selectedIds={
-                        new Set(
-                          ALL_STUDENT_COLUMNS.map((c) => c.key).filter(
-                            (k) => !hiddenColumns.has(k),
-                          ),
-                        )
-                      }
-                      emptyMessage="Nenhuma coluna disponível."
-                      onApply={(next) => {
-                        setHiddenColumns(
-                          new Set(
-                            ALL_STUDENT_COLUMNS.map((c) => c.key).filter(
-                              (k) => !next.has(k),
-                            ),
-                          ),
-                        )
-                        setShowColumnPicker(false)
-                      }}
-                      onClose={() => setShowColumnPicker(false)}
-                    />
-                  ) : null}
-                </span>
-                {relevantTrails.map((trail) => (
-                  <button
-                    key={trail.id}
-                    type="button"
-                    className="btn btn--small dashboard-export-button"
-                    disabled={
-                      filteredStudentRows.length === 0 ||
-                      exportingTrailId !== null
-                    }
-                    onClick={() => void exportTrailHistoryXlsx(trail)}
-                    title="Exporta os alunos, aulas e tópicos correspondentes aos filtros atuais"
-                  >
-                    {exportingTrailId === trail.id ? (
-                      <>
-                        <span
-                          className="excel-picker__spinner"
-                          aria-hidden="true"
-                        />
-                        Gerando…
-                      </>
-                    ) : (
-                      <>
-                        <span aria-hidden="true">↓</span>
-                        Exportar XLSX
-                      </>
-                    )}
-                  </button>
-                ))}
-              </p>
-            </div>
-
-            {hasActiveStudentExportFilters ? (
-              <p className="dashboard-export-notice" role="status">
-                <span aria-hidden="true">ⓘ</span>
-                Filtros ativos: o arquivo incluirá os{' '}
-                <strong>{filteredStudentRows.length} alunos</strong> exibidos e
-                somente as aulas e tópicos selecionados.
-              </p>
-            ) : null}
-
-            <div className="dashboard-filters">
-              <label className="field dashboard-filter-name">
-                <span>Buscar por nome ou telefone</span>
-                <input
-                  type="text"
-                  value={nameFilter}
-                  onChange={(e) => setNameFilter(e.target.value)}
-                  placeholder="Nome ou telefone…"
-                />
-              </label>
-              <label className="gerenciamento-select">
-                <span className="muted">Matéria</span>
-                <select
-                  value={subjectFilter}
-                  onChange={(e) => setSubjectFilter(e.target.value)}
-                >
-                  <option value="">Todas as matérias</option>
-                  {subjects.map((s) => (
-                    <option key={s} value={s}>
-                      {s}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <div className="dashboard-pct-filter">
-                <span className="muted">
-                  % conclusão: {Math.min(pctMin, pctMax)}–{Math.max(pctMin, pctMax)}%
-                </span>
-                <div className="dashboard-pct-filter__sliders">
-                  <input
-                    type="range"
-                    min={0}
-                    max={100}
-                    step={5}
-                    value={pctMin}
-                    onChange={(e) => setPctMin(Number(e.target.value))}
-                    aria-label="Percentual mínimo de conclusão"
-                  />
-                  <input
-                    type="range"
-                    min={0}
-                    max={100}
-                    step={5}
-                    value={pctMax}
-                    onChange={(e) => setPctMax(Number(e.target.value))}
-                    aria-label="Percentual máximo de conclusão"
-                  />
-                </div>
-              </div>
-            </div>
-
-            <div className="table-wrap">
-              <table className="table">
-                <thead>
-                  <tr>
-                    <th
-                      className="dashboard-sortable"
-                      onClick={() => toggleStudentSort('name')}
-                    >
-                      Nome{studentSortIndicator('name')}
-                    </th>
-                    {visibleColumns.map((c) => (
-                      <th
-                        key={c.key}
-                        className="dashboard-sortable"
-                        onClick={() => toggleStudentSort(c.key)}
-                      >
-                        {c.label}
-                        {studentSortIndicator(c.key)}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredStudentRows.length === 0 ? (
-                    <tr>
-                      <td
-                        colSpan={visibleColumns.length + 1}
-                        className="muted table__empty"
-                      >
-                        {studentRows.length === 0
-                          ? 'Nenhum aluno nesta instituição.'
-                          : 'Nenhum aluno corresponde aos filtros.'}
-                      </td>
-                    </tr>
-                  ) : (
-                    paginatedStudentRows.map((row) => (
-                      <tr key={row.student.id}>
-                        <td>
-                          <Link
-                            className="table__name-link"
-                            to={studentPath(row.student.id)}
-                          >
-                            {row.student.name || '—'}
-                          </Link>
-                        </td>
-                        {visibleColumns.map((c) => {
-                          switch (c.key) {
-                            case 'phone':
-                              return (
-                                <td key={c.key}>
-                                  {row.student.phone_number || '—'}
-                                </td>
-                              )
-                            case 'released':
-                              return <td key={c.key}>{row.released}</td>
-                            case 'done':
-                              return <td key={c.key}>{row.done}</td>
-                            case 'completionPct':
-                              return (
-                                <td key={c.key}>
-                                  <div className="progress">
-                                    <div className="progress__bar">
-                                      <div
-                                        className="progress__fill"
-                                        style={{
-                                          width: `${row.completionPct ?? 0}%`,
-                                        }}
-                                      />
-                                    </div>
-                                    <span className="progress__label">
-                                      {formatPct(row.completionPct)}
-                                    </span>
-                                  </div>
-                                </td>
-                              )
-                            case 'lessonsReleased':
-                              return (
-                                <td key={c.key}>{row.lessonsReleased}</td>
-                              )
-                            case 'lessonsDone':
-                              return <td key={c.key}>{row.lessonsDone}</td>
-                            case 'lessonsCompletionPct':
-                              return (
-                                <td key={c.key}>
-                                  <div className="progress">
-                                    <div className="progress__bar">
-                                      <div
-                                        className="progress__fill"
-                                        style={{
-                                          width: `${row.lessonsCompletionPct ?? 0}%`,
-                                        }}
-                                      />
-                                    </div>
-                                    <span className="progress__label">
-                                      {formatPct(row.lessonsCompletionPct)}
-                                    </span>
-                                  </div>
-                                </td>
-                              )
-                            case 'correct':
-                              return <td key={c.key}>{row.correct}</td>
-                            case 'wrong':
-                              return <td key={c.key}>{row.wrong}</td>
-                            case 'accuracyPct':
-                              return (
-                                <td key={c.key}>
-                                  {formatPct(row.accuracyPct)}
-                                </td>
-                              )
-                          }
-                        })}
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-
-            {sortedFilteredStudentRows.length > STUDENTS_PAGE_SIZE ? (
-              <div className="dashboard-students-pagination">
-                <span className="muted">
-                  Mostrando {studentPageRange.start}–{studentPageRange.end} de{' '}
-                  {sortedFilteredStudentRows.length} alunos
-                </span>
-                <div className="dashboard-students-pagination__actions">
-                  <button
-                    type="button"
-                    className="btn btn--small btn--ghost"
-                    disabled={studentPage <= 1}
-                    onClick={() => setStudentPage((p) => Math.max(1, p - 1))}
-                  >
-                    Anterior
-                  </button>
-                  <span className="dashboard-students-pagination__page">
-                    Página {studentPage} de {studentPageCount}
-                  </span>
-                  <button
-                    type="button"
-                    className="btn btn--small btn--ghost"
-                    disabled={studentPage >= studentPageCount}
-                    onClick={() =>
-                      setStudentPage((p) => Math.min(studentPageCount, p + 1))
-                    }
-                  >
-                    Próxima
-                  </button>
-                </div>
-              </div>
-            ) : null}
-          </section>
-
-          <section className="panel">
-            <div className="panel__head">
-              <h2>Aulas — acertos e erros</h2>
-              <p className="admin__actions gerenciamento-detail-actions">
-                <span className="muted">
-                  {sortedPillRows.length} de {pillRows.length}{' '}
-                  {pillRows.length === 1 ? 'aula' : 'aulas'}
-                </span>
-                {pillExportTrails.map((trail) => (
-                  <button
-                    key={trail.id}
-                    type="button"
-                    className="btn btn--small btn--ghost"
-                    disabled={
-                      pillRows.length === 0 || exportingPillTrailId !== null
-                    }
-                    onClick={() => exportPillTrailXlsx(trail)}
-                    title="Desempenho por aula; respeita filtros de matéria e mínimo de respostas"
-                  >
-                    {exportingPillTrailId === trail.id
-                      ? 'Gerando XLSX…'
-                      : `Baixar XLSX — ${trail.name || trail.id}`}
-                  </button>
-                ))}
-              </p>
-            </div>
-
-            {pillRows.length === 0 ? (
-              <p className="banner">
-                Sem respostas corrigíveis ainda. Os acertos e erros aparecem
-                aqui quando os alunos responderem aulas de exercício com
-                gabarito preenchido.{' '}
-                <Link to="/gabarito">Preencher gabarito →</Link>
-              </p>
-            ) : (
-              <>
-                <div className="dashboard-filters">
-                  <label className="gerenciamento-select">
-                    <span className="muted">Matéria</span>
-                    <select
-                      value={pillSubjectFilter}
-                      onChange={(e) => setPillSubjectFilter(e.target.value)}
-                    >
-                      <option value="">Todas as matérias</option>
-                      {subjects.map((s) => (
-                        <option key={s} value={s}>
-                          {s}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="field dashboard-filter-min">
-                    <span>Mínimo de respostas</span>
-                    <input
-                      type="number"
-                      min={1}
-                      step={1}
-                      value={pillMinResponses}
-                      onChange={(e) => {
-                        const n = Number.parseInt(e.target.value, 10)
-                        setPillMinResponses(
-                          Number.isFinite(n) && n >= 1 ? n : 1,
-                        )
-                      }}
-                    />
-                  </label>
-                </div>
-
-                {pillRows.length > 0 ? (
-                  <div className="dashboard-top-pills">
-                    <div className="dashboard-top-pills__group">
-                      <h3>Top 5 piores (menor % de acerto)</h3>
-                      <ol>
-                        {worstPills.map((p) => (
-                          <li key={p.key}>
-                            <span className="dashboard-top-pills__pct dashboard-top-pills__pct--bad">
-                              {p.accuracyPct}%
-                            </span>{' '}
-                            <LessonTopicCode
-                              topicNumber={p.stageNumber}
-                              lessonNumber={p.questionNumber}
-                              content={p.content}
-                              title={p.title}
-                            />{' '}
-                            {p.title} <span className="muted">({p.trailName})</span>
-                          </li>
-                        ))}
-                      </ol>
-                    </div>
-                    <div className="dashboard-top-pills__group">
-                      <h3>Top 5 melhores (maior % de acerto)</h3>
-                      <ol>
-                        {bestPills.map((p) => (
-                          <li key={p.key}>
-                            <span className="dashboard-top-pills__pct dashboard-top-pills__pct--good">
-                              {p.accuracyPct}%
-                            </span>{' '}
-                            <LessonTopicCode
-                              topicNumber={p.stageNumber}
-                              lessonNumber={p.questionNumber}
-                              content={p.content}
-                              title={p.title}
-                            />{' '}
-                            {p.title} <span className="muted">({p.trailName})</span>
-                          </li>
-                        ))}
-                      </ol>
-                    </div>
-                  </div>
-                ) : null}
-
-                <div className="table-wrap">
-                  <table className="table">
-                    <thead>
-                      <tr>
-                        <th
-                          className="dashboard-sortable"
-                          onClick={() => togglePillSort('trail')}
-                        >
-                          Trilha{pillSortIndicator('trail')}
-                        </th>
-                        <th>Matéria</th>
-                        <th
-                          className="dashboard-sortable"
-                          onClick={() => togglePillSort('position')}
-                        >
-                          Tópico / Aula{pillSortIndicator('position')}
-                        </th>
-                        <th>Título</th>
-                        <th>Enunciado</th>
-                        <th>Gabarito</th>
-                        <th
-                          className="dashboard-sortable"
-                          onClick={() => togglePillSort('total')}
-                        >
-                          Respostas{pillSortIndicator('total')}
-                        </th>
-                        <th
-                          className="dashboard-sortable"
-                          onClick={() => togglePillSort('correct')}
-                        >
-                          Acertos{pillSortIndicator('correct')}
-                        </th>
-                        <th
-                          className="dashboard-sortable"
-                          onClick={() => togglePillSort('wrong')}
-                        >
-                          Erros{pillSortIndicator('wrong')}
-                        </th>
-                        <th
-                          className="dashboard-sortable"
-                          onClick={() => togglePillSort('accuracyPct')}
-                        >
-                          % acerto{pillSortIndicator('accuracyPct')}
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {sortedPillRows.length === 0 ? (
-                        <tr>
-                          <td colSpan={10} className="muted table__empty">
-                            Nenhuma aula com pelo menos {pillMinResponses}{' '}
-                            {pillMinResponses === 1 ? 'resposta' : 'respostas'}.
-                          </td>
-                        </tr>
-                      ) : (
-                        sortedPillRows.map((p) => (
-                          <tr key={p.key}>
-                            <td>
-                              <Link
-                                className="table__name-link"
-                                to={trailPath(p.trailId)}
-                              >
-                                {p.trailName}
-                              </Link>
-                            </td>
-                            <td>{p.subject}</td>
-                            <td>
-                              <LessonTopicCode
-                                topicNumber={p.stageNumber}
-                                lessonNumber={p.questionNumber}
-                                content={p.content}
-                                title={p.title}
-                              />
-                            </td>
-                            <td>{p.title}</td>
-                            <td>
-                              <EnunciadoPreviewCell
-                                content={p.content}
-                                title={p.title}
-                                onExpand={() =>
-                                  setExpandedEnunciado({
-                                    topicLabel: formatLessonTopicCode(
-                                      p.stageNumber,
-                                      p.questionNumber,
-                                    ),
-                                    title: p.title,
-                                    trailName: p.trailName,
-                                    text: p.content.trim() || p.title.trim(),
-                                  })
-                                }
-                              />
-                            </td>
-                            <td>{p.gabarito}</td>
-                            <td>{p.total}</td>
-                            <td>{p.correct}</td>
-                            <td>{p.wrong}</td>
-                            <td>
-                              <div className="progress">
-                                <div className="progress__bar">
-                                  <div
-                                    className="progress__fill"
-                                    style={{ width: `${p.accuracyPct}%` }}
-                                  />
-                                </div>
-                                <span className="progress__label">
-                                  {p.accuracyPct}%
-                                </span>
-                              </div>
-                            </td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </>
-            )}
-          </section>
-
-          {expandedEnunciado ? (
-            <div
-              className="message-modal"
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby="dashboard-enunciado-title"
-              onClick={() => setExpandedEnunciado(null)}
-            >
-              <div
-                className="message-modal__panel"
-                onClick={(event) => event.stopPropagation()}
-              >
-                <div className="message-modal__head">
-                  <h3 id="dashboard-enunciado-title">Enunciado</h3>
-                  <button
-                    type="button"
-                    className="btn btn--ghost btn--small"
-                    onClick={() => setExpandedEnunciado(null)}
-                  >
-                    Fechar
-                  </button>
-                </div>
-                <dl className="message-modal__meta">
-                  <div>
-                    <dt>Trilha</dt>
-                    <dd>{expandedEnunciado.trailName}</dd>
-                  </div>
-                  <div>
-                    <dt>Tópico / Aula</dt>
-                    <dd>{expandedEnunciado.topicLabel}</dd>
-                  </div>
-                  <div>
-                    <dt>Título</dt>
-                    <dd>{expandedEnunciado.title}</dd>
-                  </div>
-                </dl>
-                <div className="message-modal__body">{expandedEnunciado.text}</div>
-              </div>
-            </div>
-          ) : null}
-        </>
-      )}
-    </>
+    <DashboardPageView
+      loadingInst={loadingInst}
+      institutionOptions={institutionOptions}
+      selectedId={selectedId}
+      onSelectInstitution={setSelectedId}
+      instError={instError}
+      dataError={dataError}
+      exportError={exportError}
+      isDashboardLoading={isDashboardLoading}
+      loadLabel={loadLabel}
+      loadPercent={loadPercent}
+      logsError={logsError}
+      onRetryLogs={() => setLogsRetryKey((k) => k + 1)}
+      summary={summary}
+      missingGabaritoCount={missingGabaritoCount}
+      filteredStudentCount={filteredStudentRows.length}
+      totalStudentCount={studentRows.length}
+      questionPickerLabel={questionPickerLabel}
+      showQuestionPicker={showQuestionPicker}
+      onToggleQuestionPicker={() => {
+        setShowQuestionPicker((v) => !v)
+        setShowStagePicker(false)
+        setShowColumnPicker(false)
+      }}
+      questionPickerItems={questionPickerItems}
+      questionPickerSelectedIds={questionPickerSelectedIds}
+      onApplyQuestionPicker={(next) => {
+        setDeselectedQuestions(
+          new Set(availableQuestions.filter((n) => !next.has(String(n)))),
+        )
+        setShowQuestionPicker(false)
+      }}
+      onCloseQuestionPicker={() => setShowQuestionPicker(false)}
+      stagePickerLabel={stagePickerLabel}
+      showStagePicker={showStagePicker}
+      onToggleStagePicker={() => {
+        setShowStagePicker((v) => !v)
+        setShowQuestionPicker(false)
+        setShowColumnPicker(false)
+      }}
+      stagePickerItems={stagePickerItems}
+      stagePickerSelectedIds={stagePickerSelectedIds}
+      onApplyStagePicker={(next) => {
+        setDeselectedStages(
+          new Set(
+            availableStages.map((s) => s.key).filter((k) => !next.has(k)),
+          ),
+        )
+        setShowStagePicker(false)
+      }}
+      onCloseStagePicker={() => setShowStagePicker(false)}
+      showColumnPicker={showColumnPicker}
+      onToggleColumnPicker={() => {
+        setShowColumnPicker((v) => !v)
+        setShowStagePicker(false)
+        setShowQuestionPicker(false)
+      }}
+      columnPickerItems={columnPickerItems}
+      columnPickerSelectedIds={columnPickerSelectedIds}
+      onApplyColumnPicker={(next) => {
+        setHiddenColumns(
+          new Set(
+            ALL_STUDENT_COLUMNS.map((c) => c.key).filter((k) => !next.has(k)),
+          ),
+        )
+        setShowColumnPicker(false)
+      }}
+      onCloseColumnPicker={() => setShowColumnPicker(false)}
+      studentExportTrails={studentExportTrails}
+      exportingTrailId={exportingTrailId}
+      onExportTrailHistory={(trailId) => {
+        void exportTrailHistoryXlsx(trailId)
+      }}
+      hasActiveStudentExportFilters={hasActiveStudentExportFilters}
+      nameFilter={nameFilter}
+      onNameFilterChange={setNameFilter}
+      subjectFilter={subjectFilter}
+      onSubjectFilterChange={setSubjectFilter}
+      subjects={subjects}
+      pctMin={pctMin}
+      pctMax={pctMax}
+      onPctMinChange={setPctMin}
+      onPctMaxChange={setPctMax}
+      nameSortIndicator={studentSortIndicator('name')}
+      onToggleStudentSort={toggleStudentSort}
+      visibleColumns={visibleColumnsView}
+      studentRowsEmpty={studentRows.length === 0}
+      paginatedStudentRows={paginatedStudentRowsView}
+      showStudentPagination={
+        sortedFilteredStudentRows.length > STUDENTS_PAGE_SIZE
+      }
+      studentPageRange={studentPageRange}
+      sortedFilteredStudentCount={sortedFilteredStudentRows.length}
+      studentPage={studentPage}
+      studentPageCount={studentPageCount}
+      onStudentPagePrev={() => setStudentPage((p) => Math.max(1, p - 1))}
+      onStudentPageNext={() =>
+        setStudentPage((p) => Math.min(studentPageCount, p + 1))
+      }
+      sortedPillCount={sortedPillRows.length}
+      totalPillCount={pillRows.length}
+      pillExportTrails={pillExportTrailOptions}
+      exportingPillTrailId={exportingPillTrailId}
+      onExportPillTrail={(trailId) => {
+        void exportPillTrailXlsx(trailId)
+      }}
+      pillSubjectFilter={pillSubjectFilter}
+      onPillSubjectFilterChange={setPillSubjectFilter}
+      pillMinResponses={pillMinResponses}
+      onPillMinResponsesChange={setPillMinResponses}
+      worstPills={worstPills.map(toPillView)}
+      bestPills={bestPills.map(toPillView)}
+      onTogglePillSort={togglePillSort}
+      pillSortIndicator={pillSortIndicator}
+      sortedPillRows={sortedPillRows.map(toPillView)}
+    />
   )
 }

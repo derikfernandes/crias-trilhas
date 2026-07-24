@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
 import {
   collection,
   doc,
@@ -9,6 +8,13 @@ import {
   updateDoc,
   where,
 } from 'firebase/firestore'
+import { GabaritoPageView } from '../design/views/GabaritoPageView'
+import type {
+  GabaritoQuestionRow,
+  GabaritoSaveBanner,
+  GabaritoSortBy,
+  GabaritoSortDir,
+} from '../design/types/gabaritoPageView'
 import { db } from '../lib/firebase'
 import {
   snapshotToTrail,
@@ -27,9 +33,6 @@ import type { TrailStage } from '../types/trailStage'
 import type { TrailStageQuestion } from '../types/trailStageQuestion'
 
 const LAST_TRAIL_ID_STORAGE_KEY = 'trilha_admin_gabarito_trail_id'
-
-type SortBy = 'stage' | 'question'
-type SortDir = 'asc' | 'desc'
 
 type SaveState =
   | { kind: 'idle' }
@@ -55,8 +58,8 @@ export function GabaritoPage() {
   const [onlyMissing, setOnlyMissing] = useState(false)
   const [filterStage, setFilterStage] = useState<number | ''>('')
   const [filterQuestion, setFilterQuestion] = useState<number | ''>('')
-  const [sortBy, setSortBy] = useState<SortBy>('stage')
-  const [sortDir, setSortDir] = useState<SortDir>('asc')
+  const [sortBy, setSortBy] = useState<GabaritoSortBy>('stage')
+  const [sortDir, setSortDir] = useState<GabaritoSortDir>('asc')
   /** Edições pendentes: docId -> valor digitado de correct_option. */
   const [drafts, setDrafts] = useState<Record<string, string>>({})
   const [saveState, setSaveState] = useState<SaveState>({ kind: 'idle' })
@@ -317,7 +320,7 @@ export function GabaritoPage() {
     [trails, selectedTrailId],
   )
 
-  function toggleSort(column: SortBy) {
+  function toggleSort(column: GabaritoSortBy) {
     if (sortBy === column) {
       setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
     } else {
@@ -326,310 +329,116 @@ export function GabaritoPage() {
     }
   }
 
-  function sortAria(column: SortBy): 'ascending' | 'descending' | 'none' {
-    if (sortBy !== column) return 'none'
-    return sortDir === 'asc' ? 'ascending' : 'descending'
-  }
+  const saveBanner: GabaritoSaveBanner =
+    saveState.kind === 'saved'
+      ? {
+          kind: 'saved',
+          message:
+            saveState.count === 1
+              ? 'Gabarito de 1 questão salvo.'
+              : `Gabarito de ${saveState.count} questões salvo.`,
+        }
+      : saveState.kind === 'error'
+        ? { kind: 'error', message: saveState.message }
+        : saveState.kind === 'saving'
+          ? { kind: 'saving' }
+          : { kind: 'idle' }
+
+  const filtersSummary =
+    (exerciseQuestions.length === 0
+      ? 'Nenhuma questão de exercício nesta trilha.'
+      : missingCount === 0
+        ? `Todas as ${exerciseQuestions.length} questões têm gabarito.`
+        : `${missingCount} de ${exerciseQuestions.length} sem gabarito.`) +
+    (visibleQuestions.length !== exerciseQuestions.length &&
+    exerciseQuestions.length > 0
+      ? ` Exibindo ${visibleQuestions.length}.`
+      : '')
+
+  const emptyMessage =
+    exerciseQuestions.length === 0
+      ? 'Esta trilha não tem questões em stages do tipo exercise.'
+      : onlyMissing
+        ? 'Nenhuma questão sem gabarito com os filtros atuais.'
+        : 'Nenhuma questão corresponde aos filtros.'
+
+  const rows: GabaritoQuestionRow[] = visibleQuestions.map((q) => {
+    const saved = (q.correct_option ?? '').trim()
+    const value = inputValue(q)
+    const dirty = isDirty(q)
+    const err = dirty ? validateDraft(q, value) : null
+    const filled = dirty ? value.trim() !== '' : saved !== ''
+    return {
+      id: q.id,
+      stageNumber: q.stage_number,
+      questionNumber: q.question_number,
+      title: q.title || '—',
+      content: q.content || '—',
+      inputValue: value,
+      placeholder:
+        q.options && q.options.length > 0
+          ? `Ex.: ${q.options[0].key}`
+          : 'Resposta correta',
+      ariaLabel: `Resposta correta de stage ${q.stage_number} questão ${q.question_number}`,
+      inputError: err,
+      statusBadge: filled ? (dirty ? 'editado' : 'preenchido') : 'faltando',
+    }
+  })
 
   return (
-    <>
-      <header className="admin__header">
-        <h1>Gabarito</h1>
-        <p className="admin__lede muted">
-          Preencha a resposta correta (<code>correct_option</code>) das questões
-          de exercício em massa. Sem gabarito, as respostas dos alunos não geram
-          acertos/erros.
-        </p>
-        <div className="gerenciamento-toolbar">
-          <Link className="btn btn--ghost" to="/">
-            ← Início
-          </Link>
-          <label className="gerenciamento-select">
-            <span className="muted">Trilha</span>
-            <select
-              value={selectedTrailId ?? ''}
-              onChange={(e) => {
-                const next = e.target.value.trim()
-                setSelectedTrailId(next || null)
-              }}
-              disabled={loadingTrails || visibleTrails.length === 0}
-            >
-              <option value="">
-                {loadingTrails ? 'Carregando trilhas…' : 'Selecione uma trilha'}
-              </option>
-              {visibleTrails.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name || t.id}
-                  {t.active ? '' : ' (inativa)'}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="field field--inline gabarito-toolbar-check">
-            <input
-              type="checkbox"
-              checked={onlyActiveTrails}
-              onChange={(e) => setOnlyActiveTrails(e.target.checked)}
-            />
-            <span>só trilhas ativas</span>
-          </label>
-        </div>
-      </header>
-
-      {trailsError ? (
-        <p className="banner banner--error" role="alert">
-          {trailsError}
-        </p>
-      ) : null}
-
-      {!selectedTrailId ? (
-        <section className="panel">
-          <p className="muted gerenciamento-placeholder">
-            Selecione uma trilha para listar as questões de exercício e
-            preencher o gabarito.
-          </p>
-        </section>
-      ) : (
-        <section className="panel">
-          <div className="panel__head">
-            <h2>
-              {selectedTrail?.name?.trim() || 'Trilha'}{' '}
-              <span className="muted gerenciamento-id">({selectedTrailId})</span>
-            </h2>
-            <p className="admin__actions gerenciamento-detail-actions">
-              {loadingData ? <span className="muted">Carregando…</span> : null}
-              <button
-                type="button"
-                className="btn btn--small btn--primary"
-                onClick={() => void handleSaveAll()}
-                disabled={
-                  saveState.kind === 'saving' || dirtyQuestions.length === 0
-                }
-              >
-                {saveState.kind === 'saving'
-                  ? 'Salvando…'
-                  : dirtyQuestions.length > 0
-                    ? `Salvar alterações (${dirtyQuestions.length})`
-                    : 'Salvar alterações'}
-              </button>
-            </p>
-          </div>
-
-          {dataError ? (
-            <p className="banner banner--error" role="alert">
-              {dataError}
-            </p>
-          ) : null}
-          {saveState.kind === 'error' ? (
-            <p className="banner banner--error" role="alert">
-              {saveState.message}
-            </p>
-          ) : null}
-          {saveState.kind === 'saved' ? (
-            <p className="banner banner--success" role="status">
-              {saveState.count === 1
-                ? 'Gabarito de 1 questão salvo.'
-                : `Gabarito de ${saveState.count} questões salvo.`}
-            </p>
-          ) : null}
-
-          <div className="gabarito-filters">
-            <label className="field field--inline gabarito-filters__check">
-              <input
-                type="checkbox"
-                checked={onlyMissing}
-                onChange={(e) => setOnlyMissing(e.target.checked)}
-              />
-              <span>só sem gabarito</span>
-            </label>
-            <label className="gabarito-filter-select">
-              <span className="muted">Stage</span>
-              <select
-                value={filterStage === '' ? '' : String(filterStage)}
-                onChange={(e) => {
-                  const v = e.target.value.trim()
-                  setFilterStage(v ? Number(v) : '')
-                }}
-                disabled={loadingData || availableStages.length === 0}
-              >
-                <option value="">Todos</option>
-                {availableStages.map((n) => (
-                  <option key={n} value={n}>
-                    Stage {n}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="gabarito-filter-select">
-              <span className="muted">Questão</span>
-              <select
-                value={filterQuestion === '' ? '' : String(filterQuestion)}
-                onChange={(e) => {
-                  const v = e.target.value.trim()
-                  setFilterQuestion(v ? Number(v) : '')
-                }}
-                disabled={loadingData || availableQuestions.length === 0}
-              >
-                <option value="">Todas</option>
-                {availableQuestions.map((n) => (
-                  <option key={n} value={n}>
-                    Questão {n}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <p className="gabarito-filters__summary muted">
-              {exerciseQuestions.length === 0
-                ? 'Nenhuma questão de exercício nesta trilha.'
-                : missingCount === 0
-                  ? `Todas as ${exerciseQuestions.length} questões têm gabarito.`
-                  : `${missingCount} de ${exerciseQuestions.length} sem gabarito.`}
-              {visibleQuestions.length !== exerciseQuestions.length &&
-              exerciseQuestions.length > 0
-                ? ` Exibindo ${visibleQuestions.length}.`
-                : null}
-            </p>
-          </div>
-
-          <div className="table-wrap gabarito-table-wrap">
-            <table className="table gabarito-table">
-              <thead>
-                <tr>
-                  <th
-                    className="gabarito-col-num gabarito-sort-th"
-                    aria-sort={sortAria('stage')}
-                  >
-                    <button
-                      type="button"
-                      className={
-                        sortBy === 'stage'
-                          ? 'gabarito-sort-btn gabarito-sort-btn--active'
-                          : 'gabarito-sort-btn'
-                      }
-                      onClick={() => toggleSort('stage')}
-                      disabled={loadingData}
-                    >
-                      Stage
-                      <span className="gabarito-sort-indicator" aria-hidden>
-                        {sortBy === 'stage'
-                          ? sortDir === 'asc'
-                            ? '↑'
-                            : '↓'
-                          : '↕'}
-                      </span>
-                    </button>
-                  </th>
-                  <th
-                    className="gabarito-col-num gabarito-sort-th"
-                    aria-sort={sortAria('question')}
-                  >
-                    <button
-                      type="button"
-                      className={
-                        sortBy === 'question'
-                          ? 'gabarito-sort-btn gabarito-sort-btn--active'
-                          : 'gabarito-sort-btn'
-                      }
-                      onClick={() => toggleSort('question')}
-                      disabled={loadingData}
-                    >
-                      Questão
-                      <span className="gabarito-sort-indicator" aria-hidden>
-                        {sortBy === 'question'
-                          ? sortDir === 'asc'
-                            ? '↑'
-                            : '↓'
-                          : '↕'}
-                      </span>
-                    </button>
-                  </th>
-                  <th>Título</th>
-                  <th>Conteúdo</th>
-                  <th>Resposta correta</th>
-                  <th className="gabarito-col-status">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {loadingData ? (
-                  <tr>
-                    <td colSpan={6} className="muted table__empty">
-                      Carregando questões…
-                    </td>
-                  </tr>
-                ) : visibleQuestions.length === 0 ? (
-                  <tr>
-                    <td colSpan={6} className="muted table__empty">
-                      {exerciseQuestions.length === 0
-                        ? 'Esta trilha não tem questões em stages do tipo exercise.'
-                        : onlyMissing
-                          ? 'Nenhuma questão sem gabarito com os filtros atuais.'
-                          : 'Nenhuma questão corresponde aos filtros.'}
-                    </td>
-                  </tr>
-                ) : (
-                  visibleQuestions.map((q) => {
-                    const saved = (q.correct_option ?? '').trim()
-                    const value = inputValue(q)
-                    const dirty = isDirty(q)
-                    const err = dirty ? validateDraft(q, value) : null
-                    const filled = dirty ? value.trim() !== '' : saved !== ''
-                    return (
-                      <tr key={q.id}>
-                        <td className="gabarito-col-num">{q.stage_number}</td>
-                        <td className="gabarito-col-num">{q.question_number}</td>
-                        <td className="gabarito-text-cell">
-                          {q.title || '—'}
-                        </td>
-                        <td className="gabarito-text-cell gabarito-content-cell">
-                          {q.content || '—'}
-                        </td>
-                        <td className="gabarito-answer-cell">
-                          <input
-                            type="text"
-                            className={
-                              err
-                                ? 'gabarito-input gabarito-input--error'
-                                : 'gabarito-input'
-                            }
-                            value={value}
-                            onChange={(e) => {
-                              setDrafts((d) => ({
-                                ...d,
-                                [q.id]: e.target.value,
-                              }))
-                              if (saveState.kind === 'saved') {
-                                setSaveState({ kind: 'idle' })
-                              }
-                            }}
-                            placeholder={
-                              q.options && q.options.length > 0
-                                ? `Ex.: ${q.options[0].key}`
-                                : 'Resposta correta'
-                            }
-                            aria-label={`Resposta correta de stage ${q.stage_number} questão ${q.question_number}`}
-                          />
-                          {err ? (
-                            <span className="gabarito-input-error">{err}</span>
-                          ) : null}
-                        </td>
-                        <td className="gabarito-col-status">
-                          {filled ? (
-                            <span className="badge badge--ok">
-                              {dirty ? 'editado' : 'preenchido'}
-                            </span>
-                          ) : (
-                            <span className="badge badge--warn">faltando</span>
-                          )}
-                        </td>
-                      </tr>
-                    )
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
-        </section>
-      )}
-    </>
+    <GabaritoPageView
+      loadingTrails={loadingTrails}
+      trailOptions={visibleTrails.map((t) => ({
+        id: t.id,
+        label: `${t.name || t.id}${t.active ? '' : ' (inativa)'}`,
+      }))}
+      selectedTrailId={selectedTrailId}
+      onSelectTrail={setSelectedTrailId}
+      onlyActiveTrails={onlyActiveTrails}
+      onOnlyActiveTrailsChange={setOnlyActiveTrails}
+      trailsError={trailsError}
+      selectedTrailName={selectedTrail?.name?.trim() || 'Trilha'}
+      loadingData={loadingData}
+      saveDisabled={saveState.kind === 'saving' || dirtyQuestions.length === 0}
+      saveButtonLabel={
+        saveState.kind === 'saving'
+          ? 'Salvando…'
+          : dirtyQuestions.length > 0
+            ? `Salvar alterações (${dirtyQuestions.length})`
+            : 'Salvar alterações'
+      }
+      onSaveAll={() => void handleSaveAll()}
+      dataError={dataError}
+      saveBanner={saveBanner}
+      onlyMissing={onlyMissing}
+      onOnlyMissingChange={setOnlyMissing}
+      filterStage={filterStage}
+      onFilterStageChange={setFilterStage}
+      filterQuestion={filterQuestion}
+      onFilterQuestionChange={setFilterQuestion}
+      availableStages={availableStages.map((n) => ({
+        value: n,
+        label: `Stage ${n}`,
+      }))}
+      availableQuestions={availableQuestions.map((n) => ({
+        value: n,
+        label: `Questão ${n}`,
+      }))}
+      filtersSummary={filtersSummary}
+      sortBy={sortBy}
+      sortDir={sortDir}
+      onToggleSort={toggleSort}
+      rows={rows}
+      emptyMessage={emptyMessage}
+      onDraftChange={(questionId, value) => {
+        setDrafts((d) => ({
+          ...d,
+          [questionId]: value,
+        }))
+        if (saveState.kind === 'saved') {
+          setSaveState({ kind: 'idle' })
+        }
+      }}
+    />
   )
 }

@@ -1,7 +1,13 @@
-import type {
-  DocumentSnapshot,
-  QueryDocumentSnapshot,
+import {
+  deleteDoc,
+  doc,
+  runTransaction,
+  serverTimestamp,
+  updateDoc,
+  type DocumentSnapshot,
+  type QueryDocumentSnapshot,
 } from 'firebase/firestore'
+import { db } from './firebase'
 import type { TrailStage, TrailStageType } from '../types/trailStage'
 
 export const TRAIL_STAGES_COLLECTION = 'trail_stages'
@@ -71,5 +77,80 @@ export function formatTrailStageTs(value: TrailStage['created_at']): string {
   } catch {
     return '—'
   }
+}
+
+// ---------------------------------------------------------------------------
+// Wrappers de escrita usados pelos componentes visuais. A lógica foi extraída
+// de TrailStageForm sem nenhuma alteração de comportamento: mesma coleção,
+// mesmos campos e mesmos payloads.
+// ---------------------------------------------------------------------------
+
+export type TrailStageUpdateData = {
+  title: string
+  stage_type: TrailStageType
+  prompt: string | null
+  is_released: boolean
+  active: boolean
+}
+
+export async function updateTrailStage(
+  docId: string,
+  data: TrailStageUpdateData,
+): Promise<void> {
+  if (!db) throw new Error('Firebase não inicializado.')
+  await updateDoc(doc(db, TRAIL_STAGES_COLLECTION, docId), {
+    title: data.title,
+    stage_type: data.stage_type,
+    prompt: data.prompt,
+    is_released: data.is_released,
+    active: data.active,
+    updated_at: serverTimestamp(),
+  })
+}
+
+export type TrailStageCreateData = {
+  trail_id: string
+  stage_number: number
+  title: string
+  stage_type: TrailStageType
+  prompt: string | null
+}
+
+/**
+ * Cria o stage em transação, falhando se já existir um stage_number igual
+ * para a mesma trilha (mesmo doc id determinístico usado pelo formulário).
+ */
+export async function createTrailStage(data: TrailStageCreateData): Promise<void> {
+  if (!db) throw new Error('Firebase não inicializado.')
+  const dbOk = db
+  const newDocId = trailStageDocId(data.trail_id, data.stage_number)
+  const now = serverTimestamp()
+
+  await runTransaction(dbOk, async (tx) => {
+    const ref = doc(dbOk, TRAIL_STAGES_COLLECTION, newDocId)
+    const existing = await tx.get(ref)
+    if (existing.exists()) {
+      throw new Error(
+        `Já existe um stage_number ${data.stage_number} para trail_id "${data.trail_id}".`,
+      )
+    }
+
+    tx.set(ref, {
+      trail_id: data.trail_id,
+      stage_number: data.stage_number,
+      title: data.title,
+      stage_type: data.stage_type,
+      prompt: data.prompt,
+      is_released: false,
+      active: true,
+      created_at: now,
+      updated_at: now,
+    })
+  })
+}
+
+export async function deleteTrailStage(docId: string): Promise<void> {
+  if (!db) return
+  await deleteDoc(doc(db, TRAIL_STAGES_COLLECTION, docId))
 }
 

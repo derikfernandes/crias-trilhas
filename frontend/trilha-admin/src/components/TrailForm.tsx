@@ -1,21 +1,12 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  collection,
-  doc,
-  runTransaction,
-  serverTimestamp,
-  updateDoc,
-} from 'firebase/firestore'
-import { db } from '../lib/firebase'
-import { TRAILS_COLLECTION } from '../lib/trailFirestore'
-import { TRAIL_STAGES_COLLECTION, trailStageDocId } from '../lib/trailStageFirestore'
-import {
-  TRAIL_STAGE_QUESTIONS_COLLECTION,
-  trailStageQuestionDocId,
-} from '../lib/trailStageQuestionFirestore'
+  deleteTrailCascade,
+  saveTrailContentDraft,
+  saveTrailWithStructure,
+  updateTrail,
+} from '../lib/public/trails'
 import { trailPath } from '../lib/paths'
-import { deleteTrailCascade } from '../lib/trailApi'
 import { TrailStructureEditor } from './TrailStructureEditor'
 import { TrailContentEditor } from './TrailContentEditor'
 import {
@@ -289,8 +280,6 @@ export function TrailForm({ docId, fixedInstitutionId, initial, onSaved }: Props
 
   async function handleSaveAndContinue() {
     if (!createdTrailId) return
-    if (!db) return
-    const dbOk = db
     if (contentEtapas.length === 0) {
       setFormError('Crie pelo menos uma etapa antes de continuar.')
       return
@@ -323,46 +312,7 @@ export function TrailForm({ docId, fixedInstitutionId, initial, onSaved }: Props
     setSavingContentDraft(true)
     setFormError(null)
     try {
-      await runTransaction(dbOk, async (tx) => {
-        contentEtapas.forEach((etapa, etapaIdx) => {
-            const question = etapa.questions[0]
-            if (!question) return
-            const questionNumber = etapaIdx + 1
-            question.phases.forEach((phase, phaseIdx) => {
-              const stageNumber = phaseIdx + 1
-              const ref = doc(
-                dbOk,
-                TRAIL_STAGE_QUESTIONS_COLLECTION,
-                trailStageQuestionDocId(createdTrailId, stageNumber, questionNumber),
-              )
-
-              const etapaLabel = etapa.name.trim() || `Etapa ${etapaIdx + 1}`
-              const questionLabel = question.title.trim() || `Questão ${questionNumber}`
-
-              const contentValue =
-                phase.phaseType === 'ai'
-                  ? phase.fixedText.trim()
-                  : phase.phaseType === 'fixed'
-                    ? phase.fixedText.trim()
-                    : phase.fixedText
-
-              tx.set(ref, {
-                trail_id: createdTrailId,
-                stage_number: stageNumber,
-                question_number: questionNumber,
-                title: `${etapaLabel} — ${questionLabel}`,
-                content: contentValue,
-                correct_option: null,
-                options: null,
-                explanation: null,
-                is_released: etapa.released,
-                active: true,
-                created_at: serverTimestamp(),
-                updated_at: serverTimestamp(),
-              })
-            })
-          })
-      })
+      await saveTrailContentDraft(createdTrailId, contentEtapas)
 
       navigate(trailPath(createdTrailId))
     } catch (err) {
@@ -392,8 +342,6 @@ export function TrailForm({ docId, fixedInstitutionId, initial, onSaved }: Props
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     if (!isEdit && createStep !== 2) return
-    if (!db) return
-    const dbOk = db
 
     const instId = institution_id.trim()
     const trimmedName = trimRequiredString(name)
@@ -453,146 +401,33 @@ export function TrailForm({ docId, fixedInstitutionId, initial, onSaved }: Props
     setFormError(null)
     try {
       if (docId) {
-        await updateDoc(doc(dbOk, TRAILS_COLLECTION, docId), {
+        await updateTrail(docId, {
           name: trimmedName,
           description: trimmedDescription,
           subject: trimmedSubject,
           default_total_steps_per_stage: stepsToSave,
           active,
-          updated_at: serverTimestamp(),
         })
         onSaved?.()
       } else {
         const targetTrailId =
           createdTrailId && createdTrailId.trim() ? createdTrailId : null
 
-        const persistedId = await runTransaction(dbOk, async (tx) => {
-          let trailId = targetTrailId
-          let shouldIncrementCounter = false
-          let counterNext: number | null = null
-
-          if (!trailId) {
-            // IDs sequenciais: t1, t2, t3...
-            // Usa transação com contador em counters/trails { next: number }.
-            const counterRef = doc(dbOk, 'counters', 'trails')
-            const counterSnap = await tx.get(counterRef)
-            const data = counterSnap.exists() ? counterSnap.data() : {}
-            const rawNext = (data as { next?: unknown }).next
-            const next =
-              typeof rawNext === 'number' && Number.isFinite(rawNext) && rawNext >= 1
-                ? Math.floor(rawNext)
-                : 1
-            counterNext = next
-
-            trailId = `t${next}`
-            const trailRefCheck = doc(collection(dbOk, TRAILS_COLLECTION), trailId)
-            const existing = await tx.get(trailRefCheck)
-            if (existing.exists()) {
-              throw new Error(
-                `Conflito ao gerar id sequencial (${trailId}). Verifique counters/trails.next.`,
-              )
-            }
-            shouldIncrementCounter = true
-          }
-
-          const trailRef = doc(collection(dbOk, TRAILS_COLLECTION), trailId)
-          const previousTrailSnap = await tx.get(trailRef)
-          if (targetTrailId && !previousTrailSnap.exists()) {
-            throw new Error(
-              'A trilha não existe mais ou foi excluída. Recarregue e crie novamente.',
-            )
-          }
-          const previousData = previousTrailSnap.exists()
-            ? (previousTrailSnap.data() as { default_total_steps_per_stage?: unknown })
-            : {}
-          const previousStepsRaw = previousData.default_total_steps_per_stage
-          const previousSteps =
-            typeof previousStepsRaw === 'number' &&
-            Number.isFinite(previousStepsRaw) &&
-            previousStepsRaw >= 0
-              ? Math.floor(previousStepsRaw)
-              : 0
-
-          const stageSnapshots = new Map<number, ReturnType<typeof previousTrailSnap['data']> | null>()
-          for (let i = 0; i < structurePhases.length; i++) {
-            const stageNumber = i + 1
-            const stageRef = doc(
-              dbOk,
-              TRAIL_STAGES_COLLECTION,
-              trailStageDocId(trailId, stageNumber),
-            )
-            const stageSnap = await tx.get(stageRef)
-            stageSnapshots.set(stageNumber, stageSnap.exists() ? stageSnap.data() : null)
-          }
-
-          const trailPayload = {
-            institution_id: instId,
-            name: trimmedName,
-            description: trimmedDescription,
-            subject: trimmedSubject,
-            default_total_steps_per_stage: stepsToSave,
-            active,
-            phase_blueprint: structurePhases.map((p) => ({
-              title: p.title.trim(),
-              stage_type: p.stage_type,
-              prompt: p.stage_type === 'ai' ? p.prompt.trim() : null,
-            })),
-            updated_at: serverTimestamp(),
-          }
-          if (previousTrailSnap.exists()) {
-            tx.update(trailRef, trailPayload)
-          } else {
-            tx.set(trailRef, {
-              ...trailPayload,
-              created_at: serverTimestamp(),
-            })
-          }
-
-          for (let i = 0; i < structurePhases.length; i++) {
-            const phase = structurePhases[i]
-            const stageNumber = i + 1
-            const stageRef = doc(
-              dbOk,
-              TRAIL_STAGES_COLLECTION,
-              trailStageDocId(trailId, stageNumber),
-            )
-            const stageData = stageSnapshots.get(stageNumber) ?? null
-            tx.set(
-              stageRef,
-              {
-                trail_id: trailId,
-                stage_number: stageNumber,
-                title: phase.title.trim(),
-                stage_type: phase.stage_type,
-                prompt: phase.stage_type === 'ai' ? phase.prompt.trim() : null,
-                is_released: stageData?.is_released ?? false,
-                active: stageData?.active ?? true,
-                created_at: stageData?.created_at ?? serverTimestamp(),
-                updated_at: serverTimestamp(),
-              },
-              { merge: true },
-            )
-          }
-
-          for (let stageNumber = stepsToSave + 1; stageNumber <= previousSteps; stageNumber++) {
-            const stageRef = doc(
-              dbOk,
-              TRAIL_STAGES_COLLECTION,
-              trailStageDocId(trailId, stageNumber),
-            )
-            tx.delete(stageRef)
-          }
-
-          if (shouldIncrementCounter) {
-            const counterRef = doc(dbOk, 'counters', 'trails')
-            tx.set(counterRef, { next: (counterNext ?? 1) + 1 }, { merge: true })
-          }
-
-          return trailId
+        const persistedId = await saveTrailWithStructure({
+          targetTrailId,
+          institution_id: instId,
+          name: trimmedName,
+          description: trimmedDescription,
+          subject: trimmedSubject,
+          default_total_steps_per_stage: stepsToSave,
+          active,
+          structurePhases,
         })
 
-        setCreatedTrailId(persistedId)
-        setCreateStep(3)
+        if (persistedId) {
+          setCreatedTrailId(persistedId)
+          setCreateStep(3)
+        }
       }
     } catch (err) {
       setFormError(err instanceof Error ? err.message : 'Erro ao salvar.')

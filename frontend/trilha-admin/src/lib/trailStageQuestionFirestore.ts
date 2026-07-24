@@ -1,8 +1,12 @@
-import type {
-  DocumentSnapshot,
-  QueryDocumentSnapshot,
+import {
+  doc,
+  runTransaction,
+  serverTimestamp,
+  updateDoc,
+  type DocumentSnapshot,
+  type QueryDocumentSnapshot,
 } from 'firebase/firestore'
-
+import { db } from './firebase'
 import type {
   TrailStageQuestion,
   TrailStageQuestionOption,
@@ -96,4 +100,90 @@ export function formatTrailStageQuestionTs(
   } catch {
     return '—'
   }
+}
+
+// ---------------------------------------------------------------------------
+// Wrappers de escrita usados pelos componentes visuais. A lógica foi extraída
+// de TrailStageQuestionForm sem nenhuma alteração de comportamento: mesma
+// coleção, mesmos campos e mesmos payloads.
+// ---------------------------------------------------------------------------
+
+export type TrailStageQuestionUpdateData = {
+  title: string
+  content: string
+  explanation: string | null
+  correct_option: string | null
+  options: TrailStageQuestionOption[] | null
+  is_released: boolean
+  active: boolean
+}
+
+export async function updateTrailStageQuestion(
+  docId: string,
+  data: TrailStageQuestionUpdateData,
+): Promise<void> {
+  if (!db) throw new Error('Firebase não inicializado.')
+  await updateDoc(doc(db, TRAIL_STAGE_QUESTIONS_COLLECTION, docId), {
+    title: data.title,
+    content: data.content,
+    explanation: data.explanation,
+    correct_option: data.correct_option,
+    options: data.options,
+    is_released: data.is_released,
+    active: data.active,
+    updated_at: serverTimestamp(),
+  })
+}
+
+export type TrailStageQuestionCreateData = {
+  trail_id: string
+  stage_number: number
+  question_number: number
+  title: string
+  content: string
+  correct_option: string | null
+  options: TrailStageQuestionOption[] | null
+  explanation: string | null
+  is_released: boolean
+}
+
+/**
+ * Cria a questão em transação, falhando se já existir question_number igual
+ * no mesmo stage (mesmo doc id determinístico usado pelo formulário).
+ */
+export async function createTrailStageQuestion(
+  data: TrailStageQuestionCreateData,
+): Promise<void> {
+  if (!db) throw new Error('Firebase não inicializado.')
+  const dbOk = db
+  const newDocId = trailStageQuestionDocId(
+    data.trail_id,
+    data.stage_number,
+    data.question_number,
+  )
+  const now = serverTimestamp()
+
+  await runTransaction(dbOk, async (tx) => {
+    const ref = doc(dbOk, TRAIL_STAGE_QUESTIONS_COLLECTION, newDocId)
+    const existing = await tx.get(ref)
+    if (existing.exists()) {
+      throw new Error(
+        `Já existe question_number ${data.question_number} neste stage (trail "${data.trail_id}", stage ${data.stage_number}).`,
+      )
+    }
+    tx.set(ref, {
+      trail_id: data.trail_id,
+      stage_number: data.stage_number,
+      question_number: data.question_number,
+      title: data.title,
+      content: data.content,
+      correct_option: data.correct_option,
+      options: data.options,
+      explanation: data.explanation,
+      is_released: data.is_released,
+      active: true,
+      created_at: now,
+      updated_at: now,
+    })
+  })
 }

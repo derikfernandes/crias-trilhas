@@ -1,9 +1,10 @@
 import { useState, type FormEvent } from 'react'
-import { Link, Navigate, useLocation } from 'react-router-dom'
+import { Navigate, useLocation } from 'react-router-dom'
 import { FirebaseError } from 'firebase/app'
 import { useAuth } from '../hooks/useAuth'
 import { firebaseConfigError } from '../lib/firebase'
 import { firebaseAuthErrorMessage } from '../lib/authErrors'
+import { LoginPageView } from '../design/views/LoginPageView'
 
 export function LoginPage() {
   const { user, loading, signIn } = useAuth()
@@ -18,9 +19,17 @@ export function LoginPage() {
 
   if (loading) {
     return (
-      <div className="login">
-        <p className="muted">Carregando…</p>
-      </div>
+      <LoginPageView
+        loading
+        email=""
+        password=""
+        submitting={false}
+        formError={null}
+        configError={null}
+        onEmailChange={() => {}}
+        onPasswordChange={() => {}}
+        onSubmit={(e) => e.preventDefault()}
+      />
     )
   }
 
@@ -58,72 +67,15 @@ export function LoginPage() {
   }
 
   return (
-    <div className="login">
-      <div className="login__card">
-        <header className="login__header">
-          <Link to="/" className="login__brand">
-            Crias Trilha
-          </Link>
-          <h1>Entrar</h1>
-          <p className="login__lede muted">
-            Acesse o painel administrativo com sua conta Firebase.
-          </p>
-        </header>
-
-        {firebaseConfigError ? (
-          <p className="banner banner--error" role="alert">
-            {firebaseConfigError}
-          </p>
-        ) : (
-          <form className="form login__form" onSubmit={handleSubmit}>
-            <label className="field">
-              <span>E-mail</span>
-              <input
-                type="email"
-                name="email"
-                autoComplete="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                disabled={submitting}
-                required
-              />
-            </label>
-
-            <label className="field">
-              <span>Senha</span>
-              <input
-                type="password"
-                name="password"
-                autoComplete="current-password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                disabled={submitting}
-                required
-              />
-            </label>
-
-            {formError ? (
-              <p className="form__error banner banner--error" role="alert">
-                {formError}
-              </p>
-            ) : null}
-
-            <div className="form__actions">
-              <button
-                type="submit"
-                className="btn btn--primary"
-                disabled={submitting}
-              >
-                {submitting ? 'Entrando…' : 'Entrar'}
-              </button>
-            </div>
-          </form>
-        )}
-
-        <p className="login__footer muted">
-          <Link to="/doc">Documentação da API</Link>
-        </p>
-      </div>
-    </div>
+    <LoginPageView
+      email={email}
+      password={password}
+      submitting={submitting}
+      formError={formError}
+      configError={firebaseConfigError}
+      onEmailChange={setEmail}
+      onPasswordChange={setPassword}
+      onSubmit={handleSubmit}
+    />
   )
 }
