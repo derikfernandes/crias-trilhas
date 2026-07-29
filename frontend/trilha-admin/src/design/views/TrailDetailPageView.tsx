@@ -21,6 +21,8 @@ export function TrailDetailPageView(props: TrailDetailPageViewProps) {
     error,
     loading,
     notFound,
+    activeTab,
+    onActiveTabChange,
     institutionLabel,
     showTrailForm,
     onToggleTrailForm,
@@ -69,6 +71,8 @@ export function TrailDetailPageView(props: TrailDetailPageViewProps) {
     studentTrailsError,
     hasStudentTrails,
     totalStudentTrailsCount,
+    studentSearch,
+    onStudentSearchChange,
     filterStage,
     onFilterStageChange,
     filterQuestion,
@@ -76,13 +80,15 @@ export function TrailDetailPageView(props: TrailDetailPageViewProps) {
     onClearFilters,
     filteredStudentTrailsCount,
     studentTrailRows,
+    studentTrailsPage,
+    studentTrailsTotalPages,
+    studentTrailsPageStart,
+    studentTrailsPageEnd,
+    onPreviousStudentTrailsPage,
+    onNextStudentTrailsPage,
     allStudentTrailsSelected,
     onToggleSelectAllStudentTrails,
     onToggleStudentTrailSelection,
-    loadingLogs,
-    logsError,
-    logsEmpty,
-    chatSlot,
   } = props
 
   return (
@@ -114,84 +120,149 @@ export function TrailDetailPageView(props: TrailDetailPageViewProps) {
         </p>
       ) : (
         <>
-          <section className="panel trail-cadastro-panel">
-            <div className="trail-cadastro-summary">
-              <div className="trail-cadastro-top">
-                <p className="trail-cadastro-title">
-                  {cadastro?.name || 'Trilha'}{' '}
-                  <span className="muted trail-cadastro-id">
-                    ({cadastro?.id})
-                  </span>
-                </p>
-                <button
-                  type="button"
-                  className="btn btn--ghost btn--small"
-                  onClick={onToggleTrailForm}
-                >
-                  {showTrailForm ? 'Fechar cadastro' : 'Abrir cadastro'}
-                </button>
-              </div>
-              <dl className="trail-cadastro-details">
-                <div className="trail-cadastro-details__row">
-                  <dt>Matéria</dt>
-                  <dd>{cadastro?.subject || '—'}</dd>
+          <nav className="trail-detail-tabs" aria-label="Seções da trilha" role="tablist">
+            <button
+              id="trail-structure-tab"
+              type="button"
+              role="tab"
+              aria-selected={activeTab === 'structure'}
+              aria-controls="trail-structure-panel"
+              className={`trail-detail-tabs__tab${
+                activeTab === 'structure' ? ' trail-detail-tabs__tab--active' : ''
+              }`}
+              onClick={() => onActiveTabChange('structure')}
+            >
+              Estrutura
+            </button>
+            <button
+              id="trail-content-tab"
+              type="button"
+              role="tab"
+              aria-selected={activeTab === 'content'}
+              aria-controls="trail-content-panel"
+              className={`trail-detail-tabs__tab${
+                activeTab === 'content' ? ' trail-detail-tabs__tab--active' : ''
+              }`}
+              onClick={() => onActiveTabChange('content')}
+            >
+              Conteúdo
+            </button>
+            <button
+              id="trail-students-tab"
+              type="button"
+              role="tab"
+              aria-selected={activeTab === 'students'}
+              aria-controls="trail-students-panel"
+              className={`trail-detail-tabs__tab${
+                activeTab === 'students' ? ' trail-detail-tabs__tab--active' : ''
+              }`}
+              onClick={() => onActiveTabChange('students')}
+            >
+              Alunos
+            </button>
+          </nav>
+
+          {activeTab === 'structure' ? (
+            <div
+              id="trail-structure-panel"
+              className="trail-tab-panel"
+              role="tabpanel"
+              aria-labelledby="trail-structure-tab"
+            >
+              <section className="panel trail-cadastro-panel">
+                <div className="trail-cadastro-summary">
+                  <div className="trail-cadastro-top">
+                    <p className="trail-cadastro-title">
+                      {cadastro?.name || 'Trilha'}{' '}
+                      <span className="muted trail-cadastro-id">
+                        ({cadastro?.id})
+                      </span>
+                    </p>
+                    <button
+                      type="button"
+                      className="btn btn--ghost btn--small"
+                      onClick={onToggleTrailForm}
+                    >
+                      {showTrailForm ? 'Fechar cadastro' : 'Abrir cadastro'}
+                    </button>
+                  </div>
+                  <dl className="trail-cadastro-details">
+                    <div className="trail-cadastro-details__row">
+                      <dt>Matéria</dt>
+                      <dd>{cadastro?.subject || '—'}</dd>
+                    </div>
+                    <div className="trail-cadastro-details__row">
+                      <dt>Descrição</dt>
+                      <dd
+                        className="trail-cadastro-ellipsis"
+                        title={cadastro?.description || '—'}
+                      >
+                        {cadastro?.description || '—'}
+                      </dd>
+                    </div>
+                    <div className="trail-cadastro-details__row">
+                      <dt>Ativa</dt>
+                      <dd>{cadastro?.activeLabel}</dd>
+                    </div>
+                    <div className="trail-cadastro-details__row">
+                      <dt>Criada em</dt>
+                      <dd>{cadastro?.createdAtLabel}</dd>
+                    </div>
+                    <div className="trail-cadastro-details__row">
+                      <dt>Atualizada em</dt>
+                      <dd>{cadastro?.updatedAtLabel}</dd>
+                    </div>
+                  </dl>
                 </div>
-                <div className="trail-cadastro-details__row">
-                  <dt>Descrição</dt>
-                  <dd
-                    className="trail-cadastro-ellipsis"
-                    title={cadastro?.description || '—'}
-                  >
-                    {cadastro?.description || '—'}
-                  </dd>
-                </div>
-                <div className="trail-cadastro-details__row">
-                  <dt>Ativa</dt>
-                  <dd>{cadastro?.activeLabel}</dd>
-                </div>
-                <div className="trail-cadastro-details__row">
-                  <dt>Criada em</dt>
-                  <dd>{cadastro?.createdAtLabel}</dd>
-                </div>
-                <div className="trail-cadastro-details__row">
-                  <dt>Atualizada em</dt>
-                  <dd>{cadastro?.updatedAtLabel}</dd>
-                </div>
-              </dl>
+              </section>
+
+              {showTrailForm ? editFormSlot : null}
+
+              <section className="panel">
+                {loadingStages ? (
+                  <p className="muted">Carregando estrutura…</p>
+                ) : null}
+                {stagesError ? (
+                  <p className="banner banner--error" role="alert">
+                    {stagesError}
+                  </p>
+                ) : null}
+                {structureError ? (
+                  <p className="banner banner--error" role="alert">
+                    {structureError}
+                  </p>
+                ) : null}
+
+                {structureEditorSlot}
+              </section>
             </div>
-          </section>
-
-          {showTrailForm ? editFormSlot : null}
-
-          <section className="panel">
-            {loadingStages ? <p className="muted">Carregando estrutura…</p> : null}
-            {stagesError ? (
-              <p className="banner banner--error" role="alert">
-                {stagesError}
-              </p>
-            ) : null}
-            {structureError ? (
-              <p className="banner banner--error" role="alert">
-                {structureError}
-              </p>
-            ) : null}
-
-            {structureEditorSlot}
-          </section>
-
-          <section className="panel">
-            {loadingStageQuestions ? (
-              <p className="muted">Carregando conteúdos…</p>
-            ) : null}
-            {stageQuestionsError ? (
-              <p className="banner banner--error" role="alert">
-                {stageQuestionsError}
-              </p>
-            ) : null}
-            {contentEditorSlot}
-          </section>
-
-          <section className="panel">
+          ) : activeTab === 'content' ? (
+            <div
+              id="trail-content-panel"
+              className="trail-tab-panel"
+              role="tabpanel"
+              aria-labelledby="trail-content-tab"
+            >
+              <section className="panel">
+                {loadingStageQuestions ? (
+                  <p className="muted">Carregando conteúdos…</p>
+                ) : null}
+                {stageQuestionsError ? (
+                  <p className="banner banner--error" role="alert">
+                    {stageQuestionsError}
+                  </p>
+                ) : null}
+                {contentEditorSlot}
+              </section>
+            </div>
+          ) : (
+            <div
+              id="trail-students-panel"
+              className="trail-tab-panel"
+              role="tabpanel"
+              aria-labelledby="trail-students-tab"
+            >
+              <section className="panel">
             <div className="panel__head">
               <h2>Alunos na trilha (student_trails)</h2>
               <div className="trail-panel-head__aside">
@@ -392,6 +463,17 @@ export function TrailDetailPageView(props: TrailDetailPageViewProps) {
             {hasStudentTrails ? (
               <>
                 <div className="trail-students-filter">
+                  <label className="trail-bulk-edit__field trail-students-search">
+                    <span className="muted">Pesquisar aluno</span>
+                    <input
+                      id="trail-students-search"
+                      type="search"
+                      autoComplete="off"
+                      placeholder="Nome ou número"
+                      value={studentSearch}
+                      onChange={(e) => onStudentSearchChange(e.target.value)}
+                    />
+                  </label>
                   <label className="trail-bulk-edit__field">
                     <span className="muted">Filtrar por stage</span>
                     <select
@@ -420,7 +502,7 @@ export function TrailDetailPageView(props: TrailDetailPageViewProps) {
                       ))}
                     </select>
                   </label>
-                  {filterStage || filterQuestion ? (
+                  {studentSearch || filterStage || filterQuestion ? (
                     <button
                       type="button"
                       className="btn btn--ghost btn--small"
@@ -440,105 +522,112 @@ export function TrailDetailPageView(props: TrailDetailPageViewProps) {
                     Nenhum aluno corresponde ao filtro selecionado.
                   </p>
                 ) : (
-                  <div className="table-wrap">
-                    <table className="table">
-                      <thead>
-                        <tr>
-                          {showBulkEditor ? (
-                            <th className="table__checkbox-cell">
-                              <input
-                                type="checkbox"
-                                aria-label="Selecionar todos os alunos filtrados"
-                                checked={allStudentTrailsSelected}
-                                onChange={onToggleSelectAllStudentTrails}
-                              />
-                            </th>
-                          ) : null}
-                          <th>Aluno</th>
-                          <th>Stage atual</th>
-                          <th>Questão atual</th>
-                          <th>Status</th>
-                          <th>Início</th>
-                          <th>Última interação</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {studentTrailRows.map((row) => (
-                          <tr
-                            key={row.id}
-                            className={
-                              showBulkEditor && row.selected
-                                ? 'table__row--selected'
-                                : undefined
-                            }
-                          >
+                  <>
+                    <div className="table-wrap">
+                      <table className="table">
+                        <thead>
+                          <tr>
                             {showBulkEditor ? (
-                              <td className="table__checkbox-cell">
+                              <th className="table__checkbox-cell">
                                 <input
                                   type="checkbox"
-                                  aria-label={row.selectAriaLabel}
-                                  checked={row.selected}
-                                  onChange={() =>
-                                    onToggleStudentTrailSelection(row.id)
-                                  }
+                                  aria-label="Selecionar todos os alunos filtrados"
+                                  checked={allStudentTrailsSelected}
+                                  onChange={onToggleSelectAllStudentTrails}
                                 />
-                              </td>
+                              </th>
                             ) : null}
-                            <td>
-                              <Link
-                                className="table__name-link"
-                                to={row.studentHref}
-                              >
-                                {row.studentName ?? (
-                                  <code>{row.studentId}</code>
-                                )}
-                              </Link>
-                              {row.phoneLabel ? (
-                                <div className="muted table__subtext">
-                                  {row.phoneLabel}
-                                </div>
-                              ) : null}
-                            </td>
-                            <td>{row.stageDisplay}</td>
-                            <td>{row.questionDisplay}</td>
-                            <td>
-                              <code>{row.status}</code>
-                            </td>
-                            <td>{row.startedAtLabel}</td>
-                            <td>{row.lastInteractionAtLabel}</td>
+                            <th>Aluno</th>
+                            <th>Stage atual</th>
+                            <th>Questão atual</th>
+                            <th>Status</th>
+                            <th>Início</th>
+                            <th>Última interação</th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                        </thead>
+                        <tbody>
+                          {studentTrailRows.map((row) => (
+                            <tr
+                              key={row.id}
+                              className={
+                                showBulkEditor && row.selected
+                                  ? 'table__row--selected'
+                                  : undefined
+                              }
+                            >
+                              {showBulkEditor ? (
+                                <td className="table__checkbox-cell">
+                                  <input
+                                    type="checkbox"
+                                    aria-label={row.selectAriaLabel}
+                                    checked={row.selected}
+                                    onChange={() =>
+                                      onToggleStudentTrailSelection(row.id)
+                                    }
+                                  />
+                                </td>
+                              ) : null}
+                              <td>
+                                <Link
+                                  className="table__name-link"
+                                  to={row.studentHref}
+                                >
+                                  {row.studentName ?? (
+                                    <code>{row.studentId}</code>
+                                  )}
+                                </Link>
+                                {row.phoneLabel ? (
+                                  <div className="muted table__subtext">
+                                    {row.phoneLabel}
+                                  </div>
+                                ) : null}
+                              </td>
+                              <td>{row.stageDisplay}</td>
+                              <td>{row.questionDisplay}</td>
+                              <td>
+                                <code>{row.status}</code>
+                              </td>
+                              <td>{row.startedAtLabel}</td>
+                              <td>{row.lastInteractionAtLabel}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <div className="trail-students-pagination">
+                      <span className="muted">
+                        Exibindo {studentTrailsPageStart}–{studentTrailsPageEnd} de{' '}
+                        {filteredStudentTrailsCount}
+                      </span>
+                      <div className="trail-students-pagination__actions">
+                        <button
+                          type="button"
+                          className="btn btn--ghost btn--small"
+                          disabled={studentTrailsPage === 1}
+                          onClick={onPreviousStudentTrailsPage}
+                        >
+                          Anterior
+                        </button>
+                        <span className="muted">
+                          Página {studentTrailsPage} de {studentTrailsTotalPages}
+                        </span>
+                        <button
+                          type="button"
+                          className="btn btn--ghost btn--small"
+                          disabled={studentTrailsPage === studentTrailsTotalPages}
+                          onClick={onNextStudentTrailsPage}
+                        >
+                          Próxima
+                        </button>
+                      </div>
+                    </div>
+                  </>
                 )}
               </>
             ) : null}
           </section>
-
-          <section className="panel">
-            <div className="panel__head">
-              <h2>Histórico de conversa na trilha (conversation_logs)</h2>
-              {loadingLogs ? (
-                <span className="muted">Carregando histórico…</span>
-              ) : null}
             </div>
-
-            {logsError ? (
-              <p className="banner banner--error" role="alert">
-                {logsError}
-              </p>
-            ) : null}
-
-            {!loadingLogs && logsEmpty ? (
-              <p className="muted">
-                Nenhum log de conversa encontrado para esta trilha ainda. Cada mensagem
-                trocada pelo chatbot gera um registro em <code>conversation_logs</code>.
-              </p>
-            ) : null}
-
-            {!logsEmpty ? chatSlot : null}
-          </section>
+          )}
         </>
       )}
     </>

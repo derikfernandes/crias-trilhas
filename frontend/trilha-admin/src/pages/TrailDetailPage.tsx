@@ -36,23 +36,14 @@ import {
   snapshotToStudent,
   STUDENTS_COLLECTION,
 } from '../lib/studentFirestore'
-import {
-  CONVERSATION_LOGS_COLLECTION,
-  snapshotToConversationLog,
-} from '../lib/conversationLogFirestore'
 import { TrailForm } from '../components/TrailForm'
 import { TrailStructureEditor } from '../components/TrailStructureEditor'
 import { TrailContentEditor } from '../components/TrailContentEditor'
-import {
-  ConversationChat,
-  LOGS_PAGE_SIZE,
-} from '../components/ConversationChat'
 import { TrailDetailPageView } from '../design/views/TrailDetailPageView'
 import type { TrailDetailStudentTrailRow } from '../design/types/trailDetailPageView'
 import type { Trail } from '../types/trail'
 import type { TrailStage } from '../types/trailStage'
 import type { StudentTrail } from '../types/studentTrail'
-import type { ConversationLog } from '../types/conversationLog'
 import type { Student } from '../types/student'
 import type { TrailStageQuestion } from '../types/trailStageQuestion'
 import { studentPath } from '../lib/paths'
@@ -73,8 +64,13 @@ import {
   type StructurePhase,
 } from '../lib/trailEditor'
 
+const STUDENT_TRAILS_PAGE_SIZE = 20
+
 export function TrailDetailPage() {
   const { id } = useParams<{ id: string }>()
+  const [activeTab, setActiveTab] = useState<
+    'structure' | 'content' | 'students'
+  >('structure')
   const [trail, setTrail] = useState<Trail | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -84,7 +80,7 @@ export function TrailDetailPage() {
   const [stagesError, setStagesError] = useState<string | null>(null)
 
   const [studentTrails, setStudentTrails] = useState<StudentTrail[]>([])
-  const [loadingStudentTrails, setLoadingStudentTrails] = useState(true)
+  const [loadingStudentTrails, setLoadingStudentTrails] = useState(false)
   const [studentTrailsError, setStudentTrailsError] = useState<string | null>(null)
 
   const [institutionStudents, setInstitutionStudents] = useState<Student[]>([])
@@ -110,11 +106,8 @@ export function TrailDetailPage() {
   const [bulkSuccess, setBulkSuccess] = useState<string | null>(null)
   const [filterStage, setFilterStage] = useState('')
   const [filterQuestion, setFilterQuestion] = useState('')
-
-  const [logs, setLogs] = useState<ConversationLog[]>([])
-  const [loadingLogs, setLoadingLogs] = useState(true)
-  const [logsError, setLogsError] = useState<string | null>(null)
-  const [logsVisibleCount, setLogsVisibleCount] = useState(LOGS_PAGE_SIZE)
+  const [studentSearch, setStudentSearch] = useState('')
+  const [studentTrailsPage, setStudentTrailsPage] = useState(1)
 
   const [showTrailForm, setShowTrailForm] = useState(false)
   const [structurePhases, setStructurePhases] = useState<StructurePhase[]>([])
@@ -127,7 +120,7 @@ export function TrailDetailPage() {
   const [selectedQuestionId, setSelectedQuestionId] = useState<string | null>(null)
   const [phaseSaved, setPhaseSaved] = useState<Record<string, boolean>>({})
   const [stageQuestions, setStageQuestions] = useState<TrailStageQuestion[]>([])
-  const [loadingStageQuestions, setLoadingStageQuestions] = useState(true)
+  const [loadingStageQuestions, setLoadingStageQuestions] = useState(false)
   const [stageQuestionsError, setStageQuestionsError] = useState<string | null>(null)
   const [savingContentDraft, setSavingContentDraft] = useState(false)
   const [contentError, setContentError] = useState<string | null>(null)
@@ -217,13 +210,23 @@ export function TrailDetailPage() {
         numbers.add(q.question_number)
       }
     }
+    for (const row of studentTrails) {
+      if (
+        Number.isFinite(row.current_question_number) &&
+        row.current_question_number >= 1
+      ) {
+        numbers.add(row.current_question_number)
+      }
+    }
     if (numbers.size === 0) {
       for (let i = 1; i <= contentEtapas.length; i++) numbers.add(i)
     }
     return [...numbers].sort((a, b) => a - b)
-  }, [stageQuestions, contentEtapas])
+  }, [stageQuestions, studentTrails, contentEtapas])
 
   const filteredStudentTrails = useMemo(() => {
+    const q = studentSearch.trim().toLowerCase()
+    const digits = studentSearch.replace(/\D/g, '')
     return sortedStudentTrails.filter((row) => {
       if (filterStage && row.current_stage_number !== Number(filterStage)) {
         return false
@@ -234,13 +237,53 @@ export function TrailDetailPage() {
       ) {
         return false
       }
-      return true
+      if (!q) return true
+      const name = (studentNameById.get(row.student_id) ?? '').toLowerCase()
+      const phone = (studentPhoneById.get(row.student_id) ?? '').replace(
+        /\D/g,
+        '',
+      )
+      if (name.includes(q)) return true
+      if (row.student_id.toLowerCase().includes(q)) return true
+      if (digits.length > 0 && phone.includes(digits)) return true
+      return false
     })
-  }, [sortedStudentTrails, filterStage, filterQuestion])
+  }, [
+    sortedStudentTrails,
+    filterStage,
+    filterQuestion,
+    studentSearch,
+    studentNameById,
+    studentPhoneById,
+  ])
+
+  const studentTrailsTotalPages = Math.max(
+    1,
+    Math.ceil(filteredStudentTrails.length / STUDENT_TRAILS_PAGE_SIZE),
+  )
+  const paginatedStudentTrails = useMemo(() => {
+    const start = (studentTrailsPage - 1) * STUDENT_TRAILS_PAGE_SIZE
+    return filteredStudentTrails.slice(start, start + STUDENT_TRAILS_PAGE_SIZE)
+  }, [filteredStudentTrails, studentTrailsPage])
 
   const allStudentTrailsSelected =
     filteredStudentTrails.length > 0 &&
     filteredStudentTrails.every((row) => selectedStudentTrailIds.has(row.id))
+
+  useEffect(() => {
+    setActiveTab('structure')
+    setStudentTrails([])
+    setInstitutionStudents([])
+    setStageQuestions([])
+    setStudentSearch('')
+    setStudentTrailsPage(1)
+  }, [id])
+
+  useEffect(() => {
+    if (studentTrailsPage > studentTrailsTotalPages) {
+      setStudentTrailsPage(studentTrailsTotalPages)
+    }
+  }, [studentTrailsPage, studentTrailsTotalPages])
 
   useEffect(() => {
     if (!db || !id) return
@@ -269,44 +312,7 @@ export function TrailDetailPage() {
   }, [id])
 
   useEffect(() => {
-    if (!db || !id) return
-    const dbOk = db
-    let unsub: (() => void) | null = null
-
-    async function run() {
-      setLoadingLogs(true)
-      setLogsError(null)
-
-      const q = query(
-        collection(dbOk, CONVERSATION_LOGS_COLLECTION),
-        where('trail_id', '==', id),
-      )
-
-      unsub = onSnapshot(
-        q,
-        (snap) => {
-          const next = snap.docs.map(snapshotToConversationLog)
-          setLogs(next)
-          setLogsError(null)
-          setLoadingLogs(false)
-        },
-        (err) => {
-          setLogsError(err.message)
-          setLoadingLogs(false)
-        },
-      )
-    }
-
-    void run()
-    return () => unsub?.()
-  }, [id])
-
-  useEffect(() => {
-    setLogsVisibleCount(LOGS_PAGE_SIZE)
-  }, [id])
-
-  useEffect(() => {
-    if (!db || !id) return
+    if (!db || !id || activeTab !== 'students') return
     const dbOk = db
     let unsub: (() => void) | null = null
 
@@ -336,7 +342,7 @@ export function TrailDetailPage() {
 
     void run()
     return () => unsub?.()
-  }, [id])
+  }, [activeTab, id])
 
   useEffect(() => {
     if (!db || !id) return
@@ -375,7 +381,11 @@ export function TrailDetailPage() {
   }, [id])
 
   useEffect(() => {
-    if (!db || !trail?.institution_id?.trim()) {
+    if (
+      activeTab !== 'students' ||
+      !db ||
+      !trail?.institution_id?.trim()
+    ) {
       setInstitutionStudents([])
       setInstitutionStudentsError(null)
       setLoadingInstitutionStudents(false)
@@ -412,7 +422,7 @@ export function TrailDetailPage() {
     )
 
     return () => unsub()
-  }, [trail?.institution_id])
+  }, [activeTab, trail?.institution_id])
 
   useEffect(() => {
     if (!showAddStudentPicker) {
@@ -428,6 +438,7 @@ export function TrailDetailPage() {
       setBulkQuestion('')
       setBulkError(null)
       setBulkSuccess(null)
+      setStudentSearch('')
       setFilterStage('')
       setFilterQuestion('')
     }
@@ -436,7 +447,7 @@ export function TrailDetailPage() {
   useEffect(() => {
     setSelectedStudentTrailIds(new Set())
     setBulkSuccess(null)
-  }, [filterStage, filterQuestion])
+  }, [filterStage, filterQuestion, studentSearch])
 
   useEffect(() => {
     setSelectedStudentTrailIds((prev) => {
@@ -474,7 +485,7 @@ export function TrailDetailPage() {
   }, [])
 
   useEffect(() => {
-    if (!db || !id) return
+    if (!db || !id || activeTab !== 'content') return
     const dbOk = db
     let unsub: (() => void) | null = null
 
@@ -505,7 +516,7 @@ export function TrailDetailPage() {
 
     void run()
     return () => unsub?.()
-  }, [id])
+  }, [activeTab, id])
 
   useEffect(() => {
     if (!trail || structureDirty) return
@@ -518,9 +529,10 @@ export function TrailDetailPage() {
     if (structurePhases.length === 0) return
     if (contentDirty) return
     const built = contentEtapasFromTrailStageQuestions(stageQuestions, structurePhases)
+    const lastEtapa = built.at(-1)
     setContentEtapas(built)
-    setSelectedEtapaId(built[0]?.id ?? null)
-    setSelectedQuestionId(built[0]?.questions[0]?.id ?? null)
+    setSelectedEtapaId(lastEtapa?.id ?? null)
+    setSelectedQuestionId(lastEtapa?.questions[0]?.id ?? null)
     setContentError(null)
   }, [contentDirty, stageQuestions, structurePhases])
 
@@ -873,9 +885,10 @@ export function TrailDetailPage() {
 
   function applyBulkImport() {
     if (!pendingBulkContent || pendingBulkContent.length === 0) return
+    const lastEtapa = pendingBulkContent.at(-1)
     setContentEtapas(pendingBulkContent)
-    setSelectedEtapaId(pendingBulkContent[0]?.id ?? null)
-    setSelectedQuestionId(pendingBulkContent[0]?.questions[0]?.id ?? null)
+    setSelectedEtapaId(lastEtapa?.id ?? null)
+    setSelectedQuestionId(lastEtapa?.questions[0]?.id ?? null)
     setPhaseSaved({})
     setContentDirty(true)
     setBulkPreview(null)
@@ -992,11 +1005,13 @@ export function TrailDetailPage() {
       setStructureDirty(false)
       if (contentEtapas.length === 0) {
         const defaults = defaultEtapasFromStructure(structurePhases)
+        const lastEtapa = defaults.at(-1)
         setContentEtapas(defaults)
-        setSelectedEtapaId(defaults[0]?.id ?? null)
-        setSelectedQuestionId(defaults[0]?.questions[0]?.id ?? null)
+        setSelectedEtapaId(lastEtapa?.id ?? null)
+        setSelectedQuestionId(lastEtapa?.questions[0]?.id ?? null)
       }
       setContentError(null)
+      setActiveTab('content')
     } catch (e) {
       setStructureError(
         e instanceof Error ? e.message : 'Erro ao salvar estrutura da trilha.',
@@ -1133,7 +1148,7 @@ export function TrailDetailPage() {
       }
     : null
 
-  const studentTrailRows: TrailDetailStudentTrailRow[] = filteredStudentTrails.map(
+  const studentTrailRows: TrailDetailStudentTrailRow[] = paginatedStudentTrails.map(
     (row) => {
       const nameFromMap = studentNameById.get(row.student_id)
       return {
@@ -1163,6 +1178,15 @@ export function TrailDetailPage() {
       error={error}
       loading={loading}
       notFound={!trail}
+      activeTab={activeTab}
+      onActiveTabChange={(tab) => {
+        if (tab === 'content') {
+          const lastEtapa = contentEtapas.at(-1)
+          setSelectedEtapaId(lastEtapa?.id ?? null)
+          setSelectedQuestionId(lastEtapa?.questions[0]?.id ?? null)
+        }
+        setActiveTab(tab)
+      }}
       institutionLabel={institutionLabel}
       showTrailForm={showTrailForm}
       onToggleTrailForm={() => setShowTrailForm((open) => !open)}
@@ -1224,6 +1248,7 @@ export function TrailDetailPage() {
           onMarkPhaseSaved={markPhaseSaved}
           onBack={() => {
             setStructureDirty(false)
+            setActiveTab('structure')
           }}
           onSave={() => void saveTrailContents()}
           backLabel="Estrutura salva"
@@ -1289,34 +1314,49 @@ export function TrailDetailPage() {
       studentTrailsError={studentTrailsError}
       hasStudentTrails={sortedStudentTrails.length > 0}
       totalStudentTrailsCount={sortedStudentTrails.length}
+      studentSearch={studentSearch}
+      onStudentSearchChange={(value) => {
+        setStudentSearch(value)
+        setStudentTrailsPage(1)
+      }}
       filterStage={filterStage}
-      onFilterStageChange={setFilterStage}
+      onFilterStageChange={(value) => {
+        setFilterStage(value)
+        setStudentTrailsPage(1)
+      }}
       filterQuestion={filterQuestion}
-      onFilterQuestionChange={setFilterQuestion}
+      onFilterQuestionChange={(value) => {
+        setFilterQuestion(value)
+        setStudentTrailsPage(1)
+      }}
       onClearFilters={() => {
+        setStudentSearch('')
         setFilterStage('')
         setFilterQuestion('')
+        setStudentTrailsPage(1)
       }}
       filteredStudentTrailsCount={filteredStudentTrails.length}
       studentTrailRows={studentTrailRows}
+      studentTrailsPage={studentTrailsPage}
+      studentTrailsTotalPages={studentTrailsTotalPages}
+      studentTrailsPageStart={
+        filteredStudentTrails.length === 0
+          ? 0
+          : (studentTrailsPage - 1) * STUDENT_TRAILS_PAGE_SIZE + 1
+      }
+      studentTrailsPageEnd={Math.min(
+        studentTrailsPage * STUDENT_TRAILS_PAGE_SIZE,
+        filteredStudentTrails.length,
+      )}
+      onPreviousStudentTrailsPage={() =>
+        setStudentTrailsPage((page) => Math.max(1, page - 1))
+      }
+      onNextStudentTrailsPage={() =>
+        setStudentTrailsPage((page) => Math.min(studentTrailsTotalPages, page + 1))
+      }
       allStudentTrailsSelected={allStudentTrailsSelected}
       onToggleSelectAllStudentTrails={toggleSelectAllStudentTrails}
       onToggleStudentTrailSelection={toggleStudentTrailSelection}
-      loadingLogs={loadingLogs}
-      logsError={logsError}
-      logsEmpty={logs.length === 0}
-      chatSlot={
-        <ConversationChat
-          logs={logs}
-          visibleCount={logsVisibleCount}
-          showStudent
-          onLoadMore={() =>
-            setLogsVisibleCount((count) =>
-              Math.min(count + LOGS_PAGE_SIZE, logs.length),
-            )
-          }
-        />
-      }
     />
   )
 }

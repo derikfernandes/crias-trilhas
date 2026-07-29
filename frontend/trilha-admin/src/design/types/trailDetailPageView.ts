@@ -38,6 +38,8 @@ export type TrailDetailPageViewOkProps = {
   loading: boolean
   notFound: boolean
 
+  activeTab: 'structure' | 'content' | 'students'
+  onActiveTabChange: (tab: 'structure' | 'content' | 'students') => void
   institutionLabel: string
   showTrailForm: boolean
   onToggleTrailForm: () => void
@@ -92,6 +94,8 @@ export type TrailDetailPageViewOkProps = {
   studentTrailsError: string | null
   hasStudentTrails: boolean
   totalStudentTrailsCount: number
+  studentSearch: string
+  onStudentSearchChange: (value: string) => void
   filterStage: string
   onFilterStageChange: (value: string) => void
   filterQuestion: string
@@ -99,14 +103,15 @@ export type TrailDetailPageViewOkProps = {
   onClearFilters: () => void
   filteredStudentTrailsCount: number
   studentTrailRows: TrailDetailStudentTrailRow[]
+  studentTrailsPage: number
+  studentTrailsTotalPages: number
+  studentTrailsPageStart: number
+  studentTrailsPageEnd: number
+  onPreviousStudentTrailsPage: () => void
+  onNextStudentTrailsPage: () => void
   allStudentTrailsSelected: boolean
   onToggleSelectAllStudentTrails: () => void
   onToggleStudentTrailSelection: (rowId: string) => void
-
-  loadingLogs: boolean
-  logsError: string | null
-  logsEmpty: boolean
-  chatSlot?: ReactNode
 }
 
 export type TrailDetailPageViewProps =
