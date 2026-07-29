@@ -1,4 +1,4 @@
-import { Fragment } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type {
   BulkImportPreview,
   ContentEtapa,
@@ -67,6 +67,30 @@ export function TrailContentEditor({
     contentEtapas.find((et) => et.id === selectedEtapaId) ?? null
   const selectedQuestion =
     selectedEtapa?.questions.find((q) => q.id === selectedQuestionId) ?? null
+  const [expandedPhaseKeys, setExpandedPhaseKeys] = useState<Set<string>>(
+    () => new Set(),
+  )
+  const gridRef = useRef<HTMLDivElement>(null)
+  const editorColumnRef = useRef<HTMLElement>(null)
+
+  useEffect(() => {
+    const grid = gridRef.current
+    const editorColumn = editorColumnRef.current
+    if (!grid || !editorColumn || typeof ResizeObserver === 'undefined') return
+
+    const syncEditorHeight = () => {
+      const height = Math.ceil(editorColumn.getBoundingClientRect().height)
+      grid.style.setProperty('--trail-content-editor-column-height', `${height}px`)
+    }
+    const observer = new ResizeObserver(syncEditorHeight)
+    observer.observe(editorColumn)
+    syncEditorHeight()
+
+    return () => {
+      observer.disconnect()
+      grid.style.removeProperty('--trail-content-editor-column-height')
+    }
+  }, [])
 
   return (
     <div className="trail-content-editor">
@@ -136,7 +160,7 @@ export function TrailContentEditor({
         </p>
       ) : null}
 
-      <div className="trail-content-editor__grid">
+      <div ref={gridRef} className="trail-content-editor__grid">
         <section className="trail-content-editor__col">
           <div className="trail-content-editor__col-head">
             <h4>Etapas da trilha</h4>
@@ -145,7 +169,10 @@ export function TrailContentEditor({
             </button>
           </div>
           <div className="trail-content-editor__list">
-            {contentEtapas.map((etapa, idx) => (
+            {contentEtapas
+              .map((etapa, index) => ({ etapa, index }))
+              .reverse()
+              .map(({ etapa, index }) => (
               <div key={etapa.id} className="trail-content-editor__item-row">
                 <button
                   type="button"
@@ -153,7 +180,8 @@ export function TrailContentEditor({
                   onClick={() => onSelectEtapa(etapa.id)}
                 >
                   <div className="trail-content-editor__item-title">
-                    Etapa {idx + 1} — {etapa.name.trim() || `Etapa ${idx + 1}`}
+                    Etapa {index + 1} —{' '}
+                    {etapa.name.trim() || `Etapa ${index + 1}`}
                   </div>
                   <div className="muted">
                     {etapa.questions.length} questão{etapa.questions.length === 1 ? '' : 'ões'}
@@ -187,7 +215,7 @@ export function TrailContentEditor({
                   </span>
                 </button>
               </div>
-            ))}
+              ))}
           </div>
           <p className="trail-content-editor__support muted">
             💡 A estrutura (fases) é a mesma em todas as etapas. O conteúdo muda em cada
@@ -195,7 +223,10 @@ export function TrailContentEditor({
           </p>
         </section>
 
-        <section className="trail-content-editor__col trail-content-editor__col--editor">
+        <section
+          ref={editorColumnRef}
+          className="trail-content-editor__col trail-content-editor__col--editor"
+        >
           {selectedEtapa ? (
             <>
               <div className="trail-content-editor__col-head trail-content-editor__col-head--etapa">
@@ -256,111 +287,155 @@ export function TrailContentEditor({
                   <h4>
                     Editando: <span>"{selectedQuestion.title || 'Nova questão'}"</span>
                   </h4>
-                  <div className="trail-content-editor__phases-flow">
-                    {selectedQuestion.phases.map((phase, idx) => (
-                      <Fragment key={`${selectedQuestion.id}-${phase.phaseId}`}>
-                        {idx > 0 ? (
-                          <span className="trail-content-editor__phase-arrow" aria-hidden>
-                            →
-                          </span>
-                        ) : null}
-                        <div className="trail-content-editor__phase-chip">
-                          <strong>Fase {idx + 1}</strong>
-                          <span>{phase.phaseTitle}</span>
-                          <small>
-                            {phase.phaseType === 'ai'
-                              ? 'IA'
-                              : phase.phaseType === 'fixed'
-                                ? 'Texto'
-                                : 'Exercício'}
-                          </small>
-                        </div>
-                      </Fragment>
-                    ))}
-                  </div>
 
                   <div className="trail-content-editor__phase-editors">
-                    {selectedQuestion.phases.map((phase, idx) => (
-                      <article
-                        key={`editor-${selectedQuestion.id}-${phase.phaseId}`}
-                        className="trail-content-editor__phase-editor"
-                      >
-                        <h5>
-                          Fase {idx + 1} — {phase.phaseTitle}
-                        </h5>
-
-                        {phase.phaseType === 'ai' ? (
-                          <>
-                            <p className="trail-content-editor__phase-type">
-                              🧠 Conteúdo gerado por IA
-                            </p>
-                            <label className="field">
-                              <span>Conteúdo da fase</span>
-                              <textarea
-                                rows={6}
-                                value={phase.fixedText}
-                                onChange={(e) =>
-                                  onUpdateQuestionPhase(selectedQuestion.id, phase.phaseId, {
-                                    fixedText: e.target.value,
-                                  })
-                                }
-                                placeholder="Texto-base desta fase para a IA trabalhar."
-                              />
-                            </label>
-                            <p className="muted">A IA usa o conteúdo desta fase como base.</p>
-                          </>
-                        ) : null}
-
-                        {phase.phaseType === 'fixed' ? (
-                          <>
-                            <p className="trail-content-editor__phase-type">📄 Texto fixo</p>
-                            <label className="field">
-                              <span>Conteúdo</span>
-                              <textarea
-                                rows={6}
-                                value={phase.fixedText}
-                                onChange={(e) =>
-                                  onUpdateQuestionPhase(selectedQuestion.id, phase.phaseId, {
-                                    fixedText: e.target.value,
-                                  })
-                                }
-                              />
-                            </label>
-                          </>
-                        ) : null}
-
-                        {phase.phaseType === 'exercise' ? (
-                          <>
-                            <p className="trail-content-editor__phase-type">✏️ Exercício</p>
-                            <label className="field">
-                              <span>Pergunta do exercício</span>
-                              <textarea
-                                rows={4}
-                                value={phase.fixedText}
-                                onChange={(e) =>
-                                  onUpdateQuestionPhase(selectedQuestion.id, phase.phaseId, {
-                                    fixedText: e.target.value,
-                                  })
-                                }
-                                placeholder="Escreva a pergunta desta fase de exercício."
-                              />
-                            </label>
-                          </>
-                        ) : null}
-                        <div className="trail-content-editor__phase-save">
+                    {selectedQuestion.phases.map((phase, idx) => {
+                      const phaseKey = `${selectedQuestion.id}:${phase.phaseId}`
+                      const isExpanded = expandedPhaseKeys.has(phaseKey)
+                      const preview = phase.fixedText.trim()
+                      const typeLabel =
+                        phase.phaseType === 'ai'
+                          ? 'IA'
+                          : phase.phaseType === 'fixed'
+                            ? 'Texto'
+                            : 'Exercício'
+                      const typeIcon =
+                        phase.phaseType === 'ai'
+                          ? '🧠'
+                          : phase.phaseType === 'fixed'
+                            ? '📄'
+                            : '✏️'
+                      return (
+                        <article
+                          key={`editor-${selectedQuestion.id}-${phase.phaseId}`}
+                          className={`trail-content-editor__phase-editor${
+                            isExpanded
+                              ? ' trail-content-editor__phase-editor--expanded'
+                              : ''
+                          }`}
+                        >
                           <button
                             type="button"
-                            className="btn btn--small btn--primary"
-                            onClick={() => onMarkPhaseSaved(selectedQuestion.id, phase.phaseId)}
+                            className="trail-content-editor__phase-toggle"
+                            aria-expanded={isExpanded}
+                            onClick={() =>
+                              setExpandedPhaseKeys((current) => {
+                                const next = new Set(current)
+                                if (next.has(phaseKey)) next.delete(phaseKey)
+                                else next.add(phaseKey)
+                                return next
+                              })
+                            }
                           >
-                            Salvar
+                            <span className="trail-content-editor__phase-toggle-top">
+                              <span className="trail-content-editor__phase-index">
+                                Fase {idx + 1}
+                              </span>
+                              <span className="trail-content-editor__phase-badge">
+                                {typeIcon} {typeLabel}
+                              </span>
+                            </span>
+                            <strong className="trail-content-editor__phase-title">
+                              {phase.phaseTitle}
+                            </strong>
+                            {!isExpanded ? (
+                              <span className="trail-content-editor__phase-preview muted">
+                                {preview
+                                  ? preview
+                                  : 'Sem conteúdo ainda. Clique para editar.'}
+                              </span>
+                            ) : null}
+                            <span className="trail-content-editor__phase-expand-hint muted">
+                              {isExpanded ? 'Recolher' : 'Expandir'}
+                            </span>
                           </button>
-                          {phaseSaved[`${selectedQuestion.id}:${phase.phaseId}`] ? (
-                            <span className="trail-content-editor__saved">✅ Salvo</span>
+
+                          {isExpanded ? (
+                            <div className="trail-content-editor__phase-body">
+                              {phase.phaseType === 'ai' ? (
+                                <>
+                                  <label className="field">
+                                    <span>Conteúdo da fase</span>
+                                    <textarea
+                                      rows={7}
+                                      value={phase.fixedText}
+                                      onChange={(e) =>
+                                        onUpdateQuestionPhase(
+                                          selectedQuestion.id,
+                                          phase.phaseId,
+                                          { fixedText: e.target.value },
+                                        )
+                                      }
+                                      placeholder="Texto-base desta fase para a IA trabalhar."
+                                    />
+                                  </label>
+                                  <p className="muted">
+                                    A IA usa o conteúdo desta fase como base.
+                                  </p>
+                                </>
+                              ) : null}
+
+                              {phase.phaseType === 'fixed' ? (
+                                <label className="field">
+                                  <span>Conteúdo</span>
+                                  <textarea
+                                    rows={7}
+                                    value={phase.fixedText}
+                                    onChange={(e) =>
+                                      onUpdateQuestionPhase(
+                                        selectedQuestion.id,
+                                        phase.phaseId,
+                                        { fixedText: e.target.value },
+                                      )
+                                    }
+                                  />
+                                </label>
+                              ) : null}
+
+                              {phase.phaseType === 'exercise' ? (
+                                <label className="field">
+                                  <span>Pergunta do exercício</span>
+                                  <textarea
+                                    rows={5}
+                                    value={phase.fixedText}
+                                    onChange={(e) =>
+                                      onUpdateQuestionPhase(
+                                        selectedQuestion.id,
+                                        phase.phaseId,
+                                        { fixedText: e.target.value },
+                                      )
+                                    }
+                                    placeholder="Escreva a pergunta desta fase de exercício."
+                                  />
+                                </label>
+                              ) : null}
+
+                              <div className="trail-content-editor__phase-save">
+                                <button
+                                  type="button"
+                                  className="btn btn--small btn--primary"
+                                  onClick={() =>
+                                    onMarkPhaseSaved(
+                                      selectedQuestion.id,
+                                      phase.phaseId,
+                                    )
+                                  }
+                                >
+                                  Salvar
+                                </button>
+                                {phaseSaved[
+                                  `${selectedQuestion.id}:${phase.phaseId}`
+                                ] ? (
+                                  <span className="trail-content-editor__saved">
+                                    ✅ Salvo
+                                  </span>
+                                ) : null}
+                              </div>
+                            </div>
                           ) : null}
-                        </div>
-                      </article>
-                    ))}
+                        </article>
+                      )
+                    })}
                   </div>
                 </>
               ) : (
