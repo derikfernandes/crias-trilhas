@@ -340,7 +340,10 @@ export async function saveTrailContentDraft(
           question_number: questionNumber,
           title: `${etapaLabel} — ${questionLabel}`,
           content: contentValue,
-          correct_option: null,
+          correct_option:
+            phase.phaseType === 'exercise'
+              ? phase.correctOption.trim() || null
+              : null,
           options: null,
           explanation: null,
           annulled: false,

@@ -21,7 +21,12 @@ type Props = {
   onUpdateQuestionPhase: (
     questionId: string,
     phaseId: string,
-    patch: Partial<Pick<ContentPhase, 'aiPrompt' | 'fixedText' | 'exerciseQuestions'>>,
+    patch: Partial<
+      Pick<
+        ContentPhase,
+        'aiPrompt' | 'fixedText' | 'correctOption' | 'exerciseQuestions'
+      >
+    >,
   ) => void
   onMarkPhaseSaved: (questionId: string, phaseId: string) => void
   onRemoveEtapa?: (etapaId: string) => void
@@ -399,21 +404,44 @@ export function TrailContentEditor({
                               ) : null}
 
                               {phase.phaseType === 'exercise' ? (
-                                <label className="field">
-                                  <span>Pergunta do exercício</span>
-                                  <textarea
-                                    rows={5}
-                                    value={phase.fixedText}
-                                    onChange={(e) =>
-                                      onUpdateQuestionPhase(
-                                        selectedQuestion.id,
-                                        phase.phaseId,
-                                        { fixedText: e.target.value },
-                                      )
-                                    }
-                                    placeholder="Escreva a pergunta desta fase de exercício."
-                                  />
-                                </label>
+                                <>
+                                  <label className="field">
+                                    <span>Pergunta do exercício</span>
+                                    <textarea
+                                      rows={5}
+                                      value={phase.fixedText}
+                                      onChange={(e) =>
+                                        onUpdateQuestionPhase(
+                                          selectedQuestion.id,
+                                          phase.phaseId,
+                                          { fixedText: e.target.value },
+                                        )
+                                      }
+                                      placeholder="Escreva a pergunta desta fase de exercício."
+                                    />
+                                  </label>
+                                  <label className="field">
+                                    <span>Gabarito / resposta correta</span>
+                                    <select
+                                      value={phase.correctOption}
+                                      onChange={(e) =>
+                                        onUpdateQuestionPhase(
+                                          selectedQuestion.id,
+                                          phase.phaseId,
+                                          { correctOption: e.target.value },
+                                        )
+                                      }
+                                    >
+                                      <option value="">Selecione a resposta</option>
+                                      <option value="1">A</option>
+                                      <option value="2">B</option>
+                                      <option value="3">C</option>
+                                    </select>
+                                  </label>
+                                  <p className="muted">
+                                    A opção escolhida será salva como 1, 2 ou 3.
+                                  </p>
+                                </>
                               ) : null}
 
                               <div className="trail-content-editor__phase-save">
