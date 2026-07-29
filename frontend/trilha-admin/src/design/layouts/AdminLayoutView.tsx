@@ -19,6 +19,8 @@ export type AdminLayoutViewProps = {
   permissionsLoading: boolean
   authed: boolean
   onLogout: () => void
+  theme: 'light' | 'dark'
+  onToggleTheme: () => void
   children: ReactNode
   guestLinks: AdminLayoutGuestLink[]
 }
@@ -30,6 +32,8 @@ export function AdminLayoutView({
   permissionsLoading,
   authed,
   onLogout,
+  theme,
+  onToggleTheme,
   children,
   guestLinks,
 }: AdminLayoutViewProps) {
@@ -69,6 +73,19 @@ export function AdminLayoutView({
               ))}
             </>
           )}
+          <button
+            type="button"
+            className="nav__theme btn btn--ghost btn--small"
+            aria-label={
+              theme === 'light' ? 'Ativar modo escuro' : 'Ativar modo claro'
+            }
+            title={
+              theme === 'light' ? 'Ativar modo escuro' : 'Ativar modo claro'
+            }
+            onClick={onToggleTheme}
+          >
+            {theme === 'light' ? '🌙 Modo escuro' : '☀️ Modo claro'}
+          </button>
         </div>
       </nav>
       {children}

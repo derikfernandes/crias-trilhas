@@ -35,6 +35,16 @@ export function GerenciamentoPageView({
   studentTrailsError,
   studentRows,
   studentsEmptyMessage,
+  studentSearch,
+  onStudentSearchChange,
+  filteredStudentsCount,
+  totalStudentsCount,
+  studentsPage,
+  studentsTotalPages,
+  studentsPageStart,
+  studentsPageEnd,
+  onPreviousStudentsPage,
+  onNextStudentsPage,
 }: GerenciamentoPageViewProps) {
   return (
     <>
@@ -236,6 +246,26 @@ export function GerenciamentoPageView({
                   {studentTrailsError}
                 </p>
               ) : null}
+              {!loadingStudents &&
+              !loadingStudentTrails &&
+              totalStudentsCount > 0 ? (
+                <div className="trail-students-filter">
+                  <label className="trail-bulk-edit__field trail-students-search">
+                    <span className="muted">Pesquisar aluno</span>
+                    <input
+                      id="gerenciamento-students-search"
+                      type="search"
+                      autoComplete="off"
+                      placeholder="Nome ou número"
+                      value={studentSearch}
+                      onChange={(e) => onStudentSearchChange(e.target.value)}
+                    />
+                  </label>
+                  <span className="muted trail-students-filter__count">
+                    {filteredStudentsCount} de {totalStudentsCount} aluno(s)
+                  </span>
+                </div>
+              ) : null}
               <div className="table-wrap">
                 <table className="table">
                   <thead>
@@ -262,10 +292,12 @@ export function GerenciamentoPageView({
                           Carregando alunos…
                         </td>
                       </tr>
-                    ) : studentRows.length === 0 ? (
+                    ) : filteredStudentsCount === 0 ? (
                       <tr>
                         <td colSpan={13} className="muted table__empty">
-                          {studentsEmptyMessage}
+                          {studentSearch
+                            ? 'Nenhum aluno corresponde à pesquisa.'
+                            : studentsEmptyMessage}
                         </td>
                       </tr>
                     ) : (
@@ -306,6 +338,37 @@ export function GerenciamentoPageView({
                   </tbody>
                 </table>
               </div>
+              {!loadingStudents &&
+              !loadingStudentTrails &&
+              filteredStudentsCount > 0 ? (
+                <div className="trail-students-pagination">
+                  <span className="muted">
+                    Exibindo {studentsPageStart}–{studentsPageEnd} de{' '}
+                    {filteredStudentsCount}
+                  </span>
+                  <div className="trail-students-pagination__actions">
+                    <button
+                      type="button"
+                      className="btn btn--ghost btn--small"
+                      disabled={studentsPage === 1}
+                      onClick={onPreviousStudentsPage}
+                    >
+                      Anterior
+                    </button>
+                    <span className="muted">
+                      Página {studentsPage} de {studentsTotalPages}
+                    </span>
+                    <button
+                      type="button"
+                      className="btn btn--ghost btn--small"
+                      disabled={studentsPage === studentsTotalPages}
+                      onClick={onNextStudentsPage}
+                    >
+                      Próxima
+                    </button>
+                  </div>
+                </div>
+              ) : null}
             </section>
           </div>
         </>

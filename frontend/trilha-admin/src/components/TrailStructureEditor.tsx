@@ -139,7 +139,13 @@ export function TrailStructureEditor({
                             <button
                               type="button"
                               className="trail-structure__phase-remove"
-                              onClick={() => onRemovePhase(phase.id)}
+                              onClick={() => {
+                                const label = phase.title.trim() || `Fase ${index + 1}`
+                                const confirmed = window.confirm(
+                                  `Excluir a fase "${label}"? Esta ação não pode ser desfeita.`,
+                                )
+                                if (confirmed) onRemovePhase(phase.id)
+                              }}
                               aria-label={`Remover fase ${index + 1}`}
                             >
                               ×
