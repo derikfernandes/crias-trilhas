@@ -14,6 +14,7 @@ export type ContentPhase = {
   phaseType: TrailStageType
   aiPrompt: string
   fixedText: string
+  correctOption: string
   exerciseQuestions: string[]
 }
 
@@ -83,6 +84,7 @@ export function buildQuestionFromStructure(
       phaseType: phase.stage_type,
       aiPrompt: phase.stage_type === 'ai' ? phase.prompt.trim() : '',
       fixedText: '',
+      correctOption: '',
       exerciseQuestions: [],
     })),
   }
@@ -118,6 +120,7 @@ export function syncQuestionPhasesWithStructure(
         existing?.aiPrompt ??
         (phaseDef.stage_type === 'ai' ? phaseDef.prompt.trim() : ''),
       fixedText: existing?.fixedText ?? '',
+      correctOption: existing?.correctOption ?? '',
       exerciseQuestions: existing?.exerciseQuestions ?? [],
     }
   })
@@ -202,6 +205,7 @@ export function contentEtapasFromTrailStageQuestions(
           phaseType: phase.stage_type,
           aiPrompt: phase.stage_type === 'ai' ? phase.prompt.trim() : '',
           fixedText: contentRaw,
+          correctOption: doc?.correct_option ?? '',
           exerciseQuestions: [],
         }
       }),
@@ -330,6 +334,7 @@ export function parseBulkTemplateRows(
           phaseType: phase.stage_type,
           aiPrompt: '',
           fixedText: contentValue,
+          correctOption: '',
           exerciseQuestions: [],
         })
       } else {
@@ -347,6 +352,7 @@ export function parseBulkTemplateRows(
           phaseType: phase.stage_type,
           aiPrompt: phase.stage_type === 'ai' ? phase.prompt.trim() : '',
           fixedText: contentValue,
+          correctOption: '',
           exerciseQuestions: [],
         })
       }

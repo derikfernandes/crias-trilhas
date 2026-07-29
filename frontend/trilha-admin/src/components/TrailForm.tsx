@@ -240,7 +240,12 @@ export function TrailForm({ docId, fixedInstitutionId, initial, onSaved }: Props
   function updateQuestionPhase(
     questionId: string,
     phaseId: string,
-    patch: Partial<Pick<ContentPhase, 'aiPrompt' | 'fixedText' | 'exerciseQuestions'>>,
+    patch: Partial<
+      Pick<
+        ContentPhase,
+        'aiPrompt' | 'fixedText' | 'correctOption' | 'exerciseQuestions'
+      >
+    >,
   ) {
     setContentEtapas((prev) =>
       prev.map((et) => ({

@@ -757,7 +757,12 @@ export function TrailDetailPage() {
   function updateQuestionPhase(
     questionId: string,
     phaseId: string,
-    patch: Partial<Pick<ContentPhase, 'aiPrompt' | 'fixedText' | 'exerciseQuestions'>>,
+    patch: Partial<
+      Pick<
+        ContentPhase,
+        'aiPrompt' | 'fixedText' | 'correctOption' | 'exerciseQuestions'
+      >
+    >,
   ) {
     setContentEtapas((prev) =>
       prev.map((et) => ({
@@ -1081,6 +1086,10 @@ export function TrailDetailPage() {
               question_number: questionNumber,
               title: `${etapaLabel} — ${questionLabel}`,
               content: contentValue,
+              correct_option:
+                phase.phaseType === 'exercise'
+                  ? phase.correctOption.trim() || null
+                  : null,
               is_released: etapa.released,
               active: true,
               created_at: serverTimestamp(),
