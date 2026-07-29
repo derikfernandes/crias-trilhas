@@ -22,6 +22,7 @@
 .nav__links {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 0.75rem 1.25rem;
 }
 
@@ -306,7 +307,7 @@
 .trail-create-step3 {
   border: 1px solid color-mix(in srgb, var(--border) 72%, #8b5cf6);
   border-radius: 14px;
-  background: #fff;
+  background: var(--surface);
   padding: 1.25rem 1.35rem;
   max-width: 44rem;
   box-shadow: 0 4px 18px rgba(15, 23, 42, 0.04);
@@ -329,7 +330,7 @@
 .trail-create-card {
   border: 1px solid color-mix(in srgb, var(--border) 72%, #8b5cf6);
   border-radius: 14px;
-  background: #ffffff;
+  background: var(--surface);
   padding: 1.25rem;
   box-shadow:
     0 10px 30px rgba(15, 23, 42, 0.06),
@@ -390,7 +391,7 @@
   outline: none;
   border-color: #8b5cf6;
   box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.18);
-  background: #fff;
+  background: var(--surface);
 }
 
 .trail-create-card__preview {
@@ -451,7 +452,7 @@
   gap: 0.85rem;
   border: 1px solid color-mix(in srgb, var(--border) 70%, #c4b5fd);
   border-radius: 14px;
-  background: #fff;
+  background: var(--surface);
   padding: 1rem;
   box-shadow: 0 8px 24px rgba(15, 23, 42, 0.05);
   min-width: 0;
@@ -627,7 +628,7 @@
   border: 1px solid var(--phase-ring);
   border-radius: 12px;
   padding: 0.5rem 0.5rem 0.45rem;
-  background: #fff;
+  background: var(--surface);
   min-height: 0;
 }
 
@@ -806,7 +807,7 @@
   line-height: 1.35;
   border: 1px solid var(--phase-ring);
   border-radius: 8px;
-  background: #fff;
+  background: var(--surface);
   color: var(--text-h, #1e293b);
   resize: vertical;
   min-height: 3.25rem;
@@ -833,7 +834,7 @@
   cursor: pointer;
   font: inherit;
   color: inherit;
-  background: #fff;
+  background: var(--surface);
   min-height: 132px;
   box-sizing: border-box;
 }
@@ -1074,7 +1075,7 @@
   padding: 0.32rem 0.35rem 0.4rem;
   border-radius: 10px;
   border: 1px solid color-mix(in srgb, var(--border) 70%, #e2e8f0);
-  background: #fff;
+  background: var(--surface);
   box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
   box-sizing: border-box;
 }
@@ -1150,6 +1151,71 @@
   font-size: 1rem;
   line-height: 1;
   opacity: 0.85;
+}
+
+:root[data-theme='dark'] .trail-create-card__preview,
+:root[data-theme='dark'] .trail-structure__hero-note,
+:root[data-theme='dark'] .trail-structure__decision-box,
+:root[data-theme='dark'] .trail-structure__flow-base,
+:root[data-theme='dark'] .trail-structure__flow-more {
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+  color: var(--text);
+}
+
+:root[data-theme='dark'] .trail-structure__hero-note {
+  color: var(--accent-text);
+}
+
+:root[data-theme='dark'] .trail-structure__hero-note::after {
+  border-color: transparent
+    color-mix(in srgb, var(--accent) 10%, var(--surface)) transparent transparent;
+}
+
+:root[data-theme='dark'] .trail-structure__panel h4 span {
+  background: var(--accent-bg);
+  color: var(--accent-text);
+}
+
+:root[data-theme='dark'] .trail-structure__phase-card {
+  --phase-badge-bg: rgba(168, 85, 247, 0.2);
+  --phase-badge-fg: #e9d5ff;
+  --phase-title: #f3e8ff;
+  --phase-type-bg: rgba(168, 85, 247, 0.12);
+  --phase-desc: #cbd5e1;
+}
+
+:root[data-theme='dark'] .trail-structure__phase-card--i1 {
+  --phase-badge-bg: rgba(59, 130, 246, 0.2);
+  --phase-badge-fg: #bfdbfe;
+  --phase-title: #dbeafe;
+  --phase-type-bg: rgba(59, 130, 246, 0.12);
+}
+
+:root[data-theme='dark'] .trail-structure__phase-card--i2 {
+  --phase-badge-bg: rgba(34, 197, 94, 0.2);
+  --phase-badge-fg: #bbf7d0;
+  --phase-title: #dcfce7;
+  --phase-type-bg: rgba(34, 197, 94, 0.12);
+}
+
+:root[data-theme='dark'] .trail-structure__add-card:hover {
+  background: var(--accent-bg);
+}
+
+:root[data-theme='dark'] .trail-structure__flow-base-head,
+:root[data-theme='dark'] .trail-structure__flow-ribbon-text,
+:root[data-theme='dark'] .trail-structure__flow-more {
+  color: var(--accent-text);
+}
+
+:root[data-theme='dark'] .trail-structure__flow-phase-title,
+:root[data-theme='dark'] .trail-structure__flow-etapa-head strong {
+  color: var(--text-h);
+}
+
+:root[data-theme='dark'] .trail-structure__flow-mini-type,
+:root[data-theme='dark'] .trail-structure__flow-mini-line {
+  color: var(--text);
 }
 
 @media (max-width: 900px) {
@@ -1705,7 +1771,7 @@
   background-size: 28px 28px;
 }
 
-@media (prefers-color-scheme: dark) {
+:root[data-theme='dark'] {
   .chat {
     --chat-bg: #0b141a;
     --chat-bubble-in: #202c33;
@@ -2630,9 +2696,9 @@
 }
 
 .trail-content-editor__col {
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--border);
   border-radius: 12px;
-  background: #fff;
+  background: var(--surface);
   padding: 0.8rem;
   display: flex;
   flex-direction: column;
@@ -2690,24 +2756,24 @@
   gap: 0.1rem;
   min-width: 4.5rem;
   padding: 0.35rem 0.4rem;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--border);
   border-radius: 10px;
-  background: #f9fafb;
+  background: var(--surface-muted);
   font-size: 0.72rem;
   line-height: 1.15;
-  color: #4b5563;
+  color: var(--text);
   cursor: pointer;
 }
 
 .trail-content-editor__etapa-release:hover {
-  border-color: #c4b5fd;
-  background: #f5f3ff;
+  border-color: var(--accent-border);
+  background: var(--accent-bg);
 }
 
 .trail-content-editor__etapa-release.is-released {
   border-color: #86efac;
-  background: #ecfdf5;
-  color: #166534;
+  background: var(--success-bg);
+  color: var(--success-text);
 }
 
 .trail-content-editor__etapa-release--inline {
@@ -2750,9 +2816,10 @@
 }
 
 .trail-content-editor__item {
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--border);
   border-radius: 10px;
-  background: #fff;
+  background: var(--surface);
+  color: var(--text-h);
   padding: 0.6rem;
   text-align: left;
 }
@@ -2775,7 +2842,7 @@
 }
 
 .trail-content-editor__question {
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--border);
   border-radius: 10px;
   padding: 0.45rem;
   display: flex;
@@ -2840,7 +2907,7 @@
 .trail-content-editor__phase-chip {
   border: 1px solid #e5e7eb;
   border-radius: 12px;
-  background: #fff;
+  background: var(--surface);
   padding: 0.55rem 0.65rem;
   min-width: 120px;
   display: grid;
@@ -2874,9 +2941,9 @@
 }
 
 .trail-content-editor__phase-editor {
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--border);
   border-radius: 12px;
-  background: #fff;
+  background: var(--surface);
   padding: 0;
   display: flex;
   flex-direction: column;
@@ -2887,7 +2954,7 @@
 }
 
 .trail-content-editor__phase-editor:hover {
-  border-color: color-mix(in srgb, #7c3aed 35%, #e5e7eb);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
 }
 
 .trail-content-editor__phase-editor--expanded {
@@ -2929,14 +2996,14 @@
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: #6d28d9;
+  color: var(--accent-text);
 }
 
 .trail-content-editor__phase-badge {
   font-size: 0.72rem;
   font-weight: 600;
-  color: #6d28d9;
-  background: color-mix(in srgb, #7c3aed 10%, #fff);
+  color: var(--accent-text);
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
   border-radius: 999px;
   padding: 0.15rem 0.45rem;
   white-space: nowrap;
@@ -2968,7 +3035,7 @@
   flex-direction: column;
   gap: 0.55rem;
   padding: 0 0.75rem 0.8rem;
-  border-top: 1px solid #f1f5f9;
+  border-top: 1px solid var(--border);
 }
 
 .trail-content-editor__phase-body .field {
@@ -2984,7 +3051,7 @@
   margin: 0;
   font-size: 0.82rem;
   font-weight: 600;
-  color: #6d28d9;
+  color: var(--accent-text);
 }
 
 .trail-content-editor__phase-save {

@@ -60,4 +60,14 @@ export type GerenciamentoPageViewProps = {
   studentTrailsError: string | null
   studentRows: GerenciamentoStudentRow[]
   studentsEmptyMessage: string
+  studentSearch: string
+  onStudentSearchChange: (value: string) => void
+  filteredStudentsCount: number
+  totalStudentsCount: number
+  studentsPage: number
+  studentsTotalPages: number
+  studentsPageStart: number
+  studentsPageEnd: number
+  onPreviousStudentsPage: () => void
+  onNextStudentsPage: () => void
 }

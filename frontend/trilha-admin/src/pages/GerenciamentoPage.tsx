@@ -34,6 +34,7 @@ import type { StudentTrail } from '../types/studentTrail'
 import type { Trail } from '../types/trail'
 
 const LAST_INSTITUTION_ID_STORAGE_KEY = 'trilha_admin_selected_institution_id'
+const STUDENTS_PAGE_SIZE = 20
 
 export function GerenciamentoPage() {
   const { filterInstitutions } = usePermissions()
@@ -47,6 +48,8 @@ export function GerenciamentoPage() {
   const [students, setStudents] = useState<Student[]>([])
   const [loadingStudents, setLoadingStudents] = useState(false)
   const [studentsError, setStudentsError] = useState<string | null>(null)
+  const [studentSearch, setStudentSearch] = useState('')
+  const [studentsPage, setStudentsPage] = useState(1)
 
   const [trails, setTrails] = useState<Trail[]>([])
   const [loadingTrails, setLoadingTrails] = useState(false)
@@ -95,6 +98,29 @@ export function GerenciamentoPage() {
     if (!selectedTrailId) return students
     return students.filter((s) => studentTrailByStudentId.has(s.id))
   }, [students, selectedTrailId, studentTrailByStudentId])
+
+  const filteredStudents = useMemo(() => {
+    const query = studentSearch.trim().toLowerCase()
+    const digits = studentSearch.replace(/\D/g, '')
+    if (!query) return visibleStudents
+
+    return visibleStudents.filter((student) => {
+      if ((student.name || '').toLowerCase().includes(query)) return true
+      if (student.id.toLowerCase().includes(query)) return true
+      const phone = (student.phone_number || '').replace(/\D/g, '')
+      return digits.length > 0 && phone.includes(digits)
+    })
+  }, [studentSearch, visibleStudents])
+
+  const studentsTotalPages = Math.max(
+    1,
+    Math.ceil(filteredStudents.length / STUDENTS_PAGE_SIZE),
+  )
+
+  const paginatedStudents = useMemo(() => {
+    const start = (studentsPage - 1) * STUDENTS_PAGE_SIZE
+    return filteredStudents.slice(start, start + STUDENTS_PAGE_SIZE)
+  }, [filteredStudents, studentsPage])
 
   useEffect(() => {
     let unsub: (() => void) | null = null
@@ -235,6 +261,12 @@ export function GerenciamentoPage() {
     }
   }, [selectedTrailId, trails])
 
+  useEffect(() => {
+    if (studentsPage > studentsTotalPages) {
+      setStudentsPage(studentsTotalPages)
+    }
+  }, [studentsPage, studentsTotalPages])
+
   async function handleDeleteTrail(trail: Trail) {
     const label = trail.name?.trim() || trail.id
     const ok = window.confirm(
@@ -267,7 +299,7 @@ export function GerenciamentoPage() {
     deleting: deletingTrailId === t.id,
   }))
 
-  const studentRows: GerenciamentoStudentRow[] = visibleStudents.map((s) => {
+  const studentRows: GerenciamentoStudentRow[] = paginatedStudents.map((s) => {
     const st = studentTrailByStudentId.get(s.id) ?? null
     const trailLabel = st
       ? trailNameById.get(st.trail_id) ?? st.trail_id
@@ -304,13 +336,18 @@ export function GerenciamentoPage() {
       onSelectInstitution={(next) => {
         setSelectedId(next)
         setSelectedTrailId(null)
+        setStudentSearch('')
+        setStudentsPage(1)
       }}
       trailOptions={trails.map((trail) => ({
         id: trail.id,
         label: trail.name || trail.id,
       }))}
       selectedTrailId={selectedTrailId}
-      onSelectTrail={setSelectedTrailId}
+      onSelectTrail={(next) => {
+        setSelectedTrailId(next)
+        setStudentsPage(1)
+      }}
       loadingTrails={loadingTrails}
       instError={instError}
       selectedInstitutionName={selectedInstitution?.name?.trim() || 'Instituição'}
@@ -339,6 +376,30 @@ export function GerenciamentoPage() {
       studentsError={studentsError}
       studentTrailsError={studentTrailsError}
       studentRows={studentRows}
+      studentSearch={studentSearch}
+      onStudentSearchChange={(value) => {
+        setStudentSearch(value)
+        setStudentsPage(1)
+      }}
+      filteredStudentsCount={filteredStudents.length}
+      totalStudentsCount={visibleStudents.length}
+      studentsPage={studentsPage}
+      studentsTotalPages={studentsTotalPages}
+      studentsPageStart={
+        filteredStudents.length === 0
+          ? 0
+          : (studentsPage - 1) * STUDENTS_PAGE_SIZE + 1
+      }
+      studentsPageEnd={Math.min(
+        studentsPage * STUDENTS_PAGE_SIZE,
+        filteredStudents.length,
+      )}
+      onPreviousStudentsPage={() =>
+        setStudentsPage((page) => Math.max(1, page - 1))
+      }
+      onNextStudentsPage={() =>
+        setStudentsPage((page) => Math.min(studentsTotalPages, page + 1))
+      }
       studentsEmptyMessage={
         selectedTrailId
           ? 'Nenhum aluno com progresso nesta trilha.'

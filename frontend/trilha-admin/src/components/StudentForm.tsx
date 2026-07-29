@@ -98,7 +98,6 @@ export function StudentForm({ docId, initial }: Props) {
   useEffect(() => {
     // Se o usuário trocar o nível escolar, ajusta a série/ano para uma opção válida.
     if (!school_grade) {
-      setSchoolGrade(gradesForLevel[0] ?? '')
       return
     }
     if (!gradesForLevel.includes(school_grade)) {

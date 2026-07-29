@@ -216,6 +216,13 @@ export function TrailStageQuestionForm({
   }
 
   function removeOptionRow(i: number) {
+    const option = optionRows[i]
+    const label = option?.text.trim() || option?.key.trim() || `Alternativa ${i + 1}`
+    const confirmed = window.confirm(
+      `Excluir a alternativa "${label}"? Esta ação não pode ser desfeita.`,
+    )
+    if (!confirmed) return
+
     setOptionRows((rows) => rows.filter((_, idx) => idx !== i))
   }
 

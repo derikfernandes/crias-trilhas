@@ -257,7 +257,13 @@ export function TrailContentEditor({
                     <button
                       type="button"
                       className="btn btn--small btn--ghost trail-content-editor__etapa-delete"
-                      onClick={() => onRemoveEtapa(selectedEtapa.id)}
+                      onClick={() => {
+                        const label = selectedEtapa.name.trim() || 'Sem nome'
+                        const confirmed = window.confirm(
+                          `Excluir a etapa "${label}"? Esta ação não pode ser desfeita.`,
+                        )
+                        if (confirmed) onRemoveEtapa(selectedEtapa.id)
+                      }}
                     >
                       Excluir etapa
                     </button>
