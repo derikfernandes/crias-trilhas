@@ -6,6 +6,8 @@ import { EnunciadoPreviewCell } from './dashboard/EnunciadoPreviewCell'
 import { formatLessonTopicCode } from './dashboard/formatLessonTopicCode'
 import { formatPct } from './dashboard/formatPct'
 import { LessonTopicCode } from './dashboard/LessonTopicCode'
+import { QuestionsCharts } from './dashboard/QuestionsCharts'
+import { StudentsCharts } from './dashboard/StudentsCharts'
 
 export type {
   DashboardPageViewProps,
@@ -25,6 +27,9 @@ export function DashboardPageView({
   institutionOptions,
   selectedId,
   onSelectInstitution,
+  activeTab,
+  onActiveTabChange,
+  isQuestionsTabLoading,
   instError,
   dataError,
   exportError,
@@ -84,20 +89,37 @@ export function DashboardPageView({
   studentPageCount,
   onStudentPagePrev,
   onStudentPageNext,
+  studentsCharts,
+  studentChartFilter,
+  onStudentChartFilterChange,
   sortedPillCount,
   totalPillCount,
   pillExportTrails,
   exportingPillTrailId,
   onExportPillTrail,
-  pillSubjectFilter,
-  onPillSubjectFilterChange,
+  pillSearch,
+  onPillSearchChange,
+  pillTrailFilter,
+  onPillTrailFilterChange,
+  pillTrailOptions,
   pillMinResponses,
   onPillMinResponsesChange,
+  pillAccMin,
+  pillAccMax,
+  onPillAccMinChange,
+  onPillAccMaxChange,
+  questionsCharts,
   worstPills,
   bestPills,
   onTogglePillSort,
   pillSortIndicator,
-  sortedPillRows,
+  paginatedPillRows,
+  showPillPagination,
+  pillPageRange,
+  pillPage,
+  pillPageCount,
+  onPillPagePrev,
+  onPillPageNext,
 }: DashboardPageViewProps) {
   const [expandedEnunciado, setExpandedEnunciado] =
     useState<ExpandedEnunciado | null>(null)
@@ -215,7 +237,51 @@ export function DashboardPageView({
         </section>
       ) : (
         <>
-          <section className="dashboard-cards">
+          <nav
+            className="trail-detail-tabs dashboard-tabs"
+            aria-label="Seções do dashboard"
+            role="tablist"
+          >
+            <button
+              id="dashboard-students-tab"
+              type="button"
+              role="tab"
+              aria-selected={activeTab === 'students'}
+              aria-controls="dashboard-students-panel"
+              className={`trail-detail-tabs__tab${
+                activeTab === 'students'
+                  ? ' trail-detail-tabs__tab--active'
+                  : ''
+              }`}
+              onClick={() => onActiveTabChange('students')}
+            >
+              Alunos
+            </button>
+            <button
+              id="dashboard-questions-tab"
+              type="button"
+              role="tab"
+              aria-selected={activeTab === 'questions'}
+              aria-controls="dashboard-questions-panel"
+              className={`trail-detail-tabs__tab${
+                activeTab === 'questions'
+                  ? ' trail-detail-tabs__tab--active'
+                  : ''
+              }`}
+              onClick={() => onActiveTabChange('questions')}
+            >
+              Questões
+            </button>
+          </nav>
+
+          {activeTab === 'students' ? (
+            <div
+              id="dashboard-students-panel"
+              className="trail-tab-panel"
+              role="tabpanel"
+              aria-labelledby="dashboard-students-tab"
+            >
+              <section className="dashboard-cards">
             <div className="dashboard-card">
               <span className="dashboard-card__label">Alunos ativos</span>
               <span className="dashboard-card__value">
@@ -268,7 +334,7 @@ export function DashboardPageView({
                 </span>
               </Link>
             ) : null}
-          </section>
+              </section>
 
           <section className="panel">
             <div className="panel__head">
@@ -426,6 +492,12 @@ export function DashboardPageView({
               </div>
             </div>
 
+            <StudentsCharts
+              {...studentsCharts}
+              selectedFilter={studentChartFilter}
+              onFilterChange={onStudentChartFilterChange}
+            />
+
             <div className="table-wrap">
               <table className="table">
                 <thead>
@@ -569,8 +641,35 @@ export function DashboardPageView({
               </div>
             ) : null}
           </section>
+            </div>
+          ) : null}
 
-          <section className="panel">
+          {activeTab === 'questions' ? (
+            <div
+              id="dashboard-questions-panel"
+              className="trail-tab-panel"
+              role="tabpanel"
+              aria-labelledby="dashboard-questions-tab"
+            >
+              {isQuestionsTabLoading ? (
+                <section
+                  className="panel dashboard-tab-loading"
+                  aria-live="polite"
+                  aria-busy="true"
+                >
+                  <span
+                    className="excel-picker__spinner dashboard-tab-loading__spinner"
+                    aria-hidden="true"
+                  />
+                  <div>
+                    <strong>Carregando desempenho das questões…</strong>
+                    <p className="muted">
+                      Calculando acertos, erros e percentuais.
+                    </p>
+                  </div>
+                </section>
+              ) : (
+                <section className="panel">
             <div className="panel__head">
               <h2>Aulas — acertos e erros</h2>
               <p className="admin__actions gerenciamento-detail-actions">
@@ -606,19 +705,26 @@ export function DashboardPageView({
               </p>
             ) : (
               <>
-                <div className="dashboard-filters">
-                  <label className="gerenciamento-select">
-                    <span className="muted">Matéria</span>
+                <div className="dashboard-filters dashboard-question-filters">
+                  <label className="field dashboard-filter-name">
+                    <span>Buscar questão</span>
+                    <input
+                      type="text"
+                      value={pillSearch}
+                      onChange={(e) => onPillSearchChange(e.target.value)}
+                      placeholder="Título, enunciado, trilha, T3 A1…"
+                    />
+                  </label>
+                  <label className="gerenciamento-select dashboard-filter-trail">
+                    <span className="muted">Trilha</span>
                     <select
-                      value={pillSubjectFilter}
-                      onChange={(e) =>
-                        onPillSubjectFilterChange(e.target.value)
-                      }
+                      value={pillTrailFilter}
+                      onChange={(e) => onPillTrailFilterChange(e.target.value)}
                     >
-                      <option value="">Todas as matérias</option>
-                      {subjects.map((s) => (
-                        <option key={s} value={s}>
-                          {s}
+                      <option value="">Todas as trilhas</option>
+                      {pillTrailOptions.map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.label}
                         </option>
                       ))}
                     </select>
@@ -638,9 +744,53 @@ export function DashboardPageView({
                       }}
                     />
                   </label>
+                  <div className="dashboard-pct-filter">
+                    <span className="muted">
+                      % acerto: {Math.min(pillAccMin, pillAccMax)}–
+                      {Math.max(pillAccMin, pillAccMax)}%
+                    </span>
+                    <div className="dashboard-pct-filter__sliders">
+                      <input
+                        type="range"
+                        min={0}
+                        max={100}
+                        step={5}
+                        value={pillAccMin}
+                        onChange={(e) =>
+                          onPillAccMinChange(Number(e.target.value))
+                        }
+                        aria-label="Percentual mínimo de acerto"
+                      />
+                      <input
+                        type="range"
+                        min={0}
+                        max={100}
+                        step={5}
+                        value={pillAccMax}
+                        onChange={(e) =>
+                          onPillAccMaxChange(Number(e.target.value))
+                        }
+                        aria-label="Percentual máximo de acerto"
+                      />
+                    </div>
+                  </div>
+                  <div
+                    className="dashboard-question-student-count"
+                    aria-live="polite"
+                  >
+                    <span>Alunos considerados</span>
+                    <strong>{questionsCharts.studentCount}</strong>
+                    <small>
+                      {questionsCharts.studentCount === 1
+                        ? 'aluno com respostas'
+                        : 'alunos com respostas'}
+                    </small>
+                  </div>
                 </div>
 
-                {totalPillCount > 0 ? (
+                <QuestionsCharts {...questionsCharts} />
+
+                {sortedPillCount > 0 ? (
                   <div className="dashboard-top-pills">
                     <div className="dashboard-top-pills__group">
                       <h3>Top 5 piores (menor % de acerto)</h3>
@@ -732,15 +882,14 @@ export function DashboardPageView({
                       </tr>
                     </thead>
                     <tbody>
-                      {sortedPillRows.length === 0 ? (
+                      {sortedPillCount === 0 ? (
                         <tr>
                           <td colSpan={10} className="muted table__empty">
-                            Nenhuma aula com pelo menos {pillMinResponses}{' '}
-                            {pillMinResponses === 1 ? 'resposta' : 'respostas'}.
+                            Nenhuma aula corresponde aos filtros atuais.
                           </td>
                         </tr>
                       ) : (
-                        sortedPillRows.map((p) => (
+                        paginatedPillRows.map((p) => (
                           <tr key={p.key}>
                             <td>
                               <Link
@@ -800,9 +949,42 @@ export function DashboardPageView({
                     </tbody>
                   </table>
                 </div>
+
+                {showPillPagination ? (
+                  <div className="dashboard-students-pagination">
+                    <span className="muted">
+                      Mostrando {pillPageRange.start}–{pillPageRange.end} de{' '}
+                      {sortedPillCount} aulas
+                    </span>
+                    <div className="dashboard-students-pagination__actions">
+                      <button
+                        type="button"
+                        className="btn btn--small btn--ghost"
+                        disabled={pillPage <= 1}
+                        onClick={onPillPagePrev}
+                      >
+                        Anterior
+                      </button>
+                      <span className="dashboard-students-pagination__page">
+                        Página {pillPage} de {pillPageCount}
+                      </span>
+                      <button
+                        type="button"
+                        className="btn btn--small btn--ghost"
+                        disabled={pillPage >= pillPageCount}
+                        onClick={onPillPageNext}
+                      >
+                        Próxima
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
               </>
             )}
-          </section>
+                </section>
+              )}
+            </div>
+          ) : null}
 
           {expandedEnunciado ? (
             <div

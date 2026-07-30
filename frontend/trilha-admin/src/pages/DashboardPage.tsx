@@ -1,12 +1,20 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+} from 'react'
 import type * as XLSX from 'xlsx'
 import { collection, getDocs, onSnapshot, query, where } from 'firebase/firestore'
 import { DashboardPageView } from '../design/views/DashboardPageView'
 import {
   DASHBOARD_STUDENT_COLUMNS,
   type DashboardPillRowView,
+  type DashboardStudentChartFilter,
   type DashboardStudentColumnKey,
   type DashboardStudentSortKey,
+  type DashboardTab,
 } from '../design/types/dashboardPageView'
 import { db } from '../lib/firebase'
 import {
@@ -45,6 +53,7 @@ import type { TrailStageQuestion } from '../types/trailStageQuestion'
 
 const LAST_INSTITUTION_ID_STORAGE_KEY = 'trilha_admin_selected_institution_id'
 const STUDENTS_PAGE_SIZE = 20
+const PILLS_PAGE_SIZE = 20
 const ALL_STUDENT_COLUMNS = DASHBOARD_STUDENT_COLUMNS
 
 type StudentColumnKey = DashboardStudentColumnKey
@@ -61,6 +70,27 @@ type StudentRow = {
   correct: number
   wrong: number
   accuracyPct: number | null
+}
+
+type StudentEngagementStatus = 'notStarted' | 'inProgress' | 'completed'
+
+function getStudentEngagementStatus(
+  row: StudentRow,
+): StudentEngagementStatus {
+  const completion = row.completionPct
+  if (row.released === 0 || completion === null || completion <= 0) {
+    return 'notStarted'
+  }
+  return completion >= 100 ? 'completed' : 'inProgress'
+}
+
+function getCompletionBucketKey(completion: number | null): string | null {
+  if (completion === null) return null
+  if (completion <= 20) return '0-20'
+  if (completion <= 40) return '21-40'
+  if (completion <= 60) return '41-60'
+  if (completion <= 80) return '61-80'
+  return '81-100'
 }
 
 type PillRow = {
@@ -570,6 +600,9 @@ function appendLessonsProgressSheet(
 
 export function DashboardPage() {
   const { filterInstitutions } = usePermissions()
+  const [activeTab, setActiveTab] = useState<DashboardTab>('students')
+  const [questionsDataEnabled, setQuestionsDataEnabled] = useState(false)
+  const [isQuestionsPending, startQuestionsTransition] = useTransition()
   const [institutions, setInstitutions] = useState<Institution[]>([])
   const [loadingInst, setLoadingInst] = useState(true)
   const [instError, setInstError] = useState<string | null>(null)
@@ -622,6 +655,8 @@ export function DashboardPage() {
   const [subjectFilter, setSubjectFilter] = useState('')
   const [pctMin, setPctMin] = useState(0)
   const [pctMax, setPctMax] = useState(100)
+  const [studentChartFilter, setStudentChartFilter] =
+    useState<DashboardStudentChartFilter | null>(null)
   const [hiddenColumns, setHiddenColumns] = useState<Set<StudentColumnKey>>(
     new Set(),
   )
@@ -647,9 +682,13 @@ export function DashboardPage() {
   }>({ key: 'name', dir: 'asc' })
   const [studentPage, setStudentPage] = useState(1)
 
-  // Filtros do ranking de pílulas
-  const [pillSubjectFilter, setPillSubjectFilter] = useState('')
+  // Filtros do ranking de pílulas / aba Questões
+  const [pillSearch, setPillSearch] = useState('')
+  const [pillTrailFilter, setPillTrailFilter] = useState('')
   const [pillMinResponses, setPillMinResponses] = useState(1)
+  const [pillAccMin, setPillAccMin] = useState(0)
+  const [pillAccMax, setPillAccMax] = useState(100)
+  const [pillPage, setPillPage] = useState(1)
   const [pillSort, setPillSort] = useState<{
     key: PillSortKey
     dir: 'asc' | 'desc'
@@ -1309,8 +1348,20 @@ export function DashboardPage() {
     })
   }, [studentRows, nameFilter, pctMin, pctMax])
 
+  const chartFilteredStudentRows = useMemo(() => {
+    if (!studentChartFilter) return filteredStudentRows
+    return filteredStudentRows.filter((row) => {
+      if (studentChartFilter.kind === 'status') {
+        return getStudentEngagementStatus(row) === studentChartFilter.key
+      }
+      return (
+        getCompletionBucketKey(row.completionPct) === studentChartFilter.key
+      )
+    })
+  }, [filteredStudentRows, studentChartFilter])
+
   const sortedFilteredStudentRows = useMemo(() => {
-    const rows = [...filteredStudentRows]
+    const rows = [...chartFilteredStudentRows]
     const { key, dir } = studentSort
     const mult = dir === 'asc' ? 1 : -1
     rows.sort((a, b) => {
@@ -1361,7 +1412,7 @@ export function DashboardPage() {
       return cmp * mult
     })
     return rows
-  }, [filteredStudentRows, studentSort])
+  }, [chartFilteredStudentRows, studentSort])
 
   const studentPageCount = useMemo(
     () =>
@@ -1376,7 +1427,14 @@ export function DashboardPage() {
 
   useEffect(() => {
     setStudentPage(1)
-  }, [selectedId, nameFilter, pctMin, pctMax, subjectFilter])
+  }, [
+    selectedId,
+    nameFilter,
+    pctMin,
+    pctMax,
+    subjectFilter,
+    studentChartFilter,
+  ])
 
   useEffect(() => {
     if (studentPage > studentPageCount) {
@@ -1426,13 +1484,63 @@ export function DashboardPage() {
     }
   }, [filteredStudentRows, activeTrails])
 
+  const studentsCharts = useMemo(() => {
+    const completionBuckets = [
+      { key: '0-20', label: '0–20%', count: 0 },
+      { key: '21-40', label: '21–40%', count: 0 },
+      { key: '41-60', label: '41–60%', count: 0 },
+      { key: '61-80', label: '61–80%', count: 0 },
+      { key: '81-100', label: '81–100%', count: 0 },
+    ]
+    const statusCounts = {
+      notStarted: 0,
+      inProgress: 0,
+      completed: 0,
+    }
+
+    for (const row of filteredStudentRows) {
+      const completion = row.completionPct
+      statusCounts[getStudentEngagementStatus(row)] += 1
+
+      if (completion !== null) {
+        if (completion <= 20) completionBuckets[0].count += 1
+        else if (completion <= 40) completionBuckets[1].count += 1
+        else if (completion <= 60) completionBuckets[2].count += 1
+        else if (completion <= 80) completionBuckets[3].count += 1
+        else completionBuckets[4].count += 1
+      }
+
+    }
+
+    return {
+      studentCount: filteredStudentRows.length,
+      completionBuckets,
+      statuses: [
+        {
+          key: 'notStarted' as const,
+          label: 'Não iniciou',
+          count: statusCounts.notStarted,
+        },
+        {
+          key: 'inProgress' as const,
+          label: 'Em andamento',
+          count: statusCounts.inProgress,
+        },
+        {
+          key: 'completed' as const,
+          label: 'Concluiu (100%)',
+          count: statusCounts.completed,
+        },
+      ],
+    }
+  }, [filteredStudentRows])
+
   // Ranking de pílulas — itera só respostas existentes no mapa
   const gradablePillQuestions = useMemo(() => {
     const map = new Map<string, string>()
+    if (!questionsDataEnabled) return map
+
     for (const trail of activeTrails) {
-      if (pillSubjectFilter && trail.subject?.trim() !== pillSubjectFilter) {
-        continue
-      }
       const positions = questionsByTrail.get(trail.id) ?? []
       for (const p of positions) {
         const stage = stageByKey.get(`${trail.id}|${p.stage}`)
@@ -1452,10 +1560,12 @@ export function DashboardPage() {
     questionsByTrail,
     stageByKey,
     questionByKey,
-    pillSubjectFilter,
+    questionsDataEnabled,
   ])
 
   const pillRows = useMemo<PillRow[]>(() => {
+    if (!questionsDataEnabled) return []
+
     const byKey = new Map<string, { correct: number; wrong: number }>()
 
     for (const [answerKey, answer] of studentAnswerMap) {
@@ -1486,7 +1596,7 @@ export function DashboardPage() {
       const trail = trailById.get(trailId)
       const question = questionByKey.get(key)
       const total = agg.correct + agg.wrong
-      if (total < pillMinResponses) continue
+      if (total < 1) continue
       rows.push({
         key,
         trailId,
@@ -1513,11 +1623,46 @@ export function DashboardPage() {
     gradablePillQuestions,
     trailById,
     questionByKey,
+    questionsDataEnabled,
+  ])
+
+  const filteredPillRows = useMemo(() => {
+    const query = pillSearch.trim().toLowerCase()
+    const lo = Math.min(pillAccMin, pillAccMax)
+    const hi = Math.max(pillAccMin, pillAccMax)
+    return pillRows.filter((row) => {
+      if (row.total < pillMinResponses) return false
+      if (pillTrailFilter && row.trailId !== pillTrailFilter) return false
+      if (row.accuracyPct < lo || row.accuracyPct > hi) return false
+      if (query) {
+        const code = `t${row.stageNumber} a${row.questionNumber}`
+        const haystack = [
+          row.title,
+          row.content,
+          row.trailName,
+          row.subject,
+          row.gabarito,
+          code,
+          `t${row.stageNumber}`,
+          `a${row.questionNumber}`,
+        ]
+          .join(' ')
+          .toLowerCase()
+        if (!haystack.includes(query)) return false
+      }
+      return true
+    })
+  }, [
+    pillRows,
+    pillSearch,
+    pillTrailFilter,
     pillMinResponses,
+    pillAccMin,
+    pillAccMax,
   ])
 
   const sortedPillRows = useMemo(() => {
-    const rows = [...pillRows]
+    const rows = [...filteredPillRows]
     const { key, dir } = pillSort
     const mult = dir === 'asc' ? 1 : -1
     rows.sort((a, b) => {
@@ -1550,21 +1695,145 @@ export function DashboardPage() {
       return cmp * mult
     })
     return rows
-  }, [pillRows, pillSort])
+  }, [filteredPillRows, pillSort])
 
   const worstPills = useMemo(
-    () => [...pillRows].sort((a, b) => a.accuracyPct - b.accuracyPct).slice(0, 5),
-    [pillRows],
+    () =>
+      [...filteredPillRows]
+        .sort((a, b) => a.accuracyPct - b.accuracyPct)
+        .slice(0, 5),
+    [filteredPillRows],
   )
   const bestPills = useMemo(
-    () => [...pillRows].sort((a, b) => b.accuracyPct - a.accuracyPct).slice(0, 5),
-    [pillRows],
+    () =>
+      [...filteredPillRows]
+        .sort((a, b) => b.accuracyPct - a.accuracyPct)
+        .slice(0, 5),
+    [filteredPillRows],
   )
 
+  const questionsCharts = useMemo(() => {
+    let correctTotal = 0
+    let wrongTotal = 0
+    const filteredQuestionKeys = new Set(
+      filteredPillRows.map((row) => row.key),
+    )
+    const studentIds = new Set<string>()
+    const buckets = [
+      { label: '0–20%', count: 0 },
+      { label: '21–40%', count: 0 },
+      { label: '41–60%', count: 0 },
+      { label: '61–80%', count: 0 },
+      { label: '81–100%', count: 0 },
+    ]
+    const byTrail = new Map<
+      string,
+      { label: string; responses: number; weightedAcc: number }
+    >()
+
+    for (const row of filteredPillRows) {
+      correctTotal += row.correct
+      wrongTotal += row.wrong
+      if (row.accuracyPct <= 20) buckets[0].count += 1
+      else if (row.accuracyPct <= 40) buckets[1].count += 1
+      else if (row.accuracyPct <= 60) buckets[2].count += 1
+      else if (row.accuracyPct <= 80) buckets[3].count += 1
+      else buckets[4].count += 1
+
+      const trail = byTrail.get(row.trailId)
+      if (trail) {
+        trail.responses += row.total
+        trail.weightedAcc += row.accuracyPct * row.total
+      } else {
+        byTrail.set(row.trailId, {
+          label: row.trailName,
+          responses: row.total,
+          weightedAcc: row.accuracyPct * row.total,
+        })
+      }
+    }
+
+    for (const [answerKey, answer] of studentAnswerMap) {
+      if (!answer.trim()) continue
+      const parts = answerKey.split('|')
+      if (parts.length !== 4) continue
+      const studentId = parts[0]
+      const questionKey = `${parts[1]}|${parts[2]}|${parts[3]}`
+      if (filteredQuestionKeys.has(questionKey)) studentIds.add(studentId)
+    }
+
+    const responseCount = correctTotal + wrongTotal
+    const trailBars = [...byTrail.entries()]
+      .map(([id, t]) => ({
+        id,
+        label: t.label,
+        responses: t.responses,
+        avgAccuracy:
+          t.responses > 0 ? Math.round(t.weightedAcc / t.responses) : 0,
+      }))
+      .sort((a, b) => b.responses - a.responses)
+      .slice(0, 8)
+
+    return {
+      studentCount: studentIds.size,
+      questionCount: filteredPillRows.length,
+      responseCount,
+      avgAccuracy: pct(correctTotal, responseCount),
+      correctTotal,
+      wrongTotal,
+      accuracyBuckets: buckets,
+      trailBars,
+    }
+  }, [filteredPillRows, studentAnswerMap])
+
+  const pillPageCount = useMemo(
+    () => Math.max(1, Math.ceil(sortedPillRows.length / PILLS_PAGE_SIZE)),
+    [sortedPillRows.length],
+  )
+
+  const paginatedPillRows = useMemo(() => {
+    const start = (pillPage - 1) * PILLS_PAGE_SIZE
+    return sortedPillRows.slice(start, start + PILLS_PAGE_SIZE)
+  }, [sortedPillRows, pillPage])
+
+  const pillPageRange = useMemo(() => {
+    if (sortedPillRows.length === 0) return { start: 0, end: 0 }
+    const start = (pillPage - 1) * PILLS_PAGE_SIZE + 1
+    const end = Math.min(pillPage * PILLS_PAGE_SIZE, sortedPillRows.length)
+    return { start, end }
+  }, [sortedPillRows.length, pillPage])
+
+  useEffect(() => {
+    setPillPage(1)
+  }, [
+    selectedId,
+    pillSearch,
+    pillTrailFilter,
+    pillMinResponses,
+    pillAccMin,
+    pillAccMax,
+  ])
+
+  useEffect(() => {
+    if (pillPage > pillPageCount) setPillPage(pillPageCount)
+  }, [pillPage, pillPageCount])
+
   const pillExportTrails = useMemo(() => {
-    if (!pillSubjectFilter) return activeTrails
-    return activeTrails.filter((t) => t.subject?.trim() === pillSubjectFilter)
-  }, [activeTrails, pillSubjectFilter])
+    if (!pillTrailFilter) return activeTrails
+    return activeTrails.filter((t) => t.id === pillTrailFilter)
+  }, [activeTrails, pillTrailFilter])
+
+  const pillTrailOptions = useMemo(() => {
+    const byId = new Map<string, string>()
+    for (const row of pillRows) {
+      byId.set(row.trailId, row.trailName)
+    }
+    return [...byId.entries()]
+      .map(([id, label]) => ({ id, label }))
+      .sort((a, b) =>
+        a.label.localeCompare(b.label, 'pt-BR', { sensitivity: 'base' }),
+      )
+  }, [pillRows])
 
   function togglePillSort(key: PillSortKey) {
     setPillSort((curr) =>
@@ -1824,6 +2093,7 @@ export function DashboardPage() {
   const hasActiveStudentExportFilters =
     nameFilter.trim().length > 0 ||
     subjectFilter.length > 0 ||
+    studentChartFilter !== null ||
     pctMin !== 0 ||
     pctMax !== 100 ||
     selectedQuestionCount < availableQuestions.length ||
@@ -1933,7 +2203,31 @@ export function DashboardPage() {
       loadingInst={loadingInst}
       institutionOptions={institutionOptions}
       selectedId={selectedId}
-      onSelectInstitution={setSelectedId}
+      onSelectInstitution={(id) => {
+        setSelectedId(id)
+        setStudentChartFilter(null)
+        setActiveTab('students')
+        setQuestionsDataEnabled(false)
+        setPillSearch('')
+        setPillTrailFilter('')
+        setPillMinResponses(1)
+        setPillAccMin(0)
+        setPillAccMax(100)
+        setPillPage(1)
+      }}
+      activeTab={activeTab}
+      onActiveTabChange={(tab) => {
+        setActiveTab(tab)
+        if (tab === 'questions' && !questionsDataEnabled) {
+          startQuestionsTransition(() => {
+            setQuestionsDataEnabled(true)
+          })
+        }
+      }}
+      isQuestionsTabLoading={
+        activeTab === 'questions' &&
+        (!questionsDataEnabled || isQuestionsPending)
+      }
       instError={instError}
       dataError={dataError}
       exportError={exportError}
@@ -1946,7 +2240,7 @@ export function DashboardPage() {
       missingGabaritoCount={missingGabaritoCount}
       annulledGabaritoCount={annulledGabaritoCount}
       annulledAnswersExcluded={annulledAnswersExcluded}
-      filteredStudentCount={filteredStudentRows.length}
+      filteredStudentCount={chartFilteredStudentRows.length}
       totalStudentCount={studentRows.length}
       questionPickerLabel={questionPickerLabel}
       showQuestionPicker={showQuestionPicker}
@@ -2030,6 +2324,9 @@ export function DashboardPage() {
       onStudentPageNext={() =>
         setStudentPage((p) => Math.min(studentPageCount, p + 1))
       }
+      studentsCharts={studentsCharts}
+      studentChartFilter={studentChartFilter}
+      onStudentChartFilterChange={setStudentChartFilter}
       sortedPillCount={sortedPillRows.length}
       totalPillCount={pillRows.length}
       pillExportTrails={pillExportTrailOptions}
@@ -2037,15 +2334,31 @@ export function DashboardPage() {
       onExportPillTrail={(trailId) => {
         void exportPillTrailXlsx(trailId)
       }}
-      pillSubjectFilter={pillSubjectFilter}
-      onPillSubjectFilterChange={setPillSubjectFilter}
+      pillSearch={pillSearch}
+      onPillSearchChange={setPillSearch}
+      pillTrailFilter={pillTrailFilter}
+      onPillTrailFilterChange={setPillTrailFilter}
+      pillTrailOptions={pillTrailOptions}
       pillMinResponses={pillMinResponses}
       onPillMinResponsesChange={setPillMinResponses}
+      pillAccMin={pillAccMin}
+      pillAccMax={pillAccMax}
+      onPillAccMinChange={setPillAccMin}
+      onPillAccMaxChange={setPillAccMax}
+      questionsCharts={questionsCharts}
       worstPills={worstPills.map(toPillView)}
       bestPills={bestPills.map(toPillView)}
       onTogglePillSort={togglePillSort}
       pillSortIndicator={pillSortIndicator}
-      sortedPillRows={sortedPillRows.map(toPillView)}
+      paginatedPillRows={paginatedPillRows.map(toPillView)}
+      showPillPagination={sortedPillRows.length > PILLS_PAGE_SIZE}
+      pillPageRange={pillPageRange}
+      pillPage={pillPage}
+      pillPageCount={pillPageCount}
+      onPillPagePrev={() => setPillPage((p) => Math.max(1, p - 1))}
+      onPillPageNext={() =>
+        setPillPage((p) => Math.min(pillPageCount, p + 1))
+      }
     />
   )
 }
