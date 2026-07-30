@@ -24,6 +24,8 @@ export type DashboardPillSortKey =
   | 'wrong'
   | 'accuracyPct'
 
+export type DashboardTab = 'students' | 'questions'
+
 export type DashboardInstitutionOption = {
   id: string
   label: string
@@ -68,6 +70,32 @@ export type DashboardSummaryView = {
   avgAccuracy: number | null
 }
 
+export type DashboardStudentsChartBucket = {
+  key: string
+  label: string
+  count: number
+}
+
+export type DashboardStudentsStatus = {
+  key: 'notStarted' | 'inProgress' | 'completed'
+  label: string
+  count: number
+}
+
+export type DashboardStudentChartFilter =
+  | { kind: 'completion'; key: string; label: string }
+  | {
+      kind: 'status'
+      key: DashboardStudentsStatus['key']
+      label: string
+    }
+
+export type DashboardStudentsChartsView = {
+  studentCount: number
+  completionBuckets: DashboardStudentsChartBucket[]
+  statuses: DashboardStudentsStatus[]
+}
+
 export type DashboardPillRowView = {
   key: string
   trailId: string
@@ -90,11 +118,37 @@ export type DashboardPageRange = {
   end: number
 }
 
+export type DashboardQuestionsChartBucket = {
+  label: string
+  count: number
+}
+
+export type DashboardQuestionsChartTrailBar = {
+  id: string
+  label: string
+  responses: number
+  avgAccuracy: number
+}
+
+export type DashboardQuestionsChartsView = {
+  studentCount: number
+  questionCount: number
+  responseCount: number
+  avgAccuracy: number | null
+  correctTotal: number
+  wrongTotal: number
+  accuracyBuckets: DashboardQuestionsChartBucket[]
+  trailBars: DashboardQuestionsChartTrailBar[]
+}
+
 export type DashboardPageViewProps = {
   loadingInst: boolean
   institutionOptions: DashboardInstitutionOption[]
   selectedId: string | null
   onSelectInstitution: (id: string | null) => void
+  activeTab: DashboardTab
+  onActiveTabChange: (tab: DashboardTab) => void
+  isQuestionsTabLoading: boolean
   instError: string | null
   dataError: string | null
   exportError: string | null
@@ -154,18 +208,37 @@ export type DashboardPageViewProps = {
   studentPageCount: number
   onStudentPagePrev: () => void
   onStudentPageNext: () => void
+  studentsCharts: DashboardStudentsChartsView
+  studentChartFilter: DashboardStudentChartFilter | null
+  onStudentChartFilterChange: (
+    filter: DashboardStudentChartFilter | null,
+  ) => void
   sortedPillCount: number
   totalPillCount: number
   pillExportTrails: DashboardTrailExportOption[]
   exportingPillTrailId: string | null
   onExportPillTrail: (trailId: string) => void
-  pillSubjectFilter: string
-  onPillSubjectFilterChange: (value: string) => void
+  pillSearch: string
+  onPillSearchChange: (value: string) => void
+  pillTrailFilter: string
+  onPillTrailFilterChange: (value: string) => void
+  pillTrailOptions: DashboardTrailExportOption[]
   pillMinResponses: number
   onPillMinResponsesChange: (value: number) => void
+  pillAccMin: number
+  pillAccMax: number
+  onPillAccMinChange: (value: number) => void
+  onPillAccMaxChange: (value: number) => void
+  questionsCharts: DashboardQuestionsChartsView
   worstPills: DashboardPillRowView[]
   bestPills: DashboardPillRowView[]
   onTogglePillSort: (key: DashboardPillSortKey) => void
   pillSortIndicator: (key: DashboardPillSortKey) => string
-  sortedPillRows: DashboardPillRowView[]
+  paginatedPillRows: DashboardPillRowView[]
+  showPillPagination: boolean
+  pillPageRange: DashboardPageRange
+  pillPage: number
+  pillPageCount: number
+  onPillPagePrev: () => void
+  onPillPageNext: () => void
 }
