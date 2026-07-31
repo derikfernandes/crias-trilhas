@@ -135,15 +135,33 @@ export function DashboardPageView({
 
   return (
     <>
-      <header className="admin__header">
-        <h1>Dashboard</h1>
-        {!isDashboardLoading ? (
-          <p className="admin__lede muted">
-            Visão geral de engajamento dos alunos e desempenho por aula
-            (exercício).
-          </p>
+      <header className="admin__header dashboard-header">
+        <div className="dashboard-header__intro">
+          <h1>Dashboard</h1>
+          {!isDashboardLoading ? (
+            <p className="admin__lede muted">
+              Visão geral de engajamento dos alunos e desempenho por aula
+              (exercício).
+            </p>
+          ) : null}
+        </div>
+        {selectedId && !isDashboardLoading ? (
+          <div className="dashboard-header__stats" aria-label="Resumo rápido">
+            <div className="dashboard-stat-card">
+              <span className="dashboard-stat-card__label">Alunos ativos</span>
+              <span className="dashboard-stat-card__value">
+                {summary.activeStudents}
+              </span>
+            </div>
+            <div className="dashboard-stat-card">
+              <span className="dashboard-stat-card__label">Trilhas ativas</span>
+              <span className="dashboard-stat-card__value">
+                {summary.activeTrails}
+              </span>
+            </div>
+          </div>
         ) : null}
-        <div className="gerenciamento-toolbar">
+        <div className="gerenciamento-toolbar dashboard-header__toolbar">
           <Link className="btn btn--ghost" to="/">
             ← Início
           </Link>
@@ -283,27 +301,31 @@ export function DashboardPageView({
             >
               <section className="dashboard-cards">
             <div className="dashboard-card">
-              <span className="dashboard-card__label">Alunos ativos</span>
+              <span className="dashboard-card__label">
+                % médio de conclusão (tópicos)
+              </span>
               <span className="dashboard-card__value">
-                {summary.activeStudents}
+                {formatPct(summary.avgCompletion, 1)}
+              </span>
+              <span className="dashboard-card__hint">
+                Tópicos feitos ÷ tópicos liberados
               </span>
             </div>
             <div className="dashboard-card">
-              <span className="dashboard-card__label">Trilhas ativas</span>
-              <span className="dashboard-card__value">
-                {summary.activeTrails}
+              <span className="dashboard-card__label">
+                % médio de conclusão (aulas)
               </span>
-            </div>
-            <div className="dashboard-card">
-              <span className="dashboard-card__label">% médio de conclusão</span>
               <span className="dashboard-card__value">
-                {formatPct(summary.avgCompletion)}
+                {formatPct(summary.avgLessonCompletion, 1)}
+              </span>
+              <span className="dashboard-card__hint">
+                Aulas concluídas ÷ aulas liberadas
               </span>
             </div>
             <div className="dashboard-card">
               <span className="dashboard-card__label">% médio de acerto</span>
               <span className="dashboard-card__value">
-                {formatPct(summary.avgAccuracy)}
+                {formatPct(summary.avgAccuracy, 1)}
               </span>
             </div>
             {annulledGabaritoCount > 0 ? (
