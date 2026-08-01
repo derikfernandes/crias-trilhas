@@ -18,8 +18,49 @@ function asString(v) {
   return typeof v === 'string' ? v.trim() : ''
 }
 
+async function deleteDocsByIds(db, collectionName, docIds) {
+  let deleted = 0
+  const chunkSize = 400
+  for (let start = 0; start < docIds.length; start += chunkSize) {
+    const chunk = docIds.slice(start, start + chunkSize)
+    const batch = db.batch()
+    for (const docId of chunk) {
+      batch.delete(db.collection(collectionName).doc(docId))
+    }
+    await batch.commit()
+    deleted += chunk.length
+  }
+  return deleted
+}
+
+async function deleteByStudentIds(db, collectionName, studentIds) {
+  let deleted = 0
+  const batchSize = 400
+  for (const studentId of studentIds) {
+    while (true) {
+      const snap = await db
+        .collection(collectionName)
+        .where('student_id', '==', studentId)
+        .limit(batchSize)
+        .get()
+      if (snap.empty) break
+      const batch = db.batch()
+      for (const d of snap.docs) batch.delete(d.ref)
+      await batch.commit()
+      deleted += snap.size
+    }
+  }
+  return deleted
+}
+
 async function run() {
   const applyFixes = process.argv.includes('--apply-fixes')
+  const deleteOrphanStudentTrails = process.argv.includes(
+    '--delete-orphan-student-trails',
+  )
+  const deleteOrphanStudentDeps = process.argv.includes(
+    '--delete-orphan-student-deps',
+  )
   const db = getDb()
 
   const collections = {
@@ -30,6 +71,8 @@ async function run() {
     trailStageQuestions:
       process.env.TRAIL_STAGE_QUESTIONS_COLLECTION || 'trail_stage_questions',
     conversationLogs: process.env.CONVERSATION_LOGS_COLLECTION || 'conversation_logs',
+    exerciseAttempts:
+      process.env.EXERCISE_ATTEMPTS_COLLECTION || 'exercise_attempts',
   }
 
   const [
@@ -80,10 +123,19 @@ async function run() {
     fixes: {
       safeStudentTrailInstitutionUpdates: 0,
       appliedStudentTrailInstitutionUpdates: 0,
+      orphanStudentTrailDocs: 0,
+      deletedOrphanStudentTrails: 0,
+      orphanStudentIds: 0,
+      deletedOrphanConversationLogs: 0,
+      deletedOrphanExerciseAttempts: 0,
     },
+    sampleOrphanStudentTrailIds: [],
   }
 
   const safeFixDocIds = []
+  const orphanStudentTrailDocIds = []
+  const orphanStudentIds = new Set()
+
   for (const d of studentTrailsSnap.docs) {
     const data = d.data() || {}
     const studentId = asString(data.student_id)
@@ -94,6 +146,15 @@ async function run() {
 
     if (!studentInstitutionById.has(studentId)) {
       report.issues.studentTrailOrphanStudent += 1
+      orphanStudentTrailDocIds.push(d.id)
+      if (studentId) orphanStudentIds.add(studentId)
+      if (report.sampleOrphanStudentTrailIds.length < 20) {
+        report.sampleOrphanStudentTrailIds.push({
+          id: d.id,
+          student_id: studentId,
+          trail_id: trailId,
+        })
+      }
     }
     if (!trailInstitutionById.has(trailId)) {
       report.issues.studentTrailOrphanTrail += 1
@@ -125,6 +186,9 @@ async function run() {
       safeFixDocIds.push(d.id)
     }
   }
+
+  report.fixes.orphanStudentTrailDocs = orphanStudentTrailDocIds.length
+  report.fixes.orphanStudentIds = orphanStudentIds.size
 
   for (const d of trailStagesSnap.docs) {
     const trailId = asString((d.data() || {}).trail_id)
@@ -168,7 +232,43 @@ async function run() {
     }
   }
 
-  console.log(JSON.stringify({ applyFixes, collections, report }, null, 2))
+  if (deleteOrphanStudentTrails && orphanStudentTrailDocIds.length > 0) {
+    report.fixes.deletedOrphanStudentTrails = await deleteDocsByIds(
+      db,
+      collections.studentTrails,
+      orphanStudentTrailDocIds,
+    )
+  }
+
+  if (deleteOrphanStudentDeps && orphanStudentIds.size > 0) {
+    const ids = [...orphanStudentIds]
+    report.fixes.deletedOrphanConversationLogs = await deleteByStudentIds(
+      db,
+      collections.conversationLogs,
+      ids,
+    )
+    report.fixes.deletedOrphanExerciseAttempts = await deleteByStudentIds(
+      db,
+      collections.exerciseAttempts,
+      ids,
+    )
+  }
+
+  console.log(
+    JSON.stringify(
+      {
+        applyFixes,
+        deleteOrphanStudentTrails,
+        deleteOrphanStudentDeps,
+        dryRun:
+          !applyFixes && !deleteOrphanStudentTrails && !deleteOrphanStudentDeps,
+        collections,
+        report,
+      },
+      null,
+      2,
+    ),
+  )
 }
 
 run().catch((err) => {

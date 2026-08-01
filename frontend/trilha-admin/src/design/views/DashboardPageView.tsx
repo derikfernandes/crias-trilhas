@@ -70,9 +70,6 @@ export function DashboardPageView({
   hasActiveStudentExportFilters,
   nameFilter,
   onNameFilterChange,
-  subjectFilter,
-  onSubjectFilterChange,
-  subjects,
   pctMin,
   pctMax,
   onPctMinChange,
@@ -473,20 +470,6 @@ export function DashboardPageView({
                   placeholder="Nome ou telefone…"
                 />
               </label>
-              <label className="gerenciamento-select">
-                <span className="muted">Matéria</span>
-                <select
-                  value={subjectFilter}
-                  onChange={(e) => onSubjectFilterChange(e.target.value)}
-                >
-                  <option value="">Todas as matérias</option>
-                  {subjects.map((s) => (
-                    <option key={s} value={s}>
-                      {s}
-                    </option>
-                  ))}
-                </select>
-              </label>
               <div className="dashboard-pct-filter">
                 <span className="muted">
                   % conclusão: {Math.min(pctMin, pctMax)}–{Math.max(pctMin, pctMax)}%
@@ -708,7 +691,7 @@ export function DashboardPageView({
                       totalPillCount === 0 || exportingPillTrailId !== null
                     }
                     onClick={() => onExportPillTrail(trail.id)}
-                    title="Desempenho por aula; respeita filtros de matéria e mínimo de respostas"
+                    title="Desempenho por aula; respeita filtros ativos e mínimo de respostas"
                   >
                     {exportingPillTrailId === trail.id
                       ? 'Gerando XLSX…'

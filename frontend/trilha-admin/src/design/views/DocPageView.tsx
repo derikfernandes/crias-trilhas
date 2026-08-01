@@ -552,7 +552,7 @@ const STUDENT_ENDPOINTS: DocEndpoint[] = [
     path: '/student/{id}',
     title: 'Deletar aluno',
     description:
-      'Remove permanentemente o registro do aluno. Operação irreversível; valide regras de negócio no backend.',
+      'Remove o aluno com exclusão em cascade dos registros dependentes (`student_trails`, `conversation_logs`, `exercise_attempts`). Operação irreversível. Se o aluno já não existir, os dependentes ainda são limpos e a resposta é 204.',
     auth: true,
     pathParams: [
       {
@@ -562,8 +562,12 @@ const STUDENT_ENDPOINTS: DocEndpoint[] = [
       },
     ],
     responses: [
-      { code: '204', description: 'Exclusão concluída (No Content).' },
-      { code: '404', description: 'Aluno não encontrado.' },
+      {
+        code: '204',
+        description:
+          'Exclusão concluída (No Content), inclusive quando só havia dependentes órfãos.',
+      },
+      { code: '400', description: 'id ausente.' },
       { code: '401', description: 'Não autenticado.' },
     ],
   },

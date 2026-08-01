@@ -1,6 +1,5 @@
 import {
   collection,
-  deleteDoc,
   doc,
   runTransaction,
   serverTimestamp,
@@ -9,6 +8,7 @@ import {
   type QueryDocumentSnapshot,
 } from 'firebase/firestore'
 import { db } from './firebase'
+import { deleteStudentCascade } from './studentApi'
 import type { Student } from '../types/student'
 
 export const STUDENTS_COLLECTION = 'students'
@@ -151,8 +151,11 @@ export async function createStudentSequential(
   })
 }
 
+/**
+ * Exclui o aluno via API com cascade dos dependentes
+ * (student_trails, conversation_logs, exercise_attempts).
+ */
 export async function deleteStudent(docId: string): Promise<void> {
-  if (!db) return
-  await deleteDoc(doc(db, STUDENTS_COLLECTION, docId))
+  await deleteStudentCascade(docId)
 }
 

@@ -93,6 +93,31 @@ function normalizeSchoolLevel(v: string): string {
   return s
 }
 
+async function deleteByStudentId(
+  db: ReturnType<typeof getFirestore>,
+  collectionName: string,
+  studentId: string,
+): Promise<number> {
+  let total = 0
+  const batchSize = 400
+
+  while (true) {
+    const snap = await db
+      .collection(collectionName)
+      .where('student_id', '==', studentId)
+      .limit(batchSize)
+      .get()
+    if (snap.empty) break
+
+    const batch = db.batch()
+    for (const d of snap.docs) batch.delete(d.ref)
+    await batch.commit()
+    total += snap.size
+  }
+
+  return total
+}
+
 function validateStudentLevel(v: unknown): 1 | 2 | 3 | null {
   if (typeof v === 'number' && Number.isFinite(v)) {
     if (v === 1 || v === 2 || v === 3) return v
@@ -477,14 +502,48 @@ async function handleRequest(request: Request): Promise<Response> {
       }
 
       // DELETE /student/:id (via ?id=:id)
+      // Cascade: student_trails → conversation_logs → exercise_attempts → students
       if (request.method === 'DELETE') {
         if (!id) return respond(400, { error: 'id é obrigatório em DELETE' })
 
+        const studentTrailsCollection =
+          process.env.STUDENT_TRAILS_COLLECTION ?? 'student_trails'
+        const conversationLogsCollection =
+          process.env.CONVERSATION_LOGS_COLLECTION ?? 'conversation_logs'
+        const exerciseAttemptsCollection =
+          process.env.EXERCISE_ATTEMPTS_COLLECTION ?? 'exercise_attempts'
+
+        const deletedStudentTrails = await deleteByStudentId(
+          db,
+          studentTrailsCollection,
+          id,
+        )
+        const deletedConversationLogs = await deleteByStudentId(
+          db,
+          conversationLogsCollection,
+          id,
+        )
+        const deletedExerciseAttempts = await deleteByStudentId(
+          db,
+          exerciseAttemptsCollection,
+          id,
+        )
+
         const ref = db.collection(collection).doc(id)
         const snap = await ref.get()
-        if (!snap.exists) return respond(404, { error: 'Not found' })
+        const deletedStudent = snap.exists
+        if (deletedStudent) {
+          await ref.delete()
+        }
 
-        await ref.delete()
+        console.info('[student.delete_cascade]', {
+          student_id: id,
+          deleted_student: deletedStudent,
+          deleted_student_trails: deletedStudentTrails,
+          deleted_conversation_logs: deletedConversationLogs,
+          deleted_exercise_attempts: deletedExerciseAttempts,
+        })
+
         return new Response(null, { status: 204, headers: corsHeaders() })
       }
 

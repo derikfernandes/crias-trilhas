@@ -200,9 +200,6 @@ export type DashboardPageViewProps = {
   hasActiveStudentExportFilters: boolean
   nameFilter: string
   onNameFilterChange: (value: string) => void
-  subjectFilter: string
-  onSubjectFilterChange: (value: string) => void
-  subjects: string[]
   pctMin: number
   pctMax: number
   onPctMinChange: (value: number) => void

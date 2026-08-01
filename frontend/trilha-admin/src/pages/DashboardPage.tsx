@@ -667,7 +667,6 @@ export function DashboardPage() {
 
   // Filtros da tabela de alunos
   const [nameFilter, setNameFilter] = useState('')
-  const [subjectFilter, setSubjectFilter] = useState('')
   const [pctMin, setPctMin] = useState(0)
   const [pctMax, setPctMax] = useState(100)
   const [studentChartFilter, setStudentChartFilter] =
@@ -1085,17 +1084,6 @@ export function DashboardPage() {
 
   const activeTrails = useMemo(() => trails.filter((t) => t.active), [trails])
 
-  const subjects = useMemo(() => {
-    const set = new Set<string>()
-    for (const t of activeTrails) {
-      const s = t.subject?.trim()
-      if (s) set.add(s)
-    }
-    return [...set].sort((a, b) =>
-      a.localeCompare(b, 'pt-BR', { sensitivity: 'base' }),
-    )
-  }, [activeTrails])
-
   const trailById = useMemo(() => {
     const map = new Map<string, Trail>()
     for (const t of trails) map.set(t.id, t)
@@ -1162,11 +1150,8 @@ export function DashboardPage() {
 
   const annulledGabaritoCount = annulledQuestionKeys.size
 
-  /** Trilhas consideradas nos números da tabela de alunos (filtro de matéria). */
-  const relevantTrails = useMemo(() => {
-    if (!subjectFilter) return activeTrails
-    return activeTrails.filter((t) => t.subject?.trim() === subjectFilter)
-  }, [activeTrails, subjectFilter])
+  /** Trilhas ativas consideradas nos números da tabela de alunos. */
+  const relevantTrails = activeTrails
 
   /** Stages das trilhas relevantes, para o filtro de seleção (agrupados por trilha). */
   const availableStages = useMemo(() => {
@@ -1332,8 +1317,7 @@ export function DashboardPage() {
   const studentRows = useMemo<StudentRow[]>(() => {
     const relevantIds = new Set(relevantTrails.map((t) => t.id))
 
-    // Trilhas inscritas (com progresso) de cada aluno, restritas às trilhas
-    // relevantes (ativas + filtro de matéria).
+    // Trilhas inscritas (com progresso) de cada aluno, restritas às trilhas ativas.
     const trailsByStudent = new Map<string, StudentTrail[]>()
     for (const st of studentTrails) {
       if (!relevantIds.has(st.trail_id)) continue
@@ -1562,14 +1546,7 @@ export function DashboardPage() {
 
   useEffect(() => {
     setStudentPage(1)
-  }, [
-    selectedId,
-    nameFilter,
-    pctMin,
-    pctMax,
-    subjectFilter,
-    studentChartFilter,
-  ])
+  }, [selectedId, nameFilter, pctMin, pctMax, studentChartFilter])
 
   useEffect(() => {
     if (studentPage > studentPageCount) {
@@ -1590,7 +1567,7 @@ export function DashboardPage() {
   }, [sortedFilteredStudentRows.length, studentPage])
 
   // Cards de resumo — refletem os filtros da tabela de alunos
-  // (busca, matéria e faixa de % conclusão).
+  // (busca e faixa de % conclusão).
   const summary = useMemo(() => {
     const activeRows = filteredStudentRows.filter((r) => r.student.active)
 
@@ -2314,7 +2291,6 @@ export function DashboardPage() {
 
   const hasActiveStudentExportFilters =
     nameFilter.trim().length > 0 ||
-    subjectFilter.length > 0 ||
     studentChartFilter !== null ||
     pctMin !== 0 ||
     pctMax !== 100 ||
@@ -2523,9 +2499,6 @@ export function DashboardPage() {
       hasActiveStudentExportFilters={hasActiveStudentExportFilters}
       nameFilter={nameFilter}
       onNameFilterChange={setNameFilter}
-      subjectFilter={subjectFilter}
-      onSubjectFilterChange={setSubjectFilter}
-      subjects={subjects}
       pctMin={pctMin}
       pctMax={pctMax}
       onPctMinChange={setPctMin}
