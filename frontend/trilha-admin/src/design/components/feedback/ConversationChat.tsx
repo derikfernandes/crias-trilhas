@@ -84,6 +84,11 @@ export function ConversationChat({
                     {row.message_type ? (
                       <span className="chat__context-tag">{row.message_type}</span>
                     ) : null}
+                    {row.metadata?.forced_completion === true ? (
+                      <span className="chat__context-tag chat__context-tag--forced">
+                        conclusão forçada
+                      </span>
+                    ) : null}
                   </div>
                   <div className="chat__text">{row.message_text}</div>
                   <div className="chat__foot">

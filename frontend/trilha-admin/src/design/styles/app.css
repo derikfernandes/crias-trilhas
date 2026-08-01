@@ -1865,6 +1865,11 @@
   line-height: 1.3;
 }
 
+.chat__context-tag--forced {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent);
+}
+
 .chat__text {
   white-space: pre-wrap;
   font-size: 0.92rem;
@@ -3178,6 +3183,87 @@
 
 /* ===== Dashboard ===== */
 
+.dashboard-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    'intro stats'
+    'toolbar toolbar';
+  align-items: start;
+  column-gap: 1.25rem;
+  row-gap: 0.85rem;
+}
+
+.dashboard-header__intro {
+  grid-area: intro;
+  min-width: 0;
+}
+
+.dashboard-header__intro h1 {
+  margin: 0;
+}
+
+.dashboard-header__intro .admin__lede {
+  margin: 0.35rem 0 0;
+}
+
+.dashboard-header__stats {
+  grid-area: stats;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.55rem;
+  align-self: center;
+}
+
+.dashboard-header__toolbar {
+  grid-area: toolbar;
+  margin-top: 0;
+}
+
+.dashboard-stat-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.12rem;
+  min-width: 7.25rem;
+  padding: 0.55rem 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--accent) 6%, var(--bg));
+  box-shadow: var(--shadow);
+}
+
+.dashboard-stat-card__label {
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.dashboard-stat-card__value {
+  font-size: 1.35rem;
+  font-weight: 700;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-h);
+}
+
+@media (max-width: 720px) {
+  .dashboard-header {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      'intro'
+      'stats'
+      'toolbar';
+  }
+
+  .dashboard-header__stats {
+    justify-content: flex-start;
+  }
+}
+
 .dashboard-load-progress {
   margin-bottom: 1rem;
 }
@@ -3225,10 +3311,32 @@
 }
 
 .dashboard-cards {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: stretch;
   gap: 0.85rem;
   margin-bottom: 1.25rem;
+}
+
+.dashboard-cards > * {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+@media (max-width: 960px) {
+  .dashboard-cards {
+    flex-wrap: wrap;
+  }
+
+  .dashboard-cards > * {
+    flex: 1 1 calc(50% - 0.45rem);
+  }
+}
+
+@media (max-width: 560px) {
+  .dashboard-cards > * {
+    flex: 1 1 100%;
+  }
 }
 
 .dashboard-card {
@@ -4009,6 +4117,81 @@
 
 .dashboard-student-charts .dashboard-q-charts__bars li {
   display: block;
+}
+
+.dashboard-lesson-vbars {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.45rem;
+  min-height: 14rem;
+  padding: 0.35rem 0.15rem 0;
+  overflow-x: auto;
+}
+
+.dashboard-lesson-vbar {
+  display: flex;
+  flex: 1 1 2.4rem;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.35rem;
+  min-width: 2.4rem;
+  max-width: 4.5rem;
+  height: 13.5rem;
+  padding: 0.25rem 0.15rem;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+}
+
+.dashboard-lesson-vbar:hover {
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+}
+
+.dashboard-lesson-vbar--selected {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.dashboard-lesson-vbar__value {
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.dashboard-lesson-vbar__column {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: flex-end;
+  justify-content: center;
+  width: 100%;
+  min-height: 0;
+}
+
+.dashboard-lesson-vbar__fill {
+  display: block;
+  width: 70%;
+  max-width: 2rem;
+  min-height: 0;
+  border-radius: 6px 6px 2px 2px;
+  background: color-mix(in srgb, var(--accent) 82%, #1d4ed8);
+}
+
+.dashboard-lesson-vbar--selected .dashboard-lesson-vbar__fill {
+  background: var(--accent);
+}
+
+.dashboard-lesson-vbar__label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  line-height: 1.1;
+  text-align: center;
+  white-space: nowrap;
 }
 
 .dashboard-student-charts__filter-button {

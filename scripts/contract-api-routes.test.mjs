@@ -84,6 +84,25 @@ test('frontend deleteTrailCascade mantém DELETE /api/trails?id=', () => {
   assert.match(src, /searchParams\.set\(\s*['"]id['"]/)
 })
 
+test('frontend deleteStudentCascade mantém DELETE /api/student?id=', () => {
+  const src = readFileSync(
+    join(root, 'frontend/trilha-admin/src/lib/studentApi.ts'),
+    'utf8',
+  )
+  assert.match(src, /['"]\/api\/student['"]/)
+  assert.match(src, /method:\s*['"]DELETE['"]/)
+  assert.match(src, /searchParams\.set\(\s*['"]id['"]/)
+})
+
+test('api/student DELETE faz cascade em dependentes por student_id', () => {
+  const src = readFileSync(join(root, 'api/student.ts'), 'utf8')
+  assert.match(src, /deleteByStudentId/)
+  assert.match(src, /student\.delete_cascade/)
+  assert.match(src, /student_trails/)
+  assert.match(src, /conversation_logs/)
+  assert.match(src, /exercise_attempts/)
+})
+
 test('dashboardSummaryApi mantém GET /api/dashboard_summary', () => {
   const src = readFileSync(
     join(root, 'frontend/trilha-admin/src/lib/dashboardSummaryApi.ts'),

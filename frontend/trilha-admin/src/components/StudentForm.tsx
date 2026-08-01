@@ -167,7 +167,10 @@ export function StudentForm({ docId, initial }: Props) {
   async function handleDelete() {
     if (!docId || !initial) return
     const ok = window.confirm(
-      `Excluir o aluno "${initial.name || docId}"? Esta ação não pode ser desfeita.`,
+      `Excluir o aluno "${initial.name || docId}"?\n\n` +
+        'Também serão removidos os vínculos em trilhas (student_trails), ' +
+        'o histórico de conversa e as tentativas de exercício. ' +
+        'Esta ação não pode ser desfeita.',
     )
     if (!ok) return
 

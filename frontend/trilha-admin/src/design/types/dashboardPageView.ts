@@ -67,6 +67,7 @@ export type DashboardSummaryView = {
   activeStudents: number
   activeTrails: number
   avgCompletion: number | null
+  avgLessonCompletion: number | null
   avgAccuracy: number | null
 }
 
@@ -89,11 +90,21 @@ export type DashboardStudentChartFilter =
       key: DashboardStudentsStatus['key']
       label: string
     }
+  | { kind: 'lessons'; keys: string[]; labels: string[] }
+
+export type DashboardStudentsLessonBar = {
+  key: string
+  label: string
+  lessonNumber: number
+  count: number
+  enrolledCount: number
+}
 
 export type DashboardStudentsChartsView = {
   studentCount: number
   completionBuckets: DashboardStudentsChartBucket[]
   statuses: DashboardStudentsStatus[]
+  lessonBars: DashboardStudentsLessonBar[]
 }
 
 export type DashboardPillRowView = {
@@ -189,9 +200,6 @@ export type DashboardPageViewProps = {
   hasActiveStudentExportFilters: boolean
   nameFilter: string
   onNameFilterChange: (value: string) => void
-  subjectFilter: string
-  onSubjectFilterChange: (value: string) => void
-  subjects: string[]
   pctMin: number
   pctMax: number
   onPctMinChange: (value: number) => void

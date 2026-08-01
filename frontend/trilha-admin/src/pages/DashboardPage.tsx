@@ -40,6 +40,14 @@ import {
   snapshotToConversationLog,
 } from '../lib/conversationLogFirestore'
 import { fetchDashboardLogSummary } from '../lib/dashboardSummaryApi'
+import {
+  buildForcedCompletionLookup,
+  collectForcedCompletions,
+  FORCED_COMPLETION_EXPORT_LESSON_LABEL,
+  FORCED_COMPLETION_EXPORT_TOPIC_LABEL,
+  upsertForcedCompletionMarker,
+  type ForcedCompletionTarget,
+} from '../lib/forcedLessonCompletion'
 import { loadXlsx } from '../lib/loadXlsx'
 import { studentPath, trailPath } from '../lib/paths'
 import { usePermissions } from '../hooks/usePermissions'
@@ -462,6 +470,8 @@ function isLessonCompleteForTrail(
   topics: TopicPosition[],
   studentDone: Set<string>,
 ): boolean {
+  // Com a regra de conclusão forçada, o último tópico não-exercício já entra
+  // em `studentDone` via `collectForcedCompletions` antes desta checagem.
   return topics.every((p) =>
     studentDone.has(`${trailId}|${p.stage}|${p.question}`),
   )
@@ -527,6 +537,7 @@ function appendLessonsProgressSheet(
   doneByStudent: Map<string, Set<string>>,
   deselectedStages: Set<string>,
   deselectedQuestions: Set<number>,
+  forcedLookup: Set<string>,
 ) {
   const lessonNumbers = trailLessonNumbers(
     trail.id,
@@ -570,9 +581,13 @@ function appendLessonsProgressSheet(
     const lessonCells = lessonNumbers.map((n) => {
       const topics = byQuestion.get(n) ?? []
       if (topics.length === 0) return ''
-      return isLessonCompleteForTrail(trail.id, topics, studentDone)
-        ? 'Sim'
-        : 'Não'
+      if (!isLessonCompleteForTrail(trail.id, topics, studentDone)) return 'Não'
+      const wasForced = topics.some((p) =>
+        forcedLookup.has(
+          `${student.id}|${trail.id}|${p.stage}|${p.question}`,
+        ),
+      )
+      return wasForced ? FORCED_COMPLETION_EXPORT_LESSON_LABEL : 'Sim'
     })
     return [
       student.name || student.id,
@@ -652,7 +667,6 @@ export function DashboardPage() {
 
   // Filtros da tabela de alunos
   const [nameFilter, setNameFilter] = useState('')
-  const [subjectFilter, setSubjectFilter] = useState('')
   const [pctMin, setPctMin] = useState(0)
   const [pctMax, setPctMax] = useState(100)
   const [studentChartFilter, setStudentChartFilter] =
@@ -1070,17 +1084,6 @@ export function DashboardPage() {
 
   const activeTrails = useMemo(() => trails.filter((t) => t.active), [trails])
 
-  const subjects = useMemo(() => {
-    const set = new Set<string>()
-    for (const t of activeTrails) {
-      const s = t.subject?.trim()
-      if (s) set.add(s)
-    }
-    return [...set].sort((a, b) =>
-      a.localeCompare(b, 'pt-BR', { sensitivity: 'base' }),
-    )
-  }, [activeTrails])
-
   const trailById = useMemo(() => {
     const map = new Map<string, Trail>()
     for (const t of trails) map.set(t.id, t)
@@ -1147,11 +1150,8 @@ export function DashboardPage() {
 
   const annulledGabaritoCount = annulledQuestionKeys.size
 
-  /** Trilhas consideradas nos números da tabela de alunos (filtro de matéria). */
-  const relevantTrails = useMemo(() => {
-    if (!subjectFilter) return activeTrails
-    return activeTrails.filter((t) => t.subject?.trim() === subjectFilter)
-  }, [activeTrails, subjectFilter])
+  /** Trilhas ativas consideradas nos números da tabela de alunos. */
+  const relevantTrails = activeTrails
 
   /** Stages das trilhas relevantes, para o filtro de seleção (agrupados por trilha). */
   const availableStages = useMemo(() => {
@@ -1203,6 +1203,81 @@ export function DashboardPage() {
   const doneQuestionsByStudent = logAggregates.doneByStudent
   const studentAnswerMap = logAggregates.answerMap
 
+  const trailsByStudentIds = useMemo(() => {
+    const map = new Map<string, Set<string>>()
+    for (const st of studentTrails) {
+      let set = map.get(st.student_id)
+      if (!set) {
+        set = new Set()
+        map.set(st.student_id, set)
+      }
+      set.add(st.trail_id)
+    }
+    return map
+  }, [studentTrails])
+
+  const { enrichedDoneByStudent, forced: forcedCompletions } = useMemo(() => {
+    // A regra de conclusão forçada usa a estrutura real da aula (sem filtros
+    // de Aulas/Tópicos do dashboard), para não gravar marcador com base em
+    // uma "última" posição artificial do filtro.
+    return collectForcedCompletions({
+      doneByStudent: doneQuestionsByStudent,
+      trailsByStudent: trailsByStudentIds,
+      questionsByTrail,
+      stageByKey,
+      deselectedStages: new Set(),
+      deselectedQuestions: new Set(),
+      institutionId: selectedId || null,
+    })
+  }, [
+    doneQuestionsByStudent,
+    trailsByStudentIds,
+    questionsByTrail,
+    stageByKey,
+    selectedId,
+  ])
+
+  const forcedCompletionLookup = useMemo(
+    () => buildForcedCompletionLookup(forcedCompletions),
+    [forcedCompletions],
+  )
+
+  const persistedForcedRef = useRef<Set<string>>(new Set())
+
+  useEffect(() => {
+    persistedForcedRef.current.clear()
+  }, [selectedId])
+
+  useEffect(() => {
+    if (!db || forcedCompletions.length === 0) return
+
+    const pending: ForcedCompletionTarget[] = []
+    for (const target of forcedCompletions) {
+      const id = `${target.studentId}|${target.key}`
+      if (persistedForcedRef.current.has(id)) continue
+      persistedForcedRef.current.add(id)
+      pending.push(target)
+    }
+    if (pending.length === 0) return
+
+    let cancelled = false
+    void (async () => {
+      for (const target of pending) {
+        if (cancelled) return
+        try {
+          await upsertForcedCompletionMarker(target)
+        } catch (err) {
+          console.warn('Falha ao gravar marcador de conclusão forçada', err)
+          persistedForcedRef.current.delete(`${target.studentId}|${target.key}`)
+        }
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [forcedCompletions])
+
   /**
    * Quantas respostas de alunos estão em questão anulada e saem do
    * denominador de acerto/erro.
@@ -1242,8 +1317,7 @@ export function DashboardPage() {
   const studentRows = useMemo<StudentRow[]>(() => {
     const relevantIds = new Set(relevantTrails.map((t) => t.id))
 
-    // Trilhas inscritas (com progresso) de cada aluno, restritas às trilhas
-    // relevantes (ativas + filtro de matéria).
+    // Trilhas inscritas (com progresso) de cada aluno, restritas às trilhas ativas.
     const trailsByStudent = new Map<string, StudentTrail[]>()
     for (const st of studentTrails) {
       if (!relevantIds.has(st.trail_id)) continue
@@ -1274,7 +1348,7 @@ export function DashboardPage() {
       let released = 0
       let done = 0
       const enrolled = trailsByStudent.get(student.id) ?? []
-      const studentDone = doneQuestionsByStudent.get(student.id) ?? new Set()
+      const studentDone = enrichedDoneByStudent.get(student.id) ?? new Set()
       for (const st of enrolled) {
         const positions = questionsByTrail.get(st.trail_id) ?? []
         const selected = positions.filter(
@@ -1323,7 +1397,7 @@ export function DashboardPage() {
     questionByKey,
     deselectedStages,
     deselectedQuestions,
-    doneQuestionsByStudent,
+    enrichedDoneByStudent,
     studentAnswerMap,
   ])
 
@@ -1350,15 +1424,60 @@ export function DashboardPage() {
 
   const chartFilteredStudentRows = useMemo(() => {
     if (!studentChartFilter) return filteredStudentRows
-    return filteredStudentRows.filter((row) => {
-      if (studentChartFilter.kind === 'status') {
-        return getStudentEngagementStatus(row) === studentChartFilter.key
-      }
-      return (
-        getCompletionBucketKey(row.completionPct) === studentChartFilter.key
+
+    if (studentChartFilter.kind === 'status') {
+      return filteredStudentRows.filter(
+        (row) => getStudentEngagementStatus(row) === studentChartFilter.key,
       )
+    }
+
+    if (studentChartFilter.kind === 'completion') {
+      return filteredStudentRows.filter(
+        (row) =>
+          getCompletionBucketKey(row.completionPct) === studentChartFilter.key,
+      )
+    }
+
+    const selectedLessonKeys = new Set(studentChartFilter.keys)
+    const topicsByLessonKey = new Map<string, TopicPosition[]>()
+    for (const key of selectedLessonKeys) {
+      const sep = key.lastIndexOf('|')
+      if (sep < 0) continue
+      const trailId = key.slice(0, sep)
+      const lessonNumber = Number(key.slice(sep + 1))
+      if (!Number.isFinite(lessonNumber)) continue
+      const topics =
+        groupTopicsByLesson(
+          filterTrailTopicPositions(
+            trailId,
+            questionsByTrail.get(trailId) ?? [],
+            deselectedStages,
+            deselectedQuestions,
+          ),
+        ).get(lessonNumber) ?? []
+      topicsByLessonKey.set(key, topics)
+    }
+
+    return filteredStudentRows.filter((row) => {
+      const enrolled = trailsByStudentIds.get(row.student.id)
+      if (!enrolled) return false
+      const studentDone = enrichedDoneByStudent.get(row.student.id) ?? new Set()
+      for (const [lessonKey, topics] of topicsByLessonKey) {
+        const trailId = lessonKey.slice(0, lessonKey.lastIndexOf('|'))
+        if (!enrolled.has(trailId)) continue
+        if (isLessonCompleteForTrail(trailId, topics, studentDone)) return true
+      }
+      return false
     })
-  }, [filteredStudentRows, studentChartFilter])
+  }, [
+    filteredStudentRows,
+    studentChartFilter,
+    questionsByTrail,
+    deselectedStages,
+    deselectedQuestions,
+    trailsByStudentIds,
+    enrichedDoneByStudent,
+  ])
 
   const sortedFilteredStudentRows = useMemo(() => {
     const rows = [...chartFilteredStudentRows]
@@ -1427,14 +1546,7 @@ export function DashboardPage() {
 
   useEffect(() => {
     setStudentPage(1)
-  }, [
-    selectedId,
-    nameFilter,
-    pctMin,
-    pctMax,
-    subjectFilter,
-    studentChartFilter,
-  ])
+  }, [selectedId, nameFilter, pctMin, pctMax, studentChartFilter])
 
   useEffect(() => {
     if (studentPage > studentPageCount) {
@@ -1455,32 +1567,44 @@ export function DashboardPage() {
   }, [sortedFilteredStudentRows.length, studentPage])
 
   // Cards de resumo — refletem os filtros da tabela de alunos
-  // (busca, matéria e faixa de % conclusão).
+  // (busca e faixa de % conclusão).
   const summary = useMemo(() => {
     const activeRows = filteredStudentRows.filter((r) => r.student.active)
-    const completionVals = activeRows
-      .map((r) => r.completionPct)
-      .filter((v): v is number => v !== null)
-    const avgCompletion =
-      completionVals.length > 0
-        ? Math.round(
-            completionVals.reduce((acc, v) => acc + v, 0) /
-              completionVals.length,
-          )
-        : null
 
+    let doneTotal = 0
+    let releasedTotal = 0
+    let lessonsDoneTotal = 0
+    let lessonsReleasedTotal = 0
     let correct = 0
     let total = 0
     for (const row of activeRows) {
+      doneTotal += row.done
+      releasedTotal += row.released
+      lessonsDoneTotal += row.lessonsDone
+      lessonsReleasedTotal += row.lessonsReleased
       correct += row.correct
       total += row.correct + row.wrong
     }
+
+    const avgCompletion =
+      releasedTotal > 0
+        ? Math.round((doneTotal / releasedTotal) * 1000) / 10
+        : null
+
+    const avgLessonCompletion =
+      lessonsReleasedTotal > 0
+        ? Math.round((lessonsDoneTotal / lessonsReleasedTotal) * 1000) / 10
+        : null
+
+    const avgAccuracy =
+      total > 0 ? Math.round((correct / total) * 1000) / 10 : null
 
     return {
       activeStudents: activeRows.length,
       activeTrails: activeTrails.length,
       avgCompletion,
-      avgAccuracy: pct(correct, total),
+      avgLessonCompletion,
+      avgAccuracy,
     }
   }, [filteredStudentRows, activeTrails])
 
@@ -1509,7 +1633,60 @@ export function DashboardPage() {
         else if (completion <= 80) completionBuckets[3].count += 1
         else completionBuckets[4].count += 1
       }
+    }
 
+    const multiTrail = relevantTrails.length > 1
+    const lessonBars: {
+      key: string
+      label: string
+      lessonNumber: number
+      count: number
+      enrolledCount: number
+    }[] = []
+
+    for (const trail of relevantTrails) {
+      const lessonNumbers = trailLessonNumbers(
+        trail.id,
+        questionsByTrail,
+        deselectedStages,
+        deselectedQuestions,
+      )
+      const byQuestion = groupTopicsByLesson(
+        filterTrailTopicPositions(
+          trail.id,
+          questionsByTrail.get(trail.id) ?? [],
+          deselectedStages,
+          deselectedQuestions,
+        ),
+      )
+
+      for (const lessonNumber of lessonNumbers) {
+        const topics = byQuestion.get(lessonNumber) ?? []
+        if (topics.length === 0) continue
+
+        let enrolledCount = 0
+        let count = 0
+        for (const row of filteredStudentRows) {
+          const enrolled = trailsByStudentIds.get(row.student.id)
+          if (!enrolled?.has(trail.id)) continue
+          enrolledCount += 1
+          const studentDone =
+            enrichedDoneByStudent.get(row.student.id) ?? new Set()
+          if (isLessonCompleteForTrail(trail.id, topics, studentDone)) {
+            count += 1
+          }
+        }
+
+        lessonBars.push({
+          key: `${trail.id}|${lessonNumber}`,
+          label: multiTrail
+            ? `A${lessonNumber} · ${trail.name || trail.id}`
+            : `A${lessonNumber}`,
+          lessonNumber,
+          count,
+          enrolledCount,
+        })
+      }
     }
 
     return {
@@ -1532,8 +1709,17 @@ export function DashboardPage() {
           count: statusCounts.completed,
         },
       ],
+      lessonBars,
     }
-  }, [filteredStudentRows])
+  }, [
+    filteredStudentRows,
+    relevantTrails,
+    questionsByTrail,
+    deselectedStages,
+    deselectedQuestions,
+    trailsByStudentIds,
+    enrichedDoneByStudent,
+  ])
 
   // Ranking de pílulas — itera só respostas existentes no mapa
   const gradablePillQuestions = useMemo(() => {
@@ -1884,7 +2070,7 @@ export function DashboardPage() {
     )
     const studentDone =
       doneOverride?.get(studentId) ??
-      doneQuestionsByStudent.get(studentId) ??
+      enrichedDoneByStudent.get(studentId) ??
       new Set()
     let done = 0
     for (const p of selected) {
@@ -1914,7 +2100,8 @@ export function DashboardPage() {
       // Reutiliza os agregados já carregados no dashboard (mesmos alunos e
       // trilhas da instituição), sem refazer o download de logs.
       const answersByKey = studentAnswerMap
-      const exportDoneByStudent = doneQuestionsByStudent
+      const exportDoneByStudent = enrichedDoneByStudent
+      const forcedLookup = forcedCompletionLookup
 
       const answerColumns = (
         allQuestionColumnsByTrail.get(trail.id) ?? []
@@ -1956,7 +2143,18 @@ export function DashboardPage() {
         ]
         for (const p of answerColumns) {
           const answerKey = `${student.id}|${trail.id}|${p.stage}|${p.question}`
-          row.push(answersByKey.get(answerKey) ?? '')
+          const answer = answersByKey.get(answerKey)
+          if (answer?.trim()) {
+            row.push(answer)
+          } else if (
+            forcedLookup.has(
+              `${student.id}|${trail.id}|${p.stage}|${p.question}`,
+            )
+          ) {
+            row.push(FORCED_COMPLETION_EXPORT_TOPIC_LABEL)
+          } else {
+            row.push('')
+          }
         }
         return row
       })
@@ -1996,6 +2194,7 @@ export function DashboardPage() {
         exportDoneByStudent,
         deselectedStages,
         deselectedQuestions,
+        forcedLookup,
       )
       const trailSlug = slugFileName(trail.name || trail.id)
       xlsx.writeFile(workbook, `historico-alunos-${trailSlug}.xlsx`)
@@ -2092,7 +2291,6 @@ export function DashboardPage() {
 
   const hasActiveStudentExportFilters =
     nameFilter.trim().length > 0 ||
-    subjectFilter.length > 0 ||
     studentChartFilter !== null ||
     pctMin !== 0 ||
     pctMax !== 100 ||
@@ -2301,9 +2499,6 @@ export function DashboardPage() {
       hasActiveStudentExportFilters={hasActiveStudentExportFilters}
       nameFilter={nameFilter}
       onNameFilterChange={setNameFilter}
-      subjectFilter={subjectFilter}
-      onSubjectFilterChange={setSubjectFilter}
-      subjects={subjects}
       pctMin={pctMin}
       pctMax={pctMax}
       onPctMinChange={setPctMin}
