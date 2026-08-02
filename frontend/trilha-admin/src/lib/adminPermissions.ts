@@ -6,14 +6,73 @@ export const NAV_ITEMS: {
   path: string
 }[] = [
   { key: 'home', label: 'Início', path: '/' },
-  { key: 'institution_new', label: 'Nova instituição', path: '/instituicoes/novo' },
-  { key: 'student_new', label: 'Novo aluno', path: '/alunos/novo' },
-  { key: 'trail_new', label: 'Nova trilha', path: '/trilhas/novo' },
-  { key: 'gerenciamento', label: 'Gerenciamento', path: '/gerenciamento' },
+  { key: 'institution_new', label: 'Criar instituição', path: '/instituicoes/novo' },
+  { key: 'student_new', label: 'Alunos', path: '/alunos' },
+  { key: 'trail_new', label: 'Trilhas', path: '/trilhas' },
+  { key: 'gerenciamento', label: 'Visão por instituição', path: '/gerenciamento' },
   { key: 'dashboard', label: 'Dashboard', path: '/dashboard' },
-  { key: 'gabarito', label: 'Gabarito', path: '/gabarito' },
-  { key: 'doc', label: 'API / Doc', path: '/doc' },
-  { key: 'admin', label: 'Admin', path: '/admin' },
+  { key: 'gabarito', label: 'Gabaritos', path: '/gabarito' },
+  { key: 'doc', label: 'API e documentação', path: '/doc' },
+  { key: 'admin', label: 'Usuários e permissões', path: '/admin' },
+]
+
+export type SidebarNavChild = {
+  key: NavPermission
+  label: string
+  path: string
+}
+
+export type SidebarNavLink = {
+  type: 'link'
+  key: NavPermission
+  label: string
+  path: string
+}
+
+export type SidebarNavGroup = {
+  type: 'group'
+  id: string
+  label: string
+  children: SidebarNavChild[]
+}
+
+export type SidebarNavEntry = SidebarNavLink | SidebarNavGroup
+
+/** Árvore do menu lateral (ações “Novo *” ficam só como botões nas páginas). */
+export const SIDEBAR_NAV: SidebarNavEntry[] = [
+  { type: 'link', key: 'home', label: 'Início', path: '/' },
+  { type: 'link', key: 'dashboard', label: 'Dashboard', path: '/dashboard' },
+  {
+    type: 'group',
+    id: 'gestao-academica',
+    label: 'Gestão acadêmica',
+    children: [
+      { key: 'student_new', label: 'Alunos', path: '/alunos' },
+      {
+        key: 'gerenciamento',
+        label: 'Visão por instituição',
+        path: '/gerenciamento',
+      },
+    ],
+  },
+  {
+    type: 'group',
+    id: 'conteudo-avaliacoes',
+    label: 'Conteúdo e avaliações',
+    children: [
+      { key: 'trail_new', label: 'Trilhas', path: '/trilhas' },
+      { key: 'gabarito', label: 'Gabaritos', path: '/gabarito' },
+    ],
+  },
+  {
+    type: 'group',
+    id: 'administracao',
+    label: 'Administração',
+    children: [
+      { key: 'admin', label: 'Usuários e permissões', path: '/admin' },
+      { key: 'doc', label: 'API e documentação', path: '/doc' },
+    ],
+  },
 ]
 
 const ROUTE_NAV_MAP: { prefix: string; permission: NavPermission }[] = [
@@ -21,9 +80,9 @@ const ROUTE_NAV_MAP: { prefix: string; permission: NavPermission }[] = [
   { prefix: '/instituicoes/novo', permission: 'institution_new' },
   { prefix: '/instituicoes/', permission: 'home' },
   { prefix: '/alunos/novo', permission: 'student_new' },
-  { prefix: '/alunos/', permission: 'student_new' },
+  { prefix: '/alunos', permission: 'student_new' },
   { prefix: '/trilhas/novo', permission: 'trail_new' },
-  { prefix: '/trilhas/', permission: 'trail_new' },
+  { prefix: '/trilhas', permission: 'trail_new' },
   { prefix: '/gerenciamento', permission: 'gerenciamento' },
   { prefix: '/dashboard', permission: 'dashboard' },
   { prefix: '/gabarito', permission: 'gabarito' },

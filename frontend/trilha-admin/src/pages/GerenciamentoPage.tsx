@@ -42,7 +42,10 @@ export function GerenciamentoPage() {
   const [loadingInst, setLoadingInst] = useState(true)
   const [instError, setInstError] = useState<string | null>(null)
 
-  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [selectedId, setSelectedId] = useState<string | null>(() => {
+    const saved = window.localStorage.getItem(LAST_INSTITUTION_ID_STORAGE_KEY)
+    return saved?.trim() ? saved : null
+  })
   const [selectedTrailId, setSelectedTrailId] = useState<string | null>(null)
 
   const [students, setStudents] = useState<Student[]>([])
