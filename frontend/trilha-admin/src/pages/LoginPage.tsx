@@ -1,16 +1,16 @@
 import { useState, type FormEvent } from 'react'
-import { Navigate, useLocation } from 'react-router-dom'
+import { Navigate } from 'react-router-dom'
 import { FirebaseError } from 'firebase/app'
 import { useAuth } from '../hooks/useAuth'
 import { firebaseConfigError } from '../lib/firebase'
 import { firebaseAuthErrorMessage } from '../lib/authErrors'
 import { LoginPageView } from '../design/views/LoginPageView'
 
+/** Destino pós-login: lista de Instituições. */
+const POST_LOGIN_PATH = '/'
+
 export function LoginPage() {
   const { user, loading, signIn } = useAuth()
-  const location = useLocation()
-  const from =
-    (location.state as { from?: string } | null)?.from?.trim() || '/'
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -34,7 +34,7 @@ export function LoginPage() {
   }
 
   if (user) {
-    return <Navigate to={from} replace />
+    return <Navigate to={POST_LOGIN_PATH} replace />
   }
 
   async function handleSubmit(e: FormEvent) {

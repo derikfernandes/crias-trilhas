@@ -1,6 +1,6 @@
 import type { Timestamp } from 'firebase/firestore'
 
-/** Itens do menu superior que podem ser liberados por login. */
+/** Itens de navegação que podem ser liberados por login. */
 export const NAV_PERMISSIONS = [
   'home',
   'institution_new',

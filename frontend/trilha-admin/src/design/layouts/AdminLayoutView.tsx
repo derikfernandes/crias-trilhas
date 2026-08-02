@@ -1,11 +1,29 @@
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 
-export type AdminLayoutMenuItem = {
+export type AdminLayoutNavChild = {
   key: string
   path: string
   label: string
+  active: boolean
 }
+
+export type AdminLayoutNavLink = {
+  type: 'link'
+  key: string
+  path: string
+  label: string
+  active: boolean
+}
+
+export type AdminLayoutNavGroup = {
+  type: 'group'
+  id: string
+  label: string
+  children: AdminLayoutNavChild[]
+}
+
+export type AdminLayoutNavEntry = AdminLayoutNavLink | AdminLayoutNavGroup
 
 export type AdminLayoutGuestLink = {
   path: string
@@ -14,7 +32,7 @@ export type AdminLayoutGuestLink = {
 
 export type AdminLayoutViewProps = {
   brandLabel: string
-  menuItems: AdminLayoutMenuItem[]
+  navEntries: AdminLayoutNavEntry[]
   userEmail: string | null
   permissionsLoading: boolean
   authed: boolean
@@ -23,11 +41,12 @@ export type AdminLayoutViewProps = {
   onToggleTheme: () => void
   children: ReactNode
   guestLinks: AdminLayoutGuestLink[]
+  helpMailto: string
 }
 
 export function AdminLayoutView({
   brandLabel,
-  menuItems,
+  navEntries,
   userEmail,
   permissionsLoading,
   authed,
@@ -36,59 +55,180 @@ export function AdminLayoutView({
   onToggleTheme,
   children,
   guestLinks,
+  helpMailto,
 }: AdminLayoutViewProps) {
-  return (
-    <div className="admin">
-      <nav className="nav">
-        <Link to="/" className="nav__brand">
-          {brandLabel}
+  const [mobileOpen, setMobileOpen] = useState(false)
+  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, true>>(
+    {},
+  )
+
+  function toggleGroup(id: string) {
+    setCollapsedGroups((prev) => {
+      if (prev[id]) {
+        const next = { ...prev }
+        delete next[id]
+        return next
+      }
+      return { ...prev, [id]: true }
+    })
+  }
+
+  function closeMobile() {
+    setMobileOpen(false)
+  }
+
+  const sidebar = (
+    <aside className="shell__sidebar">
+      <div className="shell__sidebar-top">
+        <Link to="/" className="shell__brand" onClick={closeMobile}>
+          <span className="shell__brand-mark" aria-hidden="true" />
+          <span className="shell__brand-text">{brandLabel}</span>
         </Link>
-        <div className="nav__links">
+
+        <nav className="shell__nav" aria-label="Navegação principal">
           {authed ? (
-            <>
-              {permissionsLoading ? (
-                <span className="muted">Carregando menu…</span>
-              ) : (
-                menuItems.map((item) => (
-                  <Link key={item.key} to={item.path}>
-                    {item.label}
-                  </Link>
-                ))
-              )}
-              <span className="nav__user muted">{userEmail}</span>
-              <button
-                type="button"
-                className="nav__logout btn btn--ghost btn--small"
-                onClick={onLogout}
-              >
-                Sair
-              </button>
-            </>
+            permissionsLoading ? (
+              <span className="shell__nav-muted">Carregando menu…</span>
+            ) : (
+              navEntries.map((entry) => {
+                if (entry.type === 'link') {
+                  return (
+                    <Link
+                      key={entry.key}
+                      to={entry.path}
+                      className={
+                        entry.active
+                          ? 'shell__nav-link shell__nav-link--active'
+                          : 'shell__nav-link'
+                      }
+                      aria-current={entry.active ? 'page' : undefined}
+                      onClick={closeMobile}
+                    >
+                      {entry.label}
+                    </Link>
+                  )
+                }
+
+                const open = !collapsedGroups[entry.id]
+                return (
+                  <div key={entry.id} className="shell__nav-group">
+                    <button
+                      type="button"
+                      className="shell__nav-group-toggle"
+                      aria-expanded={open}
+                      onClick={() => toggleGroup(entry.id)}
+                    >
+                      <span>{entry.label}</span>
+                      <span
+                        className={
+                          open
+                            ? 'shell__nav-chevron shell__nav-chevron--open'
+                            : 'shell__nav-chevron'
+                        }
+                        aria-hidden="true"
+                      />
+                    </button>
+                    {open ? (
+                      <div className="shell__nav-children">
+                        {entry.children.map((child) => (
+                          <Link
+                            key={child.key}
+                            to={child.path}
+                            className={
+                              child.active
+                                ? 'shell__nav-link shell__nav-link--child shell__nav-link--active'
+                                : 'shell__nav-link shell__nav-link--child'
+                            }
+                            aria-current={child.active ? 'page' : undefined}
+                            onClick={closeMobile}
+                          >
+                            {child.label}
+                          </Link>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                )
+              })
+            )
           ) : (
-            <>
-              {guestLinks.map((link) => (
-                <Link key={link.path} to={link.path}>
-                  {link.label}
-                </Link>
-              ))}
-            </>
+            guestLinks.map((link) => (
+              <Link
+                key={link.path}
+                to={link.path}
+                className="shell__nav-link"
+                onClick={closeMobile}
+              >
+                {link.label}
+              </Link>
+            ))
           )}
-          <button
-            type="button"
-            className="nav__theme btn btn--ghost btn--small"
-            aria-label={
-              theme === 'light' ? 'Ativar modo escuro' : 'Ativar modo claro'
-            }
-            title={
-              theme === 'light' ? 'Ativar modo escuro' : 'Ativar modo claro'
-            }
-            onClick={onToggleTheme}
-          >
-            {theme === 'light' ? '🌙 Modo escuro' : '☀️ Modo claro'}
-          </button>
-        </div>
-      </nav>
-      {children}
+        </nav>
+      </div>
+
+      <div className="shell__sidebar-footer">
+        <a className="shell__footer-link" href={helpMailto}>
+          Ajuda
+        </a>
+        <button
+          type="button"
+          className="shell__footer-btn"
+          aria-label={
+            theme === 'light' ? 'Ativar modo escuro' : 'Ativar modo claro'
+          }
+          onClick={onToggleTheme}
+        >
+          {theme === 'light' ? 'Modo escuro' : 'Modo claro'}
+        </button>
+        {authed ? (
+          <>
+            <div className="shell__user">
+              <span className="shell__user-avatar" aria-hidden="true">
+                {(userEmail?.trim().charAt(0) || 'U').toUpperCase()}
+              </span>
+              <span className="shell__user-email" title={userEmail ?? undefined}>
+                {userEmail || 'Usuário'}
+              </span>
+            </div>
+            <button
+              type="button"
+              className="shell__footer-btn shell__footer-btn--danger"
+              onClick={onLogout}
+            >
+              Sair
+            </button>
+          </>
+        ) : null}
+      </div>
+    </aside>
+  )
+
+  return (
+    <div className={mobileOpen ? 'shell shell--nav-open' : 'shell'}>
+      <button
+        type="button"
+        className="shell__menu-toggle"
+        aria-label={mobileOpen ? 'Fechar menu' : 'Abrir menu'}
+        aria-expanded={mobileOpen}
+        onClick={() => setMobileOpen((open) => !open)}
+      >
+        <span className="shell__menu-toggle-bars" aria-hidden="true" />
+      </button>
+
+      {mobileOpen ? (
+        <button
+          type="button"
+          className="shell__backdrop"
+          aria-label="Fechar menu"
+          onClick={closeMobile}
+        />
+      ) : null}
+
+      {sidebar}
+
+      <div className="shell__main">
+        <div className="shell__content">{children}</div>
+      </div>
     </div>
   )
 }

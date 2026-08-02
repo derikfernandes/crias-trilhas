@@ -59,6 +59,16 @@ const GerenciamentoPage = lazy(() =>
     default: m.GerenciamentoPage,
   })),
 )
+const StudentsListPage = lazy(() =>
+  import('./pages/StudentsListPage').then((m) => ({
+    default: m.StudentsListPage,
+  })),
+)
+const TrailsListPage = lazy(() =>
+  import('./pages/TrailsListPage').then((m) => ({
+    default: m.TrailsListPage,
+  })),
+)
 
 const routerBasename =
   import.meta.env.BASE_URL === '/'
@@ -100,6 +110,14 @@ function AppRoutes() {
             element={
               <ProtectedPage>
                 <StudentNewPage />
+              </ProtectedPage>
+            }
+          />
+          <Route
+            path="/alunos"
+            element={
+              <ProtectedPage>
+                <StudentsListPage />
               </ProtectedPage>
             }
           />
@@ -148,6 +166,14 @@ function AppRoutes() {
             element={
               <ProtectedPage>
                 <TrailNewPage />
+              </ProtectedPage>
+            }
+          />
+          <Route
+            path="/trilhas"
+            element={
+              <ProtectedPage>
+                <TrailsListPage />
               </ProtectedPage>
             }
           />
