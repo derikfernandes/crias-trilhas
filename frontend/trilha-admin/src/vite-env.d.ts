@@ -16,6 +16,8 @@ interface ImportMetaEnv {
    * precisar gerar links locais.
    */
   readonly VITE_PUBLIC_APP_ORIGIN?: string
+  /** Versão do app (branch/tag do GitHub, injetada no build). */
+  readonly VITE_APP_VERSION: string
 }
 
 interface ImportMeta {

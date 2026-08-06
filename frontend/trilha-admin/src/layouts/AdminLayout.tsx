@@ -7,6 +7,7 @@ import {
   SIDEBAR_NAV,
   type SidebarNavEntry,
 } from '../lib/adminPermissions'
+import { getAppVersion } from '../lib/appVersion'
 import { HELP_MAILTO } from '../lib/site'
 import {
   AdminLayoutView,
@@ -92,6 +93,7 @@ export function AdminLayout({ children }: { children: ReactNode }) {
         setTheme((current) => (current === 'light' ? 'dark' : 'light'))
       }
       helpMailto={HELP_MAILTO}
+      appVersion={getAppVersion()}
       guestLinks={[
         { path: '/doc', label: 'API e documentação' },
         { path: '/login', label: 'Entrar' },

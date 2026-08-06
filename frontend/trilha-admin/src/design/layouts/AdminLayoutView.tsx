@@ -42,6 +42,7 @@ export type AdminLayoutViewProps = {
   children: ReactNode
   guestLinks: AdminLayoutGuestLink[]
   helpMailto: string
+  appVersion: string
 }
 
 export function AdminLayoutView({
@@ -56,6 +57,7 @@ export function AdminLayoutView({
   children,
   guestLinks,
   helpMailto,
+  appVersion,
 }: AdminLayoutViewProps) {
   const [mobileOpen, setMobileOpen] = useState(false)
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, true>>(
@@ -229,6 +231,10 @@ export function AdminLayoutView({
       <div className="shell__main">
         <div className="shell__content">{children}</div>
       </div>
+
+      <p className="app-version" aria-label={`Versão ${appVersion}`}>
+        {appVersion}
+      </p>
     </div>
   )
 }

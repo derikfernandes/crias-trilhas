@@ -11,12 +11,12 @@
   --surface-muted: #f1f5f9;
   --border: #e2e8f0;
   --code-bg: #f1f5f9;
-  --accent: #f97316;
-  --accent-text: #c2410c;
-  --accent-bg: rgba(249, 115, 22, 0.12);
-  --accent-border: rgba(249, 115, 22, 0.55);
-  --accent-solid: #f97316;
-  --accent-solid-text: #ffffff;
+  --accent: #ffd500;
+  --accent-text: #8a7000;
+  --accent-bg: rgba(255, 213, 0, 0.18);
+  --accent-border: rgba(255, 213, 0, 0.65);
+  --accent-solid: #ffd500;
+  --accent-solid-text: #0f172a;
   --success-text: #0f766e;
   --success-bg: #ecfdf5;
   --social-bg: rgba(241, 245, 249, 0.9);
@@ -24,13 +24,13 @@
     rgba(15, 23, 42, 0.06) 0 4px 6px -1px,
     rgba(15, 23, 42, 0.04) 0 10px 15px -3px;
 
-  --sidebar-bg: #0f172a;
-  --sidebar-text: #94a3b8;
-  --sidebar-text-strong: #f8fafc;
-  --sidebar-muted: #64748b;
-  --sidebar-hover: rgba(248, 250, 252, 0.06);
-  --sidebar-active-bg: #f97316;
-  --sidebar-active-text: #ffffff;
+  --sidebar-bg: #00be85;
+  --sidebar-text: rgba(255, 255, 255, 0.88);
+  --sidebar-text-strong: #ffffff;
+  --sidebar-muted: rgba(255, 255, 255, 0.72);
+  --sidebar-hover: rgba(255, 255, 255, 0.14);
+  --sidebar-active-bg: #ffd500;
+  --sidebar-active-text: #0f172a;
   --sidebar-width: 260px;
 
   --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
@@ -46,23 +46,23 @@
   --surface-muted: #1c2436;
   --border: #2a3348;
   --code-bg: #1c2436;
-  --accent: #fb923c;
-  --accent-text: #fdba74;
-  --accent-bg: rgba(251, 146, 60, 0.16);
-  --accent-border: rgba(251, 146, 60, 0.55);
-  --accent-solid: #f97316;
-  --accent-solid-text: #ffffff;
+  --accent: #ffd500;
+  --accent-text: #ffe566;
+  --accent-bg: rgba(255, 213, 0, 0.16);
+  --accent-border: rgba(255, 213, 0, 0.55);
+  --accent-solid: #ffd500;
+  --accent-solid-text: #0f172a;
   --success-text: #5eead4;
   --success-bg: rgba(20, 184, 166, 0.16);
   --social-bg: rgba(28, 36, 54, 0.85);
   --shadow:
     rgba(0, 0, 0, 0.45) 0 10px 15px -3px, rgba(0, 0, 0, 0.3) 0 4px 6px -2px;
 
-  --sidebar-bg: #0a0f1a;
-  --sidebar-text: #94a3b8;
-  --sidebar-text-strong: #f8fafc;
-  --sidebar-muted: #64748b;
-  --sidebar-hover: rgba(248, 250, 252, 0.06);
-  --sidebar-active-bg: #f97316;
-  --sidebar-active-text: #ffffff;
+  --sidebar-bg: #00be85;
+  --sidebar-text: rgba(255, 255, 255, 0.88);
+  --sidebar-text-strong: #ffffff;
+  --sidebar-muted: rgba(255, 255, 255, 0.72);
+  --sidebar-hover: rgba(255, 255, 255, 0.14);
+  --sidebar-active-bg: #ffd500;
+  --sidebar-active-text: #0f172a;
 }
