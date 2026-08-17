@@ -114,7 +114,7 @@ export function StudentForm({ docId, initial }: Props) {
     const normalizedLevel = normalizeSchoolLevel(String(school_level))
     const normalizedStudentLevel = student_level
 
-    if (!instId) {
+    if (!instId && !isEdit) {
       setFormError('Informe a instituição (vínculo obrigatório).')
       return
     }
@@ -193,8 +193,8 @@ export function StudentForm({ docId, initial }: Props) {
             value={institution_id}
             onChange={(e) => setInstitutionId(e.target.value)}
           >
-            <option value="" disabled>
-              Selecione…
+            <option value="">
+              {isEdit ? 'Sem instituição' : 'Selecione…'}
             </option>
             {institutions.map((inst) => (
               <option key={inst.id} value={inst.id}>

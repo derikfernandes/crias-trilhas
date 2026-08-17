@@ -32,12 +32,15 @@ export type StudentDetailPageViewOkProps = {
   trailRows: StudentDetailTrailRow[]
   editStage: string
   editQuestion: string
+  editStatus: string
   editBusy: boolean
   onEditStageChange: (value: string) => void
   onEditQuestionChange: (value: string) => void
+  onEditStatusChange: (value: string) => void
   onStartEditTrail: (rowId: string) => void
   onCancelEditTrail: () => void
   onSaveTrailPosition: (rowId: string) => void
+  onUnlinkTrail: (rowId: string) => void
   missingInstitutionId: boolean
   institutionTrailsError: string | null
   linkError: string | null
