@@ -41,7 +41,7 @@ export const EMPTY_AGENT_USAGE: AgentUsageView = {
   totalMessages: 0,
   agents: CANONICAL_AGENT_TRAIL_IDS.map((trailId) => ({
     trailId,
-    label: trailId.replace(/^Trilha - |^Tutor - /, ''),
+    label: agentLabelForTrailId(trailId),
     messages: 0,
     uniqueStudents: 0,
     pctOfTotal: 0,
@@ -49,6 +49,21 @@ export const EMPTY_AGENT_USAGE: AgentUsageView = {
     studentIds: [],
   })),
   series: [],
+}
+
+export function agentLabelForTrailId(trailId: string): string {
+  const id = trailId.trim()
+  const canonical: Record<string, string> = {
+    'Trilha - Matemática': 'Matemática',
+    'Trilha - Geral': 'Geral',
+    'Trilha - Humanas': 'Humanas',
+    'Trilha - Natureza': 'Natureza',
+    'Tutor - Linguagens': 'Linguagens',
+  }
+  if (id in canonical) return canonical[id]!
+  if (id.startsWith('Trilha -')) return id.slice('Trilha -'.length).trim() || id
+  if (id.startsWith('Tutor -')) return id.slice('Tutor -'.length).trim() || id
+  return id
 }
 
 export function formatAgentLastActivity(iso: string | null): string {

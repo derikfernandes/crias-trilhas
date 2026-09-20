@@ -53,6 +53,9 @@ export type StudentDetailPageViewOkProps = {
   logsError: string | null
   logsEmpty: boolean
   chatSlot?: ReactNode
+  /** Filtro vindo do dashboard de agentes (`?agent_trail_id=`). */
+  agentHistoryFilterLabel: string | null
+  onClearAgentHistoryFilter: (() => void) | null
 }
 
 export type StudentDetailPageViewProps =

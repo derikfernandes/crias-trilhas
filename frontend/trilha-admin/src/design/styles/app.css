@@ -512,6 +512,25 @@
   color: var(--text-h);
 }
 
+.banner--info {
+  background: color-mix(in srgb, #0f766e 10%, var(--bg));
+  border: 1px solid color-mix(in srgb, #0f766e 35%, var(--border));
+  color: var(--text-h);
+}
+
+.student-detail-agent-filter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.student-detail-agent-filter p {
+  margin: 0;
+}
+
 .panel {
   background: var(--surface);
   border: 1px solid var(--border);

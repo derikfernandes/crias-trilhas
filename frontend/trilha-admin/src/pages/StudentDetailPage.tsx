@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
-import { useParams } from 'react-router-dom'
+import { useParams, useSearchParams } from 'react-router-dom'
 import {
   collection,
   doc,
@@ -22,6 +22,7 @@ import {
   CONVERSATION_LOGS_COLLECTION,
   snapshotToConversationLog,
 } from '../lib/conversationLogFirestore'
+import { agentLabelForTrailId } from '../lib/agentUsage'
 import { StudentForm } from '../components/StudentForm'
 import {
   ConversationChat,
@@ -36,6 +37,8 @@ import type { Trail } from '../types/trail'
 
 export function StudentDetailPage() {
   const { id } = useParams<{ id: string }>()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const agentTrailFilter = (searchParams.get('agent_trail_id') ?? '').trim()
   const [stu, setStu] = useState<Student | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -99,10 +102,16 @@ export function StudentDetailPage() {
       setLoadingLogs(true)
       setLogsError(null)
 
-      const q = query(
-        collection(dbOk, CONVERSATION_LOGS_COLLECTION),
-        where('student_id', '==', id),
-      )
+      const q = agentTrailFilter
+        ? query(
+            collection(dbOk, CONVERSATION_LOGS_COLLECTION),
+            where('student_id', '==', id),
+            where('trail_id', '==', agentTrailFilter),
+          )
+        : query(
+            collection(dbOk, CONVERSATION_LOGS_COLLECTION),
+            where('student_id', '==', id),
+          )
 
       unsub = onSnapshot(
         q,
@@ -126,11 +135,11 @@ export function StudentDetailPage() {
 
     void run()
     return () => unsub?.()
-  }, [id])
+  }, [id, agentTrailFilter])
 
   useEffect(() => {
     setLogsVisibleCount(LOGS_PAGE_SIZE)
-  }, [id])
+  }, [id, agentTrailFilter])
 
   useEffect(() => {
     if (!db || !id) return
@@ -411,12 +420,24 @@ export function StudentDetailPage() {
       loadingLogs={loadingLogs}
       logsError={logsError}
       logsEmpty={logs.length === 0}
+      agentHistoryFilterLabel={
+        agentTrailFilter ? agentLabelForTrailId(agentTrailFilter) : null
+      }
+      onClearAgentHistoryFilter={
+        agentTrailFilter
+          ? () => {
+              const next = new URLSearchParams(searchParams)
+              next.delete('agent_trail_id')
+              setSearchParams(next, { replace: true })
+            }
+          : null
+      }
       chatSlot={
         logs.length > 0 ? (
           <ConversationChat
             logs={logs}
             visibleCount={logsVisibleCount}
-            showTrail
+            showTrail={!agentTrailFilter}
             onLoadMore={() =>
               setLogsVisibleCount((count) =>
                 Math.min(count + LOGS_PAGE_SIZE, logs.length),

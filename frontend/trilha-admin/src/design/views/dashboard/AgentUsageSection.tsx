@@ -160,9 +160,7 @@ export function AgentUsageSection({
         <p className="muted dashboard-agent-usage__status" role="status">
           Atualizando uso dos agentes…
         </p>
-      ) : null}
-
-      {agentUsage.totalMessages === 0 && !loading ? (
+      ) : agentUsage.totalMessages === 0 ? (
         <p className="muted dashboard-agent-usage__empty">
           Nenhuma interação com agentes no período.
         </p>

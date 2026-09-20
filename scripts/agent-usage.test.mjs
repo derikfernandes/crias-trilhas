@@ -45,6 +45,31 @@ test('dashboard do painel não faz fallback de conversation_logs no cliente', ()
   assert.doesNotMatch(page, /CONVERSATION_LOGS_COLLECTION/)
   assert.match(page, /fetchDashboardLogSummary/)
   assert.match(page, /agentUsage/)
+  assert.match(page, /\[dashboard\] pronto em/)
+})
+
+test('StudentDetailPage filtra histórico por agent_trail_id', () => {
+  const page = readFileSync(
+    join(root, 'frontend/trilha-admin/src/pages/StudentDetailPage.tsx'),
+    'utf8',
+  )
+  assert.match(page, /agent_trail_id/)
+  assert.match(page, /agentTrailFilter/)
+  assert.match(page, /where\('trail_id'/)
+})
+
+test('índice Firestore student_id + trail_id existe para filtro de agente', () => {
+  const indexes = JSON.parse(
+    readFileSync(join(root, 'firestore.indexes.json'), 'utf8'),
+  )
+  const hit = indexes.indexes.find(
+    (idx) =>
+      idx.collectionGroup === 'conversation_logs' &&
+      Array.isArray(idx.fields) &&
+      idx.fields.some((f) => f.fieldPath === 'student_id') &&
+      idx.fields.some((f) => f.fieldPath === 'trail_id'),
+  )
+  assert.ok(hit, 'faltando índice conversation_logs student_id+trail_id')
 })
 
 test('specs/10_AGENT_USAGE_DASHBOARD.md existe', () => {

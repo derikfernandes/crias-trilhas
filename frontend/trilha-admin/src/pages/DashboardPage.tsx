@@ -6,7 +6,7 @@ import {
   useTransition,
 } from 'react'
 import type * as XLSX from 'xlsx'
-import { collection, getDocs, onSnapshot, query, where } from 'firebase/firestore'
+import { collection, getDocs, query, where } from 'firebase/firestore'
 import { DashboardPageView } from '../design/views/DashboardPageView'
 import {
   DASHBOARD_STUDENT_COLUMNS,
@@ -549,6 +549,7 @@ export function DashboardPage() {
   const [agentUsageLoading, setAgentUsageLoading] = useState(false)
   const [initialLogsLoaded, setInitialLogsLoaded] = useState(false)
   const initialLogsLoadedRef = useRef(false)
+  const dashboardLoadStartedAtRef = useRef(0)
   const loadProgressRef = useRef({ done: 0, total: TOTAL_LOAD_STEPS })
   const loadTargetPercentRef = useRef(0)
 
@@ -613,29 +614,30 @@ export function DashboardPage() {
     dir: 'asc' | 'desc'
   }>({ key: 'accuracyPct', dir: 'asc' })
   useEffect(() => {
-    let unsub: (() => void) | null = null
+    let cancelled = false
 
     async function run() {
       if (!db) {
         setLoadingInst(false)
         return
       }
-      unsub = onSnapshot(
-        collection(db, INSTITUTIONS_COLLECTION),
-        (snap) => {
-          setInstitutions(snap.docs.map(snapshotToInstitution))
-          setInstError(null)
-          setLoadingInst(false)
-        },
-        (err) => {
-          setInstError(err.message)
-          setLoadingInst(false)
-        },
-      )
+      try {
+        const snap = await getDocs(collection(db, INSTITUTIONS_COLLECTION))
+        if (cancelled) return
+        setInstitutions(snap.docs.map(snapshotToInstitution))
+        setInstError(null)
+        setLoadingInst(false)
+      } catch (err) {
+        if (cancelled) return
+        setInstError(err instanceof Error ? err.message : 'Erro ao carregar instituições.')
+        setLoadingInst(false)
+      }
     }
 
     void run()
-    return () => unsub?.()
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   useEffect(() => {
@@ -673,6 +675,7 @@ export function DashboardPage() {
 
       loadProgressRef.current = { done: 0, total: TOTAL_LOAD_STEPS }
       loadTargetPercentRef.current = 0
+      dashboardLoadStartedAtRef.current = performance.now()
       setLoadingData(true)
       // Evita frame com dashboard zerado entre o fim do loadingData e o início
       // dos efeitos de metadados/logs.
@@ -2196,7 +2199,15 @@ export function DashboardPage() {
   useEffect(() => {
     if (isDashboardLoading) return
     loadTargetPercentRef.current = 0
-  }, [isDashboardLoading])
+    if (selectedId && dashboardLoadStartedAtRef.current > 0) {
+      const ms = Math.round(performance.now() - dashboardLoadStartedAtRef.current)
+      dashboardLoadStartedAtRef.current = 0
+      // Telemetria leve local (útil em staging / DevTools).
+      console.info(
+        `[dashboard] pronto em ${ms}ms (institution_id=${selectedId})`,
+      )
+    }
+  }, [isDashboardLoading, selectedId])
 
   useEffect(() => {
     if (!isDashboardLoading) return
@@ -2321,7 +2332,9 @@ export function DashboardPage() {
       return {
         id,
         name: student?.name?.trim() || id,
-        href: studentPath(id),
+        href: studentPath(id, {
+          agentTrailId: selectedAgentTrailId ?? undefined,
+        }),
       }
     })
   })()
