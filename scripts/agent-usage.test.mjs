@@ -1,0 +1,57 @@
+/**
+ * Testes de regressão: summary não indexa agentes em trail_ids de progressão
+ * e o classificador permanece alinhado à allowlist canônica.
+ */
+import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { test } from 'node:test'
+
+const root = join(dirname(fileURLToPath(import.meta.url)), '..')
+
+const CANONICAL = [
+  'Trilha - Matemática',
+  'Trilha - Geral',
+  'Trilha - Humanas',
+  'Trilha - Natureza',
+  'Tutor - Linguagens',
+]
+
+test('server/lib/agentUsage.ts exporta a allowlist canônica', () => {
+  const src = readFileSync(join(root, 'server/lib/agentUsage.ts'), 'utf8')
+  for (const id of CANONICAL) {
+    assert.match(src, new RegExp(id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
+  }
+  assert.match(src, /export function isAgentTrailId/)
+  assert.match(src, /export function aggregateAgentUsage/)
+})
+
+test('api/dashboard_summary agrega agent_usage e pula agentes na progressão', () => {
+  const src = readFileSync(join(root, 'api/dashboard_summary.ts'), 'utf8')
+  assert.match(src, /agent_usage/)
+  assert.match(src, /isAgentTrailId/)
+  assert.match(src, /aggregateAgentUsage/)
+  // Agentes não devem ser indexados via trailIndexById no caminho de progressão
+  assert.match(src, /if \(isAgentTrailId\(trailId\)\)/)
+})
+
+test('dashboard do painel não faz fallback de conversation_logs no cliente', () => {
+  const page = readFileSync(
+    join(root, 'frontend/trilha-admin/src/pages/DashboardPage.tsx'),
+    'utf8',
+  )
+  assert.doesNotMatch(page, /fetchConversationLogsForStudents/)
+  assert.doesNotMatch(page, /CONVERSATION_LOGS_COLLECTION/)
+  assert.match(page, /fetchDashboardLogSummary/)
+  assert.match(page, /agentUsage/)
+})
+
+test('specs/10_AGENT_USAGE_DASHBOARD.md existe', () => {
+  const src = readFileSync(
+    join(root, 'specs/10_AGENT_USAGE_DASHBOARD.md'),
+    'utf8',
+  )
+  assert.match(src, /Trilha - Matemática/)
+  assert.match(src, /Tutor - Linguagens/)
+})

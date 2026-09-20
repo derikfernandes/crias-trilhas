@@ -119,15 +119,15 @@ Spec: `specs/10_AGENT_USAGE_DASHBOARD.md`.
 
 - [x] Atualizar `08_OUT_OF_SCOPE.md`, `09_DECISIONS.md`, `tests.yaml`, `TASKS.md`.
 - [x] Criar `specs/10_AGENT_USAGE_DASHBOARD.md`.
-- [ ] Estender `GET /api/dashboard_summary` com `agent_usage` (allowlist canônica).
-- [ ] Garantir que `trail_id` de agente não entra nas métricas de trilha `tN`.
-- [ ] Remover fallback cliente que baixa `conversation_logs` no dashboard.
-- [ ] Reduzir `onSnapshot` onde one-shot basta (stages/questões/dados base).
-- [ ] Tabela de uso: agente, mensagens, alunos únicos, % total, última atividade.
-- [ ] Gráficos de volume/share (e série temporal se houver dados).
-- [ ] Filtro de período (todo / 7 / 30 dias).
-- [ ] Testes unitários: classificador + agregação + contrato do summary.
-- [ ] lint + typecheck + build verdes.
+- [x] Estender `GET /api/dashboard_summary` com `agent_usage` (allowlist canônica).
+- [x] Garantir que `trail_id` de agente não entra nas métricas de trilha `tN`.
+- [x] Remover fallback cliente que baixa `conversation_logs` no dashboard.
+- [x] Reduzir `onSnapshot` onde one-shot basta (stages/questões/dados base).
+- [x] Tabela de uso: agente, mensagens, alunos únicos, % total, última atividade.
+- [x] Gráficos de volume/share (e série temporal se houver dados).
+- [x] Filtro de período (todo / 7 / 30 dias).
+- [x] Testes unitários: classificador + agregação + contrato do summary.
+- [x] lint + typecheck + build verdes.
 
 Critério de conclusão:
 
