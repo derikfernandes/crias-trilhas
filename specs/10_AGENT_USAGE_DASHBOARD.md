@@ -71,13 +71,19 @@ Resposta adicional:
 Regras:
 
 - Contar **todas** as mensagens (qualquer `sender`) cujo `trail_id` seja agente.
+- **Agregar por disciplina (label):** aliases `Trilha - X` e `Tutor - X`
+  (mesmo sufixo) formam **uma** linha. Somar `messages`, unir alunos,
+  `last_activity = max`, `trail_ids[]` = aliases, `trail_id` = primary
+  (preferir allowlist canônica).
+- Incluir `student_stats[]` (`student_id`, `messages`, `last_activity`) para
+  drill-down útil.
 - `pct_of_total` = `messages / total_messages * 100` (1 casa decimal), ou `0`
   se `total_messages = 0`.
-- Incluir na lista todos os agentes canônicos mesmo com zero mensagens
-  (ordem: allowlist; demais agentes descobertos por prefixo ao final,
-  ordenados por mensagens desc).
-- `series`: buckets diários (America/Sao_Paulo) por agente, só dias com
-  atividade; vazio se não houver mensagens.
+- Incluir na lista as disciplinas canônicas mesmo com zero mensagens
+  (ordem: Matemática, Geral, Humanas, Natureza, Linguagens; extras ao final
+  por mensagens desc). A **UI** não renderiza barras/zerados.
+- `series`: buckets diários (America/Sao_Paulo) por **disciplina** (primary
+  `trail_id`), só dias com atividade; vazio se não houver mensagens.
 - Continuar **ignorando** `trail_id` de agente no bloco `students` de
   progressão (não indexar em `trail_ids`).
 
@@ -88,29 +94,35 @@ Regras:
   exibir erro + retry.
 - Onde realtime não for crítico (stages, questões, e dados base do
   dashboard), preferir `getDocs` one-shot em vez de `onSnapshot`.
-- Loading progressivo: KPIs básicos e bloco de agentes podem aparecer
-  assim que o summary chegar; charts pesados reutilizam o mesmo payload.
+- Loading: gate do dashboard permanece até o summary chegar
+  (`!initialLogsLoaded`); refetch de período mantém último snapshot + badge
+  “Atualizando…”.
 
-## 5. UI — bloco “Agentes de IA”
+## 5. UI — bloco “Tutores de IA” (tab Alunos)
 
-Copy em português.
+Copy em português. Seção **dentro** da tab Alunos, abaixo dos cards de
+conclusão/acerto — não acima das tabs.
 
-### Tabela
+### KPIs
 
-Colunas: Agente | Mensagens | Alunos únicos | % do total | Última atividade.
+- Total de mensagens (período)
+- Alunos únicos com tutor
+- % da turma (únicos / alunos da instituição)
+- Msgs / tutor / dia (proxy; default de período na UI: **30 dias**)
 
-- Ordenação por coluna.
-- Filtro de período: Todo período | 7 dias | 30 dias (refetch do summary).
-- Clique na linha: detalhe com alunos que usaram o agente (ids/nomes
-  quando disponíveis na lista de alunos já carregada).
+### Gráfico
 
-### Gráficos
+- Barras horizontais: volume por disciplina, **somente** `messages > 0`.
+- Sem pizza de participação; sem série diária all-time.
 
-- Barras: volume de mensagens por agente.
-- Share: participação percentual (pizza/arco ou barras empilhadas).
-- Série temporal opcional: mensagens/dia (agregado ou por agente).
+### Drill-down
 
-Estados: loading, vazio (“Nenhuma interação com agentes no período.”), erro.
+Ao selecionar uma disciplina: ranking de alunos com msgs + última atividade
++ link para histórico filtrado (`agent_trail_id` + `agent_trail_ids` com
+aliases).
+
+Estados: skeleton (loading sem dados), keep-previous + badge (refetch),
+vazio honesto, erro no gate do dashboard.
 
 ## 6. Fora de escopo desta spec
 

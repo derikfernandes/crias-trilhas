@@ -39,6 +39,18 @@ export function StudentDetailPage() {
   const { id } = useParams<{ id: string }>()
   const [searchParams, setSearchParams] = useSearchParams()
   const agentTrailFilter = (searchParams.get('agent_trail_id') ?? '').trim()
+  const agentTrailFilters = useMemo(() => {
+    const raw = (searchParams.get('agent_trail_ids') ?? '').trim()
+    const fromList = raw
+      ? raw
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean)
+      : []
+    if (fromList.length > 0) return [...new Set(fromList)]
+    return agentTrailFilter ? [agentTrailFilter] : []
+  }, [searchParams, agentTrailFilter])
+  const agentTrailFiltersKey = agentTrailFilters.join('\0')
   const [stu, setStu] = useState<Student | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -102,16 +114,23 @@ export function StudentDetailPage() {
       setLoadingLogs(true)
       setLogsError(null)
 
-      const q = agentTrailFilter
-        ? query(
-            collection(dbOk, CONVERSATION_LOGS_COLLECTION),
-            where('student_id', '==', id),
-            where('trail_id', '==', agentTrailFilter),
-          )
-        : query(
-            collection(dbOk, CONVERSATION_LOGS_COLLECTION),
-            where('student_id', '==', id),
-          )
+      const q =
+        agentTrailFilters.length > 1
+          ? query(
+              collection(dbOk, CONVERSATION_LOGS_COLLECTION),
+              where('student_id', '==', id),
+              where('trail_id', 'in', agentTrailFilters.slice(0, 30)),
+            )
+          : agentTrailFilters.length === 1
+            ? query(
+                collection(dbOk, CONVERSATION_LOGS_COLLECTION),
+                where('student_id', '==', id),
+                where('trail_id', '==', agentTrailFilters[0]),
+              )
+            : query(
+                collection(dbOk, CONVERSATION_LOGS_COLLECTION),
+                where('student_id', '==', id),
+              )
 
       unsub = onSnapshot(
         q,
@@ -135,11 +154,11 @@ export function StudentDetailPage() {
 
     void run()
     return () => unsub?.()
-  }, [id, agentTrailFilter])
+  }, [id, agentTrailFilters, agentTrailFiltersKey])
 
   useEffect(() => {
     setLogsVisibleCount(LOGS_PAGE_SIZE)
-  }, [id, agentTrailFilter])
+  }, [id, agentTrailFiltersKey])
 
   useEffect(() => {
     if (!db || !id) return
@@ -421,13 +440,16 @@ export function StudentDetailPage() {
       logsError={logsError}
       logsEmpty={logs.length === 0}
       agentHistoryFilterLabel={
-        agentTrailFilter ? agentLabelForTrailId(agentTrailFilter) : null
+        agentTrailFilters.length > 0
+          ? agentLabelForTrailId(agentTrailFilters[0]!)
+          : null
       }
       onClearAgentHistoryFilter={
-        agentTrailFilter
+        agentTrailFilters.length > 0
           ? () => {
               const next = new URLSearchParams(searchParams)
               next.delete('agent_trail_id')
+              next.delete('agent_trail_ids')
               setSearchParams(next, { replace: true })
             }
           : null
@@ -437,7 +459,7 @@ export function StudentDetailPage() {
           <ConversationChat
             logs={logs}
             visibleCount={logsVisibleCount}
-            showTrail={!agentTrailFilter}
+            showTrail={agentTrailFilters.length === 0}
             onLoadMore={() =>
               setLogsVisibleCount((count) =>
                 Math.min(count + LOGS_PAGE_SIZE, logs.length),

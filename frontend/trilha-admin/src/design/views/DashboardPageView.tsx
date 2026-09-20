@@ -260,16 +260,6 @@ export function DashboardPageView({
         </section>
       ) : (
         <>
-          <AgentUsageSection
-            agentUsage={agentUsage}
-            periodDays={agentPeriodDays}
-            onPeriodDaysChange={onAgentPeriodDaysChange}
-            loading={agentUsageLoading}
-            selectedAgentTrailId={selectedAgentTrailId}
-            onSelectAgentTrailId={onSelectAgentTrailId}
-            selectedAgentStudents={selectedAgentStudents}
-          />
-
           <nav
             className="trail-detail-tabs dashboard-tabs"
             aria-label="Seções do dashboard"
@@ -372,6 +362,16 @@ export function DashboardPageView({
               </Link>
             ) : null}
               </section>
+
+          <AgentUsageSection
+            agentUsage={agentUsage}
+            periodDays={agentPeriodDays}
+            onPeriodDaysChange={onAgentPeriodDaysChange}
+            loading={agentUsageLoading}
+            selectedAgentTrailId={selectedAgentTrailId}
+            onSelectAgentTrailId={onSelectAgentTrailId}
+            selectedAgentStudents={selectedAgentStudents}
+          />
 
           <section className="panel">
             <div className="panel__head">

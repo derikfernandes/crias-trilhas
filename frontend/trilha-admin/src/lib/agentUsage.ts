@@ -11,16 +11,32 @@ export const CANONICAL_AGENT_TRAIL_IDS = [
   'Tutor - Linguagens',
 ] as const
 
+export const CANONICAL_AGENT_LABELS = [
+  'Matemática',
+  'Geral',
+  'Humanas',
+  'Natureza',
+  'Linguagens',
+] as const
+
 export type AgentUsagePeriodDays = 0 | 7 | 30
+
+export type AgentUsageStudentStatView = {
+  studentId: string
+  messages: number
+  lastActivity: string | null
+}
 
 export type AgentUsageRowView = {
   trailId: string
+  trailIds: string[]
   label: string
   messages: number
   uniqueStudents: number
   pctOfTotal: number
   lastActivity: string | null
   studentIds: string[]
+  studentStats: AgentUsageStudentStatView[]
 }
 
 export type AgentUsageSeriesPointView = {
@@ -37,17 +53,9 @@ export type AgentUsageView = {
 }
 
 export const EMPTY_AGENT_USAGE: AgentUsageView = {
-  periodDays: 0,
+  periodDays: 30,
   totalMessages: 0,
-  agents: CANONICAL_AGENT_TRAIL_IDS.map((trailId) => ({
-    trailId,
-    label: agentLabelForTrailId(trailId),
-    messages: 0,
-    uniqueStudents: 0,
-    pctOfTotal: 0,
-    lastActivity: null,
-    studentIds: [],
-  })),
+  agents: [],
   series: [],
 }
 
@@ -82,4 +90,145 @@ export function formatAgentLastActivity(iso: string | null): string {
   } catch {
     return '—'
   }
+}
+
+/**
+ * Deduplica por label somando aliases (rede de segurança se a API ainda
+ * emitir Trilha/Tutor separados).
+ */
+export function mergeAgentRowsByLabel(
+  rows: AgentUsageRowView[],
+): AgentUsageRowView[] {
+  const byLabel = new Map<string, AgentUsageRowView>()
+  const canonicalPrimary: Record<string, string> = {
+    Matemática: 'Trilha - Matemática',
+    Geral: 'Trilha - Geral',
+    Humanas: 'Trilha - Humanas',
+    Natureza: 'Trilha - Natureza',
+    Linguagens: 'Tutor - Linguagens',
+  }
+
+  for (const row of rows) {
+    const label = row.label.trim() || agentLabelForTrailId(row.trailId)
+    const existing = byLabel.get(label)
+    if (!existing) {
+      byLabel.set(label, {
+        ...row,
+        label,
+        trailIds: [...new Set([...(row.trailIds ?? []), row.trailId])],
+        studentStats: [...(row.studentStats ?? [])],
+      })
+      continue
+    }
+
+    const studentMap = new Map<
+      string,
+      { messages: number; lastActivity: string | null }
+    >()
+    for (const st of [...existing.studentStats, ...(row.studentStats ?? [])]) {
+      const cur = studentMap.get(st.studentId) ?? {
+        messages: 0,
+        lastActivity: null,
+      }
+      cur.messages += st.messages
+      if (
+        st.lastActivity &&
+        (!cur.lastActivity || st.lastActivity > cur.lastActivity)
+      ) {
+        cur.lastActivity = st.lastActivity
+      }
+      studentMap.set(st.studentId, cur)
+    }
+    // Se a API antiga só mandou studentIds, unir sem stats.
+    for (const id of [...existing.studentIds, ...row.studentIds]) {
+      if (!studentMap.has(id)) {
+        studentMap.set(id, { messages: 0, lastActivity: null })
+      }
+    }
+
+    const studentStats = [...studentMap.entries()]
+      .map(([studentId, st]) => ({
+        studentId,
+        messages: st.messages,
+        lastActivity: st.lastActivity,
+      }))
+      .sort((a, b) => {
+        if (b.messages !== a.messages) return b.messages - a.messages
+        return a.studentId.localeCompare(b.studentId)
+      })
+
+    const trailIds = [
+      ...new Set([
+        ...existing.trailIds,
+        existing.trailId,
+        ...row.trailIds,
+        row.trailId,
+      ]),
+    ].sort((a, b) => a.localeCompare(b))
+
+    const primary =
+      canonicalPrimary[label] ??
+      (trailIds.find((id) => CANONICAL_AGENT_TRAIL_IDS.includes(id as never)) ??
+        existing.trailId)
+
+    const lastActivity =
+      existing.lastActivity && row.lastActivity
+        ? existing.lastActivity > row.lastActivity
+          ? existing.lastActivity
+          : row.lastActivity
+        : existing.lastActivity ?? row.lastActivity
+
+    byLabel.set(label, {
+      trailId: primary,
+      trailIds,
+      label,
+      messages: existing.messages + row.messages,
+      uniqueStudents: studentStats.length,
+      pctOfTotal: 0,
+      lastActivity,
+      studentIds: studentStats.map((s) => s.studentId),
+      studentStats,
+    })
+  }
+
+  const total = [...byLabel.values()].reduce((s, r) => s + r.messages, 0)
+  const ordered: AgentUsageRowView[] = []
+  const seen = new Set<string>()
+  for (const label of CANONICAL_AGENT_LABELS) {
+    const row = byLabel.get(label)
+    if (!row) continue
+    seen.add(label)
+    ordered.push({
+      ...row,
+      pctOfTotal:
+        total > 0 ? Math.round((row.messages / total) * 1000) / 10 : 0,
+    })
+  }
+  for (const [label, row] of [...byLabel.entries()].sort((a, b) => {
+    if (b[1].messages !== a[1].messages) return b[1].messages - a[1].messages
+    return a[0].localeCompare(b[0])
+  })) {
+    if (seen.has(label)) continue
+    ordered.push({
+      ...row,
+      pctOfTotal:
+        total > 0 ? Math.round((row.messages / total) * 1000) / 10 : 0,
+    })
+  }
+  return ordered
+}
+
+export function messagesPerTutorPerDay(input: {
+  totalMessages: number
+  activeTutorCount: number
+  periodDays: number
+  activeDayCount: number
+}): number {
+  const tutors = Math.max(0, input.activeTutorCount)
+  if (input.totalMessages <= 0 || tutors <= 0) return 0
+  const days =
+    input.periodDays > 0
+      ? input.periodDays
+      : Math.max(1, input.activeDayCount)
+  return Math.round((input.totalMessages / tutors / days) * 10) / 10
 }

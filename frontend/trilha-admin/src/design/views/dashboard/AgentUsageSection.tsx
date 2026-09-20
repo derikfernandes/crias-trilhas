@@ -1,17 +1,10 @@
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import type {
   DashboardAgentPeriodDays,
   DashboardAgentStudentLink,
   DashboardAgentUsageView,
 } from '../../types/dashboardPageView'
-
-type AgentSortKey =
-  | 'label'
-  | 'messages'
-  | 'uniqueStudents'
-  | 'pctOfTotal'
-  | 'lastActivity'
 
 type AgentUsageSectionProps = {
   agentUsage: DashboardAgentUsageView
@@ -24,10 +17,18 @@ type AgentUsageSectionProps = {
 }
 
 const PERIOD_OPTIONS: { value: DashboardAgentPeriodDays; label: string }[] = [
-  { value: 0, label: 'Todo o período' },
-  { value: 7, label: 'Últimos 7 dias' },
   { value: 30, label: 'Últimos 30 dias' },
+  { value: 7, label: 'Últimos 7 dias' },
+  { value: 0, label: 'Todo o período' },
 ]
+
+function formatCompact(n: number): string {
+  if (n >= 1000) {
+    const k = n / 1000
+    return `${k >= 10 ? Math.round(k) : Math.round(k * 10) / 10}k`
+  }
+  return String(n)
+}
 
 export function AgentUsageSection({
   agentUsage,
@@ -38,322 +39,242 @@ export function AgentUsageSection({
   onSelectAgentTrailId,
   selectedAgentStudents,
 }: AgentUsageSectionProps) {
-  const [sort, setSort] = useState<{ key: AgentSortKey; dir: 'asc' | 'desc' }>({
-    key: 'messages',
-    dir: 'desc',
-  })
+  const activeAgents = useMemo(
+    () =>
+      [...agentUsage.agents]
+        .filter((a) => a.messages > 0)
+        .sort((a, b) => b.messages - a.messages),
+    [agentUsage.agents],
+  )
 
-  const sortedAgents = useMemo(() => {
-    const rows = [...agentUsage.agents]
-    const dir = sort.dir === 'asc' ? 1 : -1
-    rows.sort((a, b) => {
-      switch (sort.key) {
-        case 'label':
-          return a.label.localeCompare(b.label, 'pt-BR') * dir
-        case 'messages':
-          return (a.messages - b.messages) * dir
-        case 'uniqueStudents':
-          return (a.uniqueStudents - b.uniqueStudents) * dir
-        case 'pctOfTotal':
-          return (a.pctOfTotal - b.pctOfTotal) * dir
-        case 'lastActivity':
-          return (
-            a.lastActivityLabel.localeCompare(b.lastActivityLabel, 'pt-BR') * dir
-          )
-        default:
-          return 0
-      }
-    })
-    return rows
-  }, [agentUsage.agents, sort])
-
-  const toggleSort = (key: AgentSortKey) => {
-    setSort((prev) =>
-      prev.key === key
-        ? { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' }
-        : { key, dir: key === 'label' ? 'asc' : 'desc' },
-    )
-  }
-
-  const sortIndicator = (key: AgentSortKey) => {
-    if (sort.key !== key) return ''
-    return sort.dir === 'asc' ? ' ↑' : ' ↓'
-  }
-
-  const barMax = Math.max(1, ...agentUsage.agents.map((a) => a.messages))
-  const shareSegments = agentUsage.agents
-    .filter((a) => a.messages > 0)
-    .reduce<{ cursor: number; segments: string[]; legend: typeof agentUsage.agents }>(
-      (acc, agent, idx) => {
-        const colors = [
-          'var(--accent, #0f766e)',
-          '#2563eb',
-          '#ca8a04',
-          '#dc2626',
-          '#7c3aed',
-          '#0891b2',
-        ]
-        const start = acc.cursor
-        const end =
-          agentUsage.totalMessages > 0
-            ? acc.cursor + (agent.messages / agentUsage.totalMessages) * 100
-            : acc.cursor
-        return {
-          cursor: end,
-          segments: [
-            ...acc.segments,
-            `${colors[idx % colors.length]} ${start}% ${end}%`,
-          ],
-          legend: [...acc.legend, agent],
-        }
-      },
-      { cursor: 0, segments: [], legend: [] },
-    )
-
-  const seriesByDate = useMemo(() => {
-    const map = new Map<string, number>()
-    for (const point of agentUsage.series) {
-      map.set(point.date, (map.get(point.date) ?? 0) + point.messages)
-    }
-    return [...map.entries()]
-      .map(([date, messages]) => ({ date, messages }))
-      .sort((a, b) => a.date.localeCompare(b.date))
-  }, [agentUsage.series])
-  const seriesMax = Math.max(1, ...seriesByDate.map((p) => p.messages))
+  const barMax = Math.max(1, ...activeAgents.map((a) => a.messages))
+  const hasData = agentUsage.totalMessages > 0
+  const showSkeleton = loading && !hasData
+  const showKeepPrevious = loading && hasData
 
   const selectedAgent = agentUsage.agents.find(
     (a) => a.trailId === selectedAgentTrailId,
   )
 
+  const rankedStudents = useMemo(() => {
+    return [...selectedAgentStudents].sort((a, b) => {
+      if (b.messages !== a.messages) return b.messages - a.messages
+      return a.name.localeCompare(b.name, 'pt-BR')
+    })
+  }, [selectedAgentStudents])
+
   return (
     <section
       className={`dashboard-agent-usage${loading ? ' dashboard-agent-usage--loading' : ''}`}
-      aria-label="Uso de agentes de IA"
+      aria-label="Tutores de IA"
       aria-busy={loading}
     >
       <div className="dashboard-agent-usage__header">
         <div>
-          <h2 className="dashboard-agent-usage__title">Agentes de IA</h2>
+          <h2 className="dashboard-agent-usage__title">Tutores de IA</h2>
           <p className="muted dashboard-agent-usage__lede">
-            Volume de mensagens nos agentes fora da trilha estruturada.
+            Uso dos tutores fora da trilha estruturada — por disciplina.
           </p>
         </div>
-        <label className="dashboard-agent-usage__period">
-          <span className="muted">Período</span>
-          <select
-            value={periodDays}
-            onChange={(e) =>
-              onPeriodDaysChange(Number(e.target.value) as DashboardAgentPeriodDays)
-            }
-            disabled={loading}
-          >
-            {PERIOD_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
-        </label>
+        <div className="dashboard-agent-usage__header-actions">
+          {showKeepPrevious ? (
+            <span className="dashboard-agent-usage__busy" role="status">
+              Atualizando…
+            </span>
+          ) : null}
+          <label className="dashboard-agent-usage__period">
+            <span className="muted">Período</span>
+            <select
+              value={periodDays}
+              onChange={(e) =>
+                onPeriodDaysChange(
+                  Number(e.target.value) as DashboardAgentPeriodDays,
+                )
+              }
+              disabled={loading && !hasData}
+            >
+              {PERIOD_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
       </div>
 
-      {loading ? (
-        <p className="muted dashboard-agent-usage__status" role="status">
-          Atualizando uso dos agentes…
-        </p>
-      ) : agentUsage.totalMessages === 0 ? (
+      {showSkeleton ? (
+        <div
+          className="dashboard-agent-usage__skeleton"
+          aria-hidden="true"
+          data-testid="agent-usage-skeleton"
+        >
+          <div className="dashboard-agent-usage__kpis">
+            <div className="dashboard-agent-usage__kpi dashboard-agent-usage__kpi--pulse" />
+            <div className="dashboard-agent-usage__kpi dashboard-agent-usage__kpi--pulse" />
+            <div className="dashboard-agent-usage__kpi dashboard-agent-usage__kpi--pulse" />
+            <div className="dashboard-agent-usage__kpi dashboard-agent-usage__kpi--pulse" />
+          </div>
+          <div className="dashboard-agent-usage__bars-skeleton" />
+        </div>
+      ) : !hasData ? (
         <p className="muted dashboard-agent-usage__empty">
-          Nenhuma interação com agentes no período.
+          Nenhum uso de tutores no período. Incentive os alunos a consultar os
+          tutores fora da trilha quando travarem em um tópico.
         </p>
       ) : (
         <>
-          <div className="dashboard-agent-usage__charts">
-            <article className="dashboard-q-charts__card dashboard-agent-usage__chart">
-              <h3>Mensagens por agente</h3>
-              <ul className="dashboard-q-charts__bars">
-                {agentUsage.agents.map((agent) => (
+          <div className="dashboard-agent-usage__kpis" aria-label="Indicadores">
+            <div className="dashboard-agent-usage__kpi">
+              <span className="dashboard-agent-usage__kpi-label">Mensagens</span>
+              <span className="dashboard-agent-usage__kpi-value">
+                {formatCompact(agentUsage.totalMessages)}
+              </span>
+            </div>
+            <div className="dashboard-agent-usage__kpi">
+              <span className="dashboard-agent-usage__kpi-label">
+                Alunos com tutor
+              </span>
+              <span className="dashboard-agent-usage__kpi-value">
+                {agentUsage.uniqueStudents}
+              </span>
+            </div>
+            <div className="dashboard-agent-usage__kpi">
+              <span className="dashboard-agent-usage__kpi-label">
+                % da turma
+              </span>
+              <span className="dashboard-agent-usage__kpi-value">
+                {agentUsage.coveragePct}%
+              </span>
+            </div>
+            <div className="dashboard-agent-usage__kpi">
+              <span className="dashboard-agent-usage__kpi-label">
+                Msgs / tutor / dia
+              </span>
+              <span className="dashboard-agent-usage__kpi-value">
+                {agentUsage.msgsPerTutorPerDay}
+              </span>
+            </div>
+          </div>
+
+          <article className="dashboard-agent-usage__volume">
+            <h3 className="dashboard-agent-usage__chart-title">
+              Volume por tutor
+            </h3>
+            <ul className="dashboard-agent-usage__bars">
+              {activeAgents.map((agent) => {
+                const selected = selectedAgentTrailId === agent.trailId
+                return (
                   <li key={agent.trailId}>
                     <button
                       type="button"
-                      className={`dashboard-student-charts__filter-button${
-                        selectedAgentTrailId === agent.trailId
-                          ? ' dashboard-student-charts__filter-button--selected'
-                          : ''
+                      className={`dashboard-agent-usage__bar-btn${
+                        selected ? ' dashboard-agent-usage__bar-btn--selected' : ''
                       }`}
                       onClick={() =>
-                        onSelectAgentTrailId(
-                          selectedAgentTrailId === agent.trailId
-                            ? null
-                            : agent.trailId,
-                        )
+                        onSelectAgentTrailId(selected ? null : agent.trailId)
                       }
+                      aria-pressed={selected}
                     >
-                      <span className="dashboard-q-charts__bar-label">
+                      <span className="dashboard-agent-usage__bar-label">
                         {agent.label}
                       </span>
-                      <span className="dashboard-q-charts__bar-track">
+                      <span className="dashboard-agent-usage__bar-track">
                         <span
-                          className="dashboard-q-charts__bar-fill"
+                          className="dashboard-agent-usage__bar-fill"
                           style={{
                             width: `${(agent.messages / barMax) * 100}%`,
                           }}
                         />
                       </span>
-                      <span className="dashboard-q-charts__bar-value">
-                        {agent.messages}
+                      <span className="dashboard-agent-usage__bar-meta">
+                        <strong>{agent.messages}</strong>
+                        <span className="muted">
+                          {agent.uniqueStudents} aluno
+                          {agent.uniqueStudents === 1 ? '' : 's'} ·{' '}
+                          {agent.pctOfTotal}%
+                        </span>
                       </span>
                     </button>
                   </li>
-                ))}
-              </ul>
-            </article>
+                )
+              })}
+            </ul>
+          </article>
 
-            <article className="dashboard-q-charts__card dashboard-agent-usage__chart">
-              <h3>Participação</h3>
-              <div
-                className="dashboard-agent-usage__share"
-                style={{
-                  background:
-                    shareSegments.segments.length > 0
-                      ? `conic-gradient(${shareSegments.segments.join(', ')})`
-                      : 'var(--border)',
-                }}
-                role="img"
-                aria-label={`Total de ${agentUsage.totalMessages} mensagens`}
-              />
-              <ul className="dashboard-agent-usage__share-legend">
-                {agentUsage.agents
-                  .filter((a) => a.messages > 0)
-                  .map((agent) => (
-                    <li key={agent.trailId}>
-                      <span>{agent.label}</span>
-                      <strong>{agent.pctOfTotal}%</strong>
-                    </li>
-                  ))}
-              </ul>
-            </article>
+          {selectedAgent ? (
+            <div className="dashboard-agent-usage__detail">
+              <div className="dashboard-agent-usage__detail-head">
+                <div>
+                  <h3>{selectedAgent.label}</h3>
+                  <p className="muted dashboard-agent-usage__detail-summary">
+                    {selectedAgent.messages} msgs ·{' '}
+                    {selectedAgent.uniqueStudents} alunos · última atividade{' '}
+                    {selectedAgent.lastActivityLabel}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="btn btn--ghost btn--small"
+                  onClick={() => onSelectAgentTrailId(null)}
+                >
+                  Fechar
+                </button>
+              </div>
 
-            {seriesByDate.length > 0 ? (
-              <article className="dashboard-q-charts__card dashboard-agent-usage__chart dashboard-agent-usage__chart--wide">
-                <h3>Mensagens por dia</h3>
-                <ul className="dashboard-agent-usage__series" aria-label="Série temporal">
-                  {seriesByDate.map((point) => (
-                    <li key={point.date} title={`${point.date}: ${point.messages}`}>
-                      <span
-                        className="dashboard-agent-usage__series-bar"
-                        style={{
-                          height: `${Math.max(8, (point.messages / seriesMax) * 100)}%`,
-                        }}
-                      />
-                      <span className="dashboard-agent-usage__series-label">
-                        {point.date.slice(5)}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              </article>
-            ) : null}
-          </div>
-
-          <div className="table-wrap dashboard-agent-usage__table-wrap">
-            <table className="data-table dashboard-agent-usage__table">
-              <thead>
-                <tr>
-                  <th>
-                    <button type="button" className="table-sort" onClick={() => toggleSort('label')}>
-                      Agente{sortIndicator('label')}
-                    </button>
-                  </th>
-                  <th>
-                    <button type="button" className="table-sort" onClick={() => toggleSort('messages')}>
-                      Mensagens{sortIndicator('messages')}
-                    </button>
-                  </th>
-                  <th>
-                    <button
-                      type="button"
-                      className="table-sort"
-                      onClick={() => toggleSort('uniqueStudents')}
-                    >
-                      Alunos únicos{sortIndicator('uniqueStudents')}
-                    </button>
-                  </th>
-                  <th>
-                    <button
-                      type="button"
-                      className="table-sort"
-                      onClick={() => toggleSort('pctOfTotal')}
-                    >
-                      % do total{sortIndicator('pctOfTotal')}
-                    </button>
-                  </th>
-                  <th>
-                    <button
-                      type="button"
-                      className="table-sort"
-                      onClick={() => toggleSort('lastActivity')}
-                    >
-                      Última atividade{sortIndicator('lastActivity')}
-                    </button>
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {sortedAgents.map((agent) => (
-                  <tr
-                    key={agent.trailId}
-                    className={
-                      selectedAgentTrailId === agent.trailId
-                        ? 'dashboard-agent-usage__row--selected'
-                        : undefined
-                    }
-                    onClick={() =>
-                      onSelectAgentTrailId(
-                        selectedAgentTrailId === agent.trailId
-                          ? null
-                          : agent.trailId,
-                      )
-                    }
-                  >
-                    <td>{agent.label}</td>
-                    <td>{agent.messages}</td>
-                    <td>{agent.uniqueStudents}</td>
-                    <td>{agent.pctOfTotal}%</td>
-                    <td>{agent.lastActivityLabel}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+              {rankedStudents.length === 0 ? (
+                <p className="muted">
+                  Nenhum aluno identificado neste período para este tutor.
+                </p>
+              ) : (
+                <div className="table-wrap dashboard-agent-usage__detail-table-wrap">
+                  <table className="table dashboard-agent-usage__detail-table">
+                    <thead>
+                      <tr>
+                        <th>Aluno</th>
+                        <th>Msgs</th>
+                        <th>Última</th>
+                        <th>
+                          <span className="visually-hidden">Abrir</span>
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rankedStudents.map((student) => (
+                        <tr key={student.id}>
+                          <td>
+                            <Link
+                              className="table__name-link"
+                              to={student.href}
+                            >
+                              {student.name}
+                            </Link>
+                          </td>
+                          <td>{student.messages || '—'}</td>
+                          <td>{student.lastActivityLabel}</td>
+                          <td>
+                            <Link
+                              className="btn btn--ghost btn--small"
+                              to={student.href}
+                            >
+                              Abrir
+                            </Link>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          ) : (
+            <p className="muted dashboard-agent-usage__hint">
+              Clique em um tutor para ver os alunos com mais uso e abrir o
+              histórico filtrado.
+            </p>
+          )}
         </>
       )}
-
-      {selectedAgent ? (
-        <div className="dashboard-agent-usage__detail panel">
-          <div className="dashboard-agent-usage__detail-head">
-            <h3>Alunos em {selectedAgent.label}</h3>
-            <button
-              type="button"
-              className="btn btn--ghost"
-              onClick={() => onSelectAgentTrailId(null)}
-            >
-              Fechar
-            </button>
-          </div>
-          {selectedAgentStudents.length === 0 ? (
-            <p className="muted">
-              Nenhum aluno identificado neste período para este agente.
-            </p>
-          ) : (
-            <ul className="dashboard-agent-usage__students">
-              {selectedAgentStudents.map((student) => (
-                <li key={student.id}>
-                  <Link to={student.href}>{student.name}</Link>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      ) : null}
     </section>
   )
 }

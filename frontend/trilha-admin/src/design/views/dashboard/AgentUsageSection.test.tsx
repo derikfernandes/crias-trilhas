@@ -8,9 +8,13 @@ import type { DashboardAgentUsageView } from '../../types/dashboardPageView'
 
 const baseUsage: DashboardAgentUsageView = {
   totalMessages: 10,
+  uniqueStudents: 3,
+  coveragePct: 30,
+  msgsPerTutorPerDay: 1.2,
   agents: [
     {
       trailId: 'Trilha - Matemática',
+      trailIds: ['Trilha - Matemática', 'Tutor - Matemática'],
       label: 'Matemática',
       messages: 6,
       uniqueStudents: 2,
@@ -20,6 +24,7 @@ const baseUsage: DashboardAgentUsageView = {
     },
     {
       trailId: 'Tutor - Linguagens',
+      trailIds: ['Tutor - Linguagens'],
       label: 'Linguagens',
       messages: 4,
       uniqueStudents: 1,
@@ -29,6 +34,7 @@ const baseUsage: DashboardAgentUsageView = {
     },
     {
       trailId: 'Trilha - Geral',
+      trailIds: ['Trilha - Geral'],
       label: 'Geral',
       messages: 0,
       uniqueStudents: 0,
@@ -38,21 +44,21 @@ const baseUsage: DashboardAgentUsageView = {
     },
   ],
   series: [
-    { date: '2026-09-18', trailId: 'Trilha - Matemática', label: 'Matemática', messages: 3 },
-    { date: '2026-09-19', trailId: 'Tutor - Linguagens', label: 'Linguagens', messages: 2 },
+    {
+      date: '2026-09-18',
+      trailId: 'Trilha - Matemática',
+      label: 'Matemática',
+      messages: 3,
+    },
   ],
 }
 
 const emptyUsage: DashboardAgentUsageView = {
   totalMessages: 0,
-  agents: baseUsage.agents.map((a) => ({
-    ...a,
-    messages: 0,
-    uniqueStudents: 0,
-    pctOfTotal: 0,
-    lastActivityLabel: '—',
-    studentIds: [],
-  })),
+  uniqueStudents: 0,
+  coveragePct: 0,
+  msgsPerTutorPerDay: 0,
+  agents: [],
   series: [],
 }
 
@@ -65,7 +71,7 @@ function renderSection(
     <MemoryRouter>
       <AgentUsageSection
         agentUsage={baseUsage}
-        periodDays={0}
+        periodDays={30}
         onPeriodDaysChange={onPeriodDaysChange}
         loading={false}
         selectedAgentTrailId={null}
@@ -82,29 +88,54 @@ describe('AgentUsageSection', () => {
   it('mostra empty state quando não há mensagens', () => {
     renderSection({ agentUsage: emptyUsage })
     expect(
-      screen.getByText('Nenhuma interação com agentes no período.'),
+      screen.getByText(/Nenhum uso de tutores no período/i),
     ).toBeInTheDocument()
     expect(screen.queryByRole('table')).not.toBeInTheDocument()
   })
 
-  it('mostra loading', () => {
+  it('mostra skeleton no loading sem dados (sem zeros)', () => {
     renderSection({ loading: true, agentUsage: emptyUsage })
-    expect(screen.getByRole('status')).toHaveTextContent(
-      'Atualizando uso dos agentes…',
-    )
+    expect(screen.getByTestId('agent-usage-skeleton')).toBeInTheDocument()
+    expect(screen.queryByText('0')).not.toBeInTheDocument()
+    expect(
+      screen.queryByText('Atualizando uso dos agentes…'),
+    ).not.toBeInTheDocument()
   })
 
-  it('renderiza tabela e gráficos com fixtures', () => {
-    const { container } = renderSection()
-    expect(container.querySelector('.dashboard-agent-usage')).toBeTruthy()
-    expect(screen.getByRole('heading', { name: 'Mensagens por agente' })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'Participação' })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'Mensagens por dia' })).toBeInTheDocument()
+  it('mantém KPIs no refetch e mostra badge Atualizando', () => {
+    renderSection({ loading: true, agentUsage: baseUsage })
+    expect(screen.getByRole('status')).toHaveTextContent('Atualizando…')
+    expect(screen.getByText('Msgs / tutor / dia')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Volume por tutor' })).toBeInTheDocument()
+  })
 
-    const table = screen.getByRole('table')
-    expect(within(table).getByText('Matemática')).toBeInTheDocument()
-    expect(within(table).getByText('60%')).toBeInTheDocument()
-    expect(within(table).getByText('Linguagens')).toBeInTheDocument()
+  it('renderiza KPIs e barras só com uso (>0), sem tabela espelho nem pizza', () => {
+    renderSection()
+    expect(screen.getByRole('heading', { name: 'Tutores de IA' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Volume por tutor' })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Participação' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Mensagens por dia' })).not.toBeInTheDocument()
+
+    const mathButtons = screen.getAllByRole('button', { name: /Matemática/i })
+    expect(mathButtons.length).toBe(1)
+    expect(screen.queryByRole('button', { name: /^Geral/i })).not.toBeInTheDocument()
+  })
+
+  it('não duplica labels de disciplina', () => {
+    renderSection()
+    const labels = screen
+      .getAllByRole('button')
+      .map((el) => el.textContent ?? '')
+      .filter((t) => /Matemática|Linguagens|Geral|Humanas|Natureza/.test(t))
+    const subjects = labels.map((t) => {
+      if (t.includes('Matemática')) return 'Matemática'
+      if (t.includes('Linguagens')) return 'Linguagens'
+      if (t.includes('Geral')) return 'Geral'
+      if (t.includes('Humanas')) return 'Humanas'
+      if (t.includes('Natureza')) return 'Natureza'
+      return t
+    })
+    expect(new Set(subjects).size).toBe(subjects.length)
   })
 
   it('permite trocar o período', async () => {
@@ -116,18 +147,28 @@ describe('AgentUsageSection', () => {
     expect(onPeriodDaysChange).toHaveBeenCalledWith(7)
   })
 
-  it('seleciona agente ao clicar na linha e lista alunos', async () => {
+  it('drill-down mostra msgs e última atividade por aluno', async () => {
     const user = userEvent.setup()
     const { onSelectAgentTrailId } = renderSection({
       selectedAgentTrailId: 'Trilha - Matemática',
       selectedAgentStudents: [
-        { id: 's1', name: 'Ana', href: '/alunos/s1?agent_trail_id=Trilha%20-%20Matem%C3%A1tica' },
+        {
+          id: 's1',
+          name: 'Ana',
+          href: '/alunos/s1?agent_trail_id=Trilha+-+Matem%C3%A1tica&agent_trail_ids=Trilha+-+Matem%C3%A1tica%2CTutor+-+Matem%C3%A1tica',
+          messages: 4,
+          lastActivityLabel: '19/09/2026, 10:00',
+        },
       ],
     })
-    expect(screen.getByRole('heading', { name: 'Alunos em Matemática' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Matemática' })).toBeInTheDocument()
+    const table = screen.getByRole('table')
+    expect(within(table).getByText('Ana')).toBeInTheDocument()
+    expect(within(table).getByText('4')).toBeInTheDocument()
+    expect(within(table).getByText('19/09/2026, 10:00')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Ana' })).toHaveAttribute(
       'href',
-      '/alunos/s1?agent_trail_id=Trilha%20-%20Matem%C3%A1tica',
+      expect.stringContaining('agent_trail'),
     )
     await user.click(screen.getByRole('button', { name: 'Fechar' }))
     expect(onSelectAgentTrailId).toHaveBeenCalledWith(null)

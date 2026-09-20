@@ -9,7 +9,9 @@
 
 import {
   EMPTY_AGENT_USAGE,
+  mergeAgentRowsByLabel,
   type AgentUsagePeriodDays,
+  type AgentUsageRowView,
   type AgentUsageView,
 } from './agentUsage'
 
@@ -25,14 +27,22 @@ function resolveApiBaseUrl(): string {
   return window.location.origin
 }
 
+type AgentUsageApiStudentStat = {
+  student_id?: string
+  messages?: number
+  last_activity?: string | null
+}
+
 type AgentUsageApiRow = {
   trail_id?: string
+  trail_ids?: string[]
   label?: string
   messages?: number
   unique_students?: number
   pct_of_total?: number
   last_activity?: string | null
   student_ids?: string[]
+  student_stats?: AgentUsageApiStudentStat[]
 }
 
 type AgentUsageApiSeries = {
@@ -75,27 +85,79 @@ function parseAgentUsage(
 ): AgentUsageView {
   if (!raw || typeof raw !== 'object') return { ...EMPTY_AGENT_USAGE }
 
-  const agents = Array.isArray(raw.agents)
+  const parsedRows: AgentUsageRowView[] = Array.isArray(raw.agents)
     ? raw.agents
         .filter((row) => typeof row?.trail_id === 'string' && row.trail_id.trim())
-        .map((row) => ({
-          trailId: String(row.trail_id).trim(),
-          label:
-            typeof row.label === 'string' && row.label.trim()
-              ? row.label.trim()
-              : String(row.trail_id).trim(),
-          messages: typeof row.messages === 'number' ? row.messages : 0,
-          uniqueStudents:
-            typeof row.unique_students === 'number' ? row.unique_students : 0,
-          pctOfTotal:
-            typeof row.pct_of_total === 'number' ? row.pct_of_total : 0,
-          lastActivity:
-            typeof row.last_activity === 'string' ? row.last_activity : null,
-          studentIds: Array.isArray(row.student_ids)
-            ? row.student_ids.filter((id): id is string => typeof id === 'string')
-            : [],
-        }))
-    : EMPTY_AGENT_USAGE.agents
+        .map((row) => {
+          const trailId = String(row.trail_id).trim()
+          const trailIds = Array.isArray(row.trail_ids)
+            ? [
+                ...new Set(
+                  row.trail_ids
+                    .filter((id): id is string => typeof id === 'string')
+                    .map((id) => id.trim())
+                    .filter(Boolean)
+                    .concat(trailId),
+                ),
+              ]
+            : [trailId]
+
+          const studentStats = Array.isArray(row.student_stats)
+            ? row.student_stats
+                .filter(
+                  (st) =>
+                    typeof st?.student_id === 'string' && st.student_id.trim(),
+                )
+                .map((st) => ({
+                  studentId: String(st.student_id).trim(),
+                  messages: typeof st.messages === 'number' ? st.messages : 0,
+                  lastActivity:
+                    typeof st.last_activity === 'string'
+                      ? st.last_activity
+                      : null,
+                }))
+            : []
+
+          const studentIds =
+            studentStats.length > 0
+              ? studentStats.map((s) => s.studentId)
+              : Array.isArray(row.student_ids)
+                ? row.student_ids.filter(
+                    (id): id is string => typeof id === 'string',
+                  )
+                : []
+
+          return {
+            trailId,
+            trailIds,
+            label:
+              typeof row.label === 'string' && row.label.trim()
+                ? row.label.trim()
+                : trailId,
+            messages: typeof row.messages === 'number' ? row.messages : 0,
+            uniqueStudents:
+              typeof row.unique_students === 'number'
+                ? row.unique_students
+                : studentIds.length,
+            pctOfTotal:
+              typeof row.pct_of_total === 'number' ? row.pct_of_total : 0,
+            lastActivity:
+              typeof row.last_activity === 'string' ? row.last_activity : null,
+            studentIds,
+            studentStats:
+              studentStats.length > 0
+                ? studentStats
+                : studentIds.map((id) => ({
+                    studentId: id,
+                    messages: 0,
+                    lastActivity: null,
+                  })),
+          }
+        })
+    : []
+
+  // Rede de segurança: se a API ainda emitir aliases separados, funde por label.
+  const agents = mergeAgentRowsByLabel(parsedRows)
 
   const series = Array.isArray(raw.series)
     ? raw.series

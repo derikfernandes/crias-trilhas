@@ -20,6 +20,7 @@ import { db } from '../lib/firebase'
 import {
   EMPTY_AGENT_USAGE,
   formatAgentLastActivity,
+  messagesPerTutorPerDay,
   type AgentUsagePeriodDays,
   type AgentUsageView,
 } from '../lib/agentUsage'
@@ -531,7 +532,7 @@ export function DashboardPage() {
   const [questions, setQuestions] = useState<TrailStageQuestion[]>([])
   const [loadingData, setLoadingData] = useState(false)
   const [loadingMeta, setLoadingMeta] = useState(false)
-  const [loadingLogs, setLoadingLogs] = useState(false)
+  const [, setLoadingLogs] = useState(false)
   const [loadStepsDone, setLoadStepsDone] = useState(0)
   const [loadStepsTotal, setLoadStepsTotal] = useState(TOTAL_LOAD_STEPS)
   const [loadPercent, setLoadPercent] = useState(0)
@@ -542,7 +543,7 @@ export function DashboardPage() {
   const [agentUsage, setAgentUsage] =
     useState<AgentUsageView>(EMPTY_AGENT_USAGE)
   const [agentPeriodDays, setAgentPeriodDays] =
-    useState<AgentUsagePeriodDays>(0)
+    useState<AgentUsagePeriodDays>(30)
   const [selectedAgentTrailId, setSelectedAgentTrailId] = useState<
     string | null
   >(null)
@@ -942,8 +943,9 @@ export function DashboardPage() {
         )
         if (!refreshingAgentsOnly) {
           setLogAggregates(EMPTY_LOG_AGGREGATES)
+          setAgentUsage({ ...EMPTY_AGENT_USAGE, periodDays: agentPeriodDays })
         }
-        setAgentUsage({ ...EMPTY_AGENT_USAGE, periodDays: agentPeriodDays })
+        // Refetch de período: mantém último snapshot (keep-previous).
         setLoadingLogs(false)
         setAgentUsageLoading(false)
         if (!refreshingAgentsOnly) {
@@ -2194,7 +2196,7 @@ export function DashboardPage() {
 
   const isDashboardLoading =
     Boolean(selectedId) &&
-    (loadingData || loadingMeta || (loadingLogs && !initialLogsLoaded))
+    (loadingData || loadingMeta || !initialLogsLoaded)
 
   useEffect(() => {
     if (isDashboardLoading) return
@@ -2300,41 +2302,72 @@ export function DashboardPage() {
     sortIndicator: studentSortIndicator(c.key),
   }))
 
-  const agentUsageView = {
-    totalMessages: agentUsage.totalMessages,
-    agents: agentUsage.agents.map((agent) => ({
+  const agentUsageView = (() => {
+    const agents = agentUsage.agents.map((agent) => ({
       trailId: agent.trailId,
+      trailIds: agent.trailIds?.length ? agent.trailIds : [agent.trailId],
       label: agent.label,
       messages: agent.messages,
       uniqueStudents: agent.uniqueStudents,
       pctOfTotal: agent.pctOfTotal,
       lastActivityLabel: formatAgentLastActivity(agent.lastActivity),
       studentIds: agent.studentIds,
-    })),
-    series: agentUsage.series.map((point) => {
-      const agent = agentUsage.agents.find((a) => a.trailId === point.trailId)
-      return {
-        date: point.date,
-        trailId: point.trailId,
-        label: agent?.label ?? point.trailId,
-        messages: point.messages,
-      }
-    }),
-  }
+    }))
+    const uniqueStudents = new Set(agents.flatMap((a) => a.studentIds)).size
+    const activeTutorCount = agents.filter((a) => a.messages > 0).length
+    const activeDayCount = new Set(agentUsage.series.map((p) => p.date)).size
+    const coveragePct =
+      studentRows.length > 0
+        ? Math.round((uniqueStudents / studentRows.length) * 1000) / 10
+        : 0
+    return {
+      totalMessages: agentUsage.totalMessages,
+      uniqueStudents,
+      coveragePct,
+      msgsPerTutorPerDay: messagesPerTutorPerDay({
+        totalMessages: agentUsage.totalMessages,
+        activeTutorCount,
+        periodDays: agentPeriodDays,
+        activeDayCount,
+      }),
+      agents,
+      series: agentUsage.series.map((point) => {
+        const agent = agents.find((a) => a.trailId === point.trailId)
+        return {
+          date: point.date,
+          trailId: point.trailId,
+          label: agent?.label ?? point.trailId,
+          messages: point.messages,
+        }
+      }),
+    }
+  })()
 
   const selectedAgentStudents = (() => {
     if (!selectedAgentTrailId) return []
     const row = agentUsage.agents.find((a) => a.trailId === selectedAgentTrailId)
     if (!row) return []
     const byId = new Map(students.map((s) => [s.id, s]))
-    return row.studentIds.map((id) => {
+    const trailIds = row.trailIds?.length ? row.trailIds : [row.trailId]
+    const statsById = new Map(
+      (row.studentStats ?? []).map((st) => [st.studentId, st]),
+    )
+    const ids =
+      row.studentStats?.length > 0
+        ? row.studentStats.map((st) => st.studentId)
+        : row.studentIds
+    return ids.map((id) => {
       const student = byId.get(id)
+      const st = statsById.get(id)
       return {
         id,
         name: student?.name?.trim() || id,
         href: studentPath(id, {
-          agentTrailId: selectedAgentTrailId ?? undefined,
+          agentTrailId: row.trailId,
+          agentTrailIds: trailIds,
         }),
+        messages: st?.messages ?? 0,
+        lastActivityLabel: formatAgentLastActivity(st?.lastActivity ?? null),
       }
     })
   })()
@@ -2349,7 +2382,7 @@ export function DashboardPage() {
         setStudentChartFilter(null)
         setActiveTab('students')
         setQuestionsDataEnabled(false)
-        setAgentPeriodDays(0)
+        setAgentPeriodDays(30)
         setSelectedAgentTrailId(null)
         setPillSearch('')
         setPillTrailFilter('')

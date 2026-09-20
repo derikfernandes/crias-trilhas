@@ -154,8 +154,17 @@ export type DashboardQuestionsChartsView = {
 
 export type DashboardAgentPeriodDays = 0 | 7 | 30
 
+export type DashboardAgentStudentStatView = {
+  id: string
+  name: string
+  href: string
+  messages: number
+  lastActivityLabel: string
+}
+
 export type DashboardAgentUsageRowView = {
   trailId: string
+  trailIds: string[]
   label: string
   messages: number
   uniqueStudents: number
@@ -173,6 +182,9 @@ export type DashboardAgentSeriesPointView = {
 
 export type DashboardAgentUsageView = {
   totalMessages: number
+  uniqueStudents: number
+  coveragePct: number
+  msgsPerTutorPerDay: number
   agents: DashboardAgentUsageRowView[]
   series: DashboardAgentSeriesPointView[]
 }
@@ -181,6 +193,8 @@ export type DashboardAgentStudentLink = {
   id: string
   name: string
   href: string
+  messages: number
+  lastActivityLabel: string
 }
 
 export type DashboardPageViewProps = {

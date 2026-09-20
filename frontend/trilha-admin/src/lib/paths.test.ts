@@ -12,6 +12,16 @@ describe('studentPath', () => {
     )
   })
 
+  it('anexa aliases em agent_trail_ids', () => {
+    const href = studentPath('abc', {
+      agentTrailId: 'Trilha - Matemática',
+      agentTrailIds: ['Trilha - Matemática', 'Tutor - Matemática'],
+    })
+    expect(href).toContain('agent_trail_ids=')
+    expect(href).toContain('Trilha')
+    expect(href).toContain('Tutor')
+  })
+
   it('ignora agentTrailId vazio', () => {
     expect(studentPath('abc', { agentTrailId: '  ' })).toBe('/alunos/abc')
   })
