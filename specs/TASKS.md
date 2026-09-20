@@ -113,6 +113,28 @@ Critério de conclusão:
 - Erros principais aparecem na tela.
 - Fluxo de criação é compreensível.
 
+## Fase 5.5 — Uso de agentes no dashboard + performance
+
+Spec: `specs/10_AGENT_USAGE_DASHBOARD.md`.
+
+- [x] Atualizar `08_OUT_OF_SCOPE.md`, `09_DECISIONS.md`, `tests.yaml`, `TASKS.md`.
+- [x] Criar `specs/10_AGENT_USAGE_DASHBOARD.md`.
+- [ ] Estender `GET /api/dashboard_summary` com `agent_usage` (allowlist canônica).
+- [ ] Garantir que `trail_id` de agente não entra nas métricas de trilha `tN`.
+- [ ] Remover fallback cliente que baixa `conversation_logs` no dashboard.
+- [ ] Reduzir `onSnapshot` onde one-shot basta (stages/questões/dados base).
+- [ ] Tabela de uso: agente, mensagens, alunos únicos, % total, última atividade.
+- [ ] Gráficos de volume/share (e série temporal se houver dados).
+- [ ] Filtro de período (todo / 7 / 30 dias).
+- [ ] Testes unitários: classificador + agregação + contrato do summary.
+- [ ] lint + typecheck + build verdes.
+
+Critério de conclusão:
+
+- Dashboard mostra uso dos 5 agentes canônicos sem download de logs no cliente.
+- Métricas de trilha real permanecem corretas.
+- Testes e checks de qualidade passam.
+
 ## Fase 6 — Importação XLSX
 
 - [ ] Definir spec para importação de alunos.

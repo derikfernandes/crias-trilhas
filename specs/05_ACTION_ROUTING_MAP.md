@@ -271,6 +271,34 @@ Regra:
 - Se `stage_number == total_stages`, voltar stage para 1 e avançar question.
 - Se não houver próxima question, marcar concluído.
 
+### Carregar métricas do dashboard (progressão + uso de agentes)
+
+Origem: painel administrativo.
+
+Modo: API HTTP (agregação server-side).
+
+Endpoint:
+
+```text
+GET /api/dashboard_summary?institution_id={id}&period_days={0|7|30}
+```
+
+Fonte Firestore (somente leitura):
+
+```text
+students, trails, conversation_logs
+```
+
+Saída:
+
+- Agregados de respostas/progressão por aluno nas trilhas reais.
+- `agent_usage` com volume, alunos únicos, % e última atividade por agente.
+
+Regra:
+
+- `trail_id` de agente não entra em `trail_ids` de progressão.
+- Painel não deve baixar `conversation_logs` brutos para montar essas métricas.
+
 ## 6. Regra de manutenção
 
 Toda nova ação deve ser adicionada a este mapa antes da implementação.

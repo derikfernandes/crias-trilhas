@@ -134,3 +134,49 @@ chatis:
       is_released: false
     output:
       status: blocked
+
+agent_usage:
+  - name: classificar trail_ids canônicos como agente
+    input:
+      trail_ids:
+        - Trilha - Matemática
+        - Trilha - Geral
+        - Trilha - Humanas
+        - Trilha - Natureza
+        - Tutor - Linguagens
+    output:
+      all_agents: true
+
+  - name: classificar tN como trilha real (não agente)
+    input:
+      trail_id: t1
+    output:
+      is_agent: false
+
+  - name: prefixo Tutor - conta como agente mesmo fora da allowlist estrita
+    input:
+      trail_id: Tutor - Extra
+    output:
+      is_agent: true
+
+  - name: agregação separa agentes de trilhas reais
+    input:
+      real_trail_ids: [t1]
+      logs:
+        - { student_id: s1, trail_id: t1, sender: student }
+        - { student_id: s1, trail_id: Trilha - Matemática, sender: student }
+        - { student_id: s2, trail_id: Trilha - Matemática, sender: system }
+        - { student_id: s3, trail_id: Tutor - Linguagens, sender: student }
+    output:
+      progression_trail_ids: [t1]
+      agent_labels: [Matemática, Linguagens]
+      matematica_messages: 2
+      matematica_unique_students: 2
+
+  - name: summary não indexa agente em trail_ids de progressão
+    input:
+      institution_trails: [t1]
+      log_trail_ids: [t1, Trilha - Geral]
+    output:
+      trail_ids: [t1]
+      has_agent_usage: true
