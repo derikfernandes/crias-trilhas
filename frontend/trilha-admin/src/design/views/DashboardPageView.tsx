@@ -8,6 +8,7 @@ import { formatPct } from './dashboard/formatPct'
 import { LessonTopicCode } from './dashboard/LessonTopicCode'
 import { QuestionsCharts } from './dashboard/QuestionsCharts'
 import { StudentsCharts } from './dashboard/StudentsCharts'
+import { AgentUsageSection } from './dashboard/AgentUsageSection'
 
 export type {
   DashboardPageViewProps,
@@ -117,6 +118,13 @@ export function DashboardPageView({
   pillPageCount,
   onPillPagePrev,
   onPillPageNext,
+  agentUsage,
+  agentPeriodDays,
+  onAgentPeriodDaysChange,
+  agentUsageLoading,
+  selectedAgentTrailId,
+  onSelectAgentTrailId,
+  selectedAgentStudents,
 }: DashboardPageViewProps) {
   const [expandedEnunciado, setExpandedEnunciado] =
     useState<ExpandedEnunciado | null>(null)
@@ -252,6 +260,16 @@ export function DashboardPageView({
         </section>
       ) : (
         <>
+          <AgentUsageSection
+            agentUsage={agentUsage}
+            periodDays={agentPeriodDays}
+            onPeriodDaysChange={onAgentPeriodDaysChange}
+            loading={agentUsageLoading}
+            selectedAgentTrailId={selectedAgentTrailId}
+            onSelectAgentTrailId={onSelectAgentTrailId}
+            selectedAgentStudents={selectedAgentStudents}
+          />
+
           <nav
             className="trail-detail-tabs dashboard-tabs"
             aria-label="Seções do dashboard"

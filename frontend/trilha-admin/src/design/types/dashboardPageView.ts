@@ -152,6 +152,37 @@ export type DashboardQuestionsChartsView = {
   trailBars: DashboardQuestionsChartTrailBar[]
 }
 
+export type DashboardAgentPeriodDays = 0 | 7 | 30
+
+export type DashboardAgentUsageRowView = {
+  trailId: string
+  label: string
+  messages: number
+  uniqueStudents: number
+  pctOfTotal: number
+  lastActivityLabel: string
+  studentIds: string[]
+}
+
+export type DashboardAgentSeriesPointView = {
+  date: string
+  trailId: string
+  label: string
+  messages: number
+}
+
+export type DashboardAgentUsageView = {
+  totalMessages: number
+  agents: DashboardAgentUsageRowView[]
+  series: DashboardAgentSeriesPointView[]
+}
+
+export type DashboardAgentStudentLink = {
+  id: string
+  name: string
+  href: string
+}
+
 export type DashboardPageViewProps = {
   loadingInst: boolean
   institutionOptions: DashboardInstitutionOption[]
@@ -249,4 +280,11 @@ export type DashboardPageViewProps = {
   pillPageCount: number
   onPillPagePrev: () => void
   onPillPageNext: () => void
+  agentUsage: DashboardAgentUsageView
+  agentPeriodDays: DashboardAgentPeriodDays
+  onAgentPeriodDaysChange: (days: DashboardAgentPeriodDays) => void
+  agentUsageLoading: boolean
+  selectedAgentTrailId: string | null
+  onSelectAgentTrailId: (trailId: string | null) => void
+  selectedAgentStudents: DashboardAgentStudentLink[]
 }

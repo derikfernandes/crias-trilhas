@@ -7,9 +7,16 @@
  * formato que o dashboard já usava: "trailId|stage|question".
  */
 
+import {
+  EMPTY_AGENT_USAGE,
+  type AgentUsagePeriodDays,
+  type AgentUsageView,
+} from './agentUsage'
+
 export type DashboardLogSummary = {
   doneByStudent: Map<string, Set<string>>
   answerMap: Map<string, string>
+  agentUsage: AgentUsageView
 }
 
 function resolveApiBaseUrl(): string {
@@ -18,12 +25,34 @@ function resolveApiBaseUrl(): string {
   return window.location.origin
 }
 
+type AgentUsageApiRow = {
+  trail_id?: string
+  label?: string
+  messages?: number
+  unique_students?: number
+  pct_of_total?: number
+  last_activity?: string | null
+  student_ids?: string[]
+}
+
+type AgentUsageApiSeries = {
+  date?: string
+  trail_id?: string
+  messages?: number
+}
+
 type DashboardSummaryResponse = {
   trail_ids?: string[]
   students?: Record<
     string,
     { answers?: Record<string, string>; extra_done?: string[] }
   >
+  agent_usage?: {
+    period_days?: number
+    total_messages?: number
+    agents?: AgentUsageApiRow[]
+    series?: AgentUsageApiSeries[]
+  }
   error?: string
 }
 
@@ -36,11 +65,71 @@ function expandKey(compactKey: string, trailIds: string[]): string | null {
   return `${trailId}${compactKey.slice(sep)}`
 }
 
+function parsePeriodDays(value: unknown): AgentUsagePeriodDays {
+  if (value === 7 || value === 30) return value
+  return 0
+}
+
+function parseAgentUsage(
+  raw: DashboardSummaryResponse['agent_usage'],
+): AgentUsageView {
+  if (!raw || typeof raw !== 'object') return { ...EMPTY_AGENT_USAGE }
+
+  const agents = Array.isArray(raw.agents)
+    ? raw.agents
+        .filter((row) => typeof row?.trail_id === 'string' && row.trail_id.trim())
+        .map((row) => ({
+          trailId: String(row.trail_id).trim(),
+          label:
+            typeof row.label === 'string' && row.label.trim()
+              ? row.label.trim()
+              : String(row.trail_id).trim(),
+          messages: typeof row.messages === 'number' ? row.messages : 0,
+          uniqueStudents:
+            typeof row.unique_students === 'number' ? row.unique_students : 0,
+          pctOfTotal:
+            typeof row.pct_of_total === 'number' ? row.pct_of_total : 0,
+          lastActivity:
+            typeof row.last_activity === 'string' ? row.last_activity : null,
+          studentIds: Array.isArray(row.student_ids)
+            ? row.student_ids.filter((id): id is string => typeof id === 'string')
+            : [],
+        }))
+    : EMPTY_AGENT_USAGE.agents
+
+  const series = Array.isArray(raw.series)
+    ? raw.series
+        .filter(
+          (p) =>
+            typeof p?.date === 'string' &&
+            typeof p?.trail_id === 'string' &&
+            typeof p?.messages === 'number',
+        )
+        .map((p) => ({
+          date: String(p.date),
+          trailId: String(p.trail_id),
+          messages: Number(p.messages),
+        }))
+    : []
+
+  return {
+    periodDays: parsePeriodDays(raw.period_days),
+    totalMessages:
+      typeof raw.total_messages === 'number' ? raw.total_messages : 0,
+    agents,
+    series,
+  }
+}
+
 export async function fetchDashboardLogSummary(
   institutionId: string,
+  periodDays: AgentUsagePeriodDays = 0,
 ): Promise<DashboardLogSummary> {
   const url = new URL('/api/dashboard_summary', resolveApiBaseUrl())
   url.searchParams.set('institution_id', institutionId)
+  if (periodDays > 0) {
+    url.searchParams.set('period_days', String(periodDays))
+  }
 
   const res = await fetch(url.toString(), {
     headers: { Accept: 'application/json' },
@@ -62,7 +151,7 @@ export async function fetchDashboardLogSummary(
 
   // Sem o endpoint (ex.: Vite dev ou deploy antigo), o fallback de SPA devolve
   // 200 com index.html. Valida a forma da resposta para não tratar isso como
-  // "sem dados" — lançar erro aqui aciona o fallback legado no dashboard.
+  // "sem dados".
   if (
     !body ||
     typeof body.students !== 'object' ||
@@ -94,5 +183,9 @@ export async function fetchDashboardLogSummary(
     if (done.size > 0) doneByStudent.set(studentId, done)
   }
 
-  return { doneByStudent, answerMap }
+  return {
+    doneByStudent,
+    answerMap,
+    agentUsage: parseAgentUsage(body.agent_usage),
+  }
 }
