@@ -1,6 +1,14 @@
 import { cert, getApps, initializeApp, type ServiceAccount } from 'firebase-admin/app'
 import { getFirestore } from 'firebase-admin/firestore'
 
+import {
+  aggregateAgentUsage,
+  isAgentTrailId,
+  parsePeriodDays,
+  periodCutoffMillis,
+  type AgentUsageLogInput,
+} from '../server/lib/agentUsage'
+
 /**
  * Agregação server-side dos conversation_logs para o dashboard do painel admin.
  *
@@ -16,14 +24,13 @@ import { getFirestore } from 'firebase-admin/firestore'
  *   trail_ids: string[],
  *   students: Record<studentId, {
  *     answers: Record<"trailIdx|stage|question", string>,
- *     extra_done: Array<"trailIdx|stage|question">  // feitos sem resposta não-vazia
- *   }>
+ *     extra_done: Array<"trailIdx|stage|question">
+ *   }>,
+ *   agent_usage: { ... }  // ver specs/10_AGENT_USAGE_DASHBOARD.md
  * }
  *
  * O conjunto "feito" de cada aluno = chaves de `answers` + `extra_done`.
- * A semântica replica exatamente o cálculo que o dashboard fazia no browser
- * (buildLogAggregates + pickBestStudentAnswer em DashboardPage.tsx), porém sem
- * transferir os logs brutos para o cliente.
+ * trail_ids de agente NÃO entram em trail_ids / students (progressão tN).
  */
 
 type Json = Record<string, unknown>
@@ -141,6 +148,9 @@ async function handleRequest(request: Request): Promise<Response> {
     return respond(400, { error: 'Informe "institution_id".' })
   }
 
+  const periodDays = parsePeriodDays(url.searchParams.get('period_days'))
+  const cutoffMs = periodCutoffMillis(periodDays)
+
   let db: ReturnType<typeof getFirestore>
   try {
     db = getDb()
@@ -176,14 +186,15 @@ async function handleRequest(request: Request): Promise<Response> {
 
     /** studentId -> chave compacta "trailIdx|stage|question" -> candidatos. */
     const perStudent = new Map<string, Map<string, AnswerCandidate[]>>()
+    const agentLogs: AgentUsageLogInput[] = []
 
     const chunks = chunkArray(studentIds, FIRESTORE_IN_LIMIT)
     await Promise.all(
       chunks.map(async (chunk) => {
+        // Sem filtro de sender: progressão usa sender=student; agentes contam todos.
         const snap = await db
           .collection(logsCollection)
           .where('student_id', 'in', chunk)
-          .where('sender', '==', 'student')
           .select(
             'student_id',
             'trail_id',
@@ -191,6 +202,7 @@ async function handleRequest(request: Request): Promise<Response> {
             'question_number',
             'message_text',
             'message_type',
+            'sender',
             'created_at',
             'created_at_brasilia',
           )
@@ -203,6 +215,18 @@ async function handleRequest(request: Request): Promise<Response> {
             typeof data.student_id === 'string' ? data.student_id : ''
           const trailId = typeof data.trail_id === 'string' ? data.trail_id : ''
           if (!studentId || !trailId) continue
+
+          const at = logTimestampMillis(data.created_at, data.created_at_brasilia)
+
+          if (isAgentTrailId(trailId)) {
+            // Filtro de período aplica só ao uso de agentes, não à progressão tN.
+            if (cutoffMs > 0 && at > 0 && at < cutoffMs) continue
+            agentLogs.push({ student_id: studentId, trail_id: trailId, at })
+            continue
+          }
+
+          // Progressão: apenas mensagens do aluno em trilhas reais da instituição.
+          if (data.sender !== 'student') continue
           const trailIdx = trailIndexById.get(trailId)
           if (trailIdx === undefined) continue
 
@@ -227,7 +251,7 @@ async function handleRequest(request: Request): Promise<Response> {
           const list = byKey.get(compactKey) ?? []
           list.push({
             text: typeof data.message_text === 'string' ? data.message_text : '',
-            at: logTimestampMillis(data.created_at, data.created_at_brasilia),
+            at,
             isExercise: data.message_type === 'exercise',
             logId: doc.id,
           })
@@ -251,11 +275,14 @@ async function handleRequest(request: Request): Promise<Response> {
       students[studentId] = { answers, extra_done: extraDone }
     }
 
+    const agent_usage = aggregateAgentUsage(agentLogs, periodDays)
+
     return respond(200, {
       institution_id: institutionId,
       student_count: studentIds.length,
       trail_ids: trailIdList,
       students,
+      agent_usage,
     })
   } catch (e) {
     return respond(500, {
