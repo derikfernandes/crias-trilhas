@@ -91,6 +91,7 @@ export function TrilhaHistoryPage() {
       onLogout={logout}
     >
       <TrilhaHistoryPageView
+        onContinueCurrent={() => navigate('/trilha/play')}
         items={items}
         loadState={loadState}
         errorMessage={errorMessage}
