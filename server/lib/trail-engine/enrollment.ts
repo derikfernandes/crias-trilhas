@@ -112,6 +112,8 @@ export function additiveProgressDefaults(): Record<string, unknown> {
   return {
     progress_version: 0,
     last_idempotency_key: null,
+    last_idempotency_effect: null,
+    last_idempotency_request: null,
     last_channel: null,
     last_delivered: null,
     last_advance_at: null,

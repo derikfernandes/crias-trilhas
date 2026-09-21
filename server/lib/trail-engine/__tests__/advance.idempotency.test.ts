@@ -44,8 +44,9 @@ describe('advance.idempotency', () => {
       resolveIdempotencyDecision({
         last_key: 'k',
         incoming_key: 'k',
-        stored_effect: 'delivered|2|1|0|in_progress',
-        incoming_effect: 'answered|1|2|0|in_progress',
+        stored_effect: 'delivered|||',
+        incoming_effect: 'answered|||',
+        satellite_hit: true,
       }),
     ).toBe('conflict')
   })

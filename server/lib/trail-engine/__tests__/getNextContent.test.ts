@@ -100,26 +100,50 @@ describe('resolveIdempotencyDecision', () => {
     ).toBe('proceed')
   })
 
-  it('replay quando mesma key e efeito compatível', () => {
+  it('conflict quando mesma key e request fingerprint diferente', () => {
     expect(
       resolveIdempotencyDecision({
         last_key: 'k1',
         incoming_key: 'k1',
-        stored_effect: 'e1',
-        incoming_effect: 'e1',
+        stored_effect: 'delivered|||',
+        incoming_effect: 'answered|||',
+        satellite_hit: true,
+      }),
+    ).toBe('conflict')
+  })
+
+  it('replay via satélite com mesmo request fingerprint', () => {
+    expect(
+      resolveIdempotencyDecision({
+        last_key: 'k1',
+        incoming_key: 'k1',
+        stored_effect: 'delivered|||',
+        incoming_effect: 'delivered|||',
+        satellite_hit: true,
       }),
     ).toBe('replay')
   })
 
-  it('conflict quando mesma key e efeito diferente', () => {
+  it('conflict quando mesma key sem efeito armazenado (B3)', () => {
     expect(
       resolveIdempotencyDecision({
         last_key: 'k1',
         incoming_key: 'k1',
-        stored_effect: 'e1',
-        incoming_effect: 'e2',
+        stored_effect: null,
+        incoming_effect: 'delivered|||',
       }),
     ).toBe('conflict')
+  })
+
+  it('replay quando last_key bate e há efeito (não recompute)', () => {
+    expect(
+      resolveIdempotencyDecision({
+        last_key: 'k1',
+        incoming_key: 'k1',
+        stored_effect: 'delivered|||',
+        incoming_effect: 'other',
+      }),
+    ).toBe('replay')
   })
 })
 

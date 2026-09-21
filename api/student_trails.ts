@@ -25,10 +25,12 @@ import {
 } from '../server/lib/studentAuth'
 import {
   advance as engineAdvance,
+  assertServiceBearer,
   getActiveEnrollment,
   getNextContent,
   getStatus as engineGetStatus,
   isTrailEngineError,
+  isMutationMethod,
   submitExerciseAnswer,
   trailEngineErrorToJson,
   type TrailChannel,
@@ -336,6 +338,23 @@ async function handleRequest(request: Request): Promise<Response> {
   const qStudentId = url.searchParams.get('student_id')?.trim() || null
   const qTrailId = url.searchParams.get('trail_id')?.trim() || null
   const facade = url.searchParams.get('facade')?.trim() || null
+  const requestIdempotencyKey =
+    request.headers.get('Idempotency-Key')?.trim() ||
+    request.headers.get('idempotency-key')?.trim() ||
+    null
+
+  // Mutações legadas (Chatis CRUD / ?action=): service Bearer (Ciclo 1 B1).
+  // Fachada Wave B (?facade=): AuthZ via requireFacadeAuth (service OU sessão aluno).
+  if (isMutationMethod(request.method) && !facade) {
+    try {
+      assertServiceBearer(request.headers)
+    } catch (e) {
+      if (isTrailEngineError(e)) {
+        return respond(e.httpStatus, trailEngineErrorToJson(e) as Json)
+      }
+      throw e
+    }
+  }
 
   try {
     // Fachada Wave A/B: GET next-content | GET status | GET home | POST advance | POST submit-exercise
@@ -824,6 +843,10 @@ async function handleRequest(request: Request): Promise<Response> {
             collection,
             targetStudentId,
             targetTrailId,
+            {
+              channel: 'whatsapp',
+              idempotency_key: requestIdempotencyKey ?? undefined,
+            },
           )
           return jsonResponse(pos as Json, {
             status: 200,
@@ -844,6 +867,10 @@ async function handleRequest(request: Request): Promise<Response> {
             collection,
             targetStudentId,
             targetTrailId,
+            {
+              channel: 'whatsapp',
+              idempotency_key: requestIdempotencyKey ?? undefined,
+            },
           )
           return jsonResponse(pos as Json, {
             status: 200,
@@ -967,7 +994,7 @@ async function handleRequest(request: Request): Promise<Response> {
                 ? { current_question_number: parsedQuestion }
                 : {}),
             },
-            { channel: 'whatsapp' },
+            { channel: 'whatsapp', idempotency_key: requestIdempotencyKey ?? undefined },
           )
           return jsonResponse(
             {

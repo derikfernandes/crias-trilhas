@@ -150,6 +150,8 @@ test('Shared Trail Engine Wave A existe no servidor', () => {
     'resolveStudent.ts',
     'enrollment.ts',
     'errors.ts',
+    'auth.ts',
+    'idempotencyKey.ts',
   ]) {
     assert.equal(
       existsSync(join(engineDir, name)),
@@ -157,4 +159,16 @@ test('Shared Trail Engine Wave A existe no servidor', () => {
       `faltando server/lib/trail-engine/${name}`,
     )
   }
+  assert.match(
+    readFileSync(join(root, 'api/student_trails.ts'), 'utf8'),
+    /assertServiceBearer/,
+  )
+  assert.match(
+    readFileSync(join(root, 'server/lib/studentTrailService.ts'), 'utf8'),
+    /buildStableIdempotencyKey/,
+  )
+  assert.doesNotMatch(
+    readFileSync(join(root, 'server/lib/studentTrailService.ts'), 'utf8'),
+    /randomUUID/,
+  )
 })
