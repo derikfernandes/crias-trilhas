@@ -159,10 +159,18 @@ test('Shared Trail Engine Wave A existe no servidor', () => {
       `faltando server/lib/trail-engine/${name}`,
     )
   }
-  assert.match(
-    readFileSync(join(root, 'api/student_trails.ts'), 'utf8'),
-    /assertServiceBearer/,
+  const studentTrailsApi = readFileSync(
+    join(root, 'api/student_trails.ts'),
+    'utf8',
   )
+  assert.match(studentTrailsApi, /assertServiceBearer/)
+  // Ciclo 2: mutações legadas exigem service Bearer; fachada usa requireFacadeAuth
+  // (sessão aluno) — não bloquear POST ?facade=advance com assertServiceBearer global.
+  assert.match(
+    studentTrailsApi,
+    /isMutationMethod\(request\.method\)\s*&&\s*!facade/,
+  )
+  assert.match(studentTrailsApi, /requireFacadeAuth/)
   assert.match(
     readFileSync(join(root, 'server/lib/studentTrailService.ts'), 'utf8'),
     /buildStableIdempotencyKey/,
