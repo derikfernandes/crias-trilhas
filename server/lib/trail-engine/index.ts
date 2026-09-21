@@ -7,11 +7,16 @@ export {
   advance,
   computeLegacyPrimitiveAdvance,
   computeSemanticAdvance,
+  effectFingerprint,
+  loadTrailTotals,
   markInteraction,
+  requestFingerprint,
   resolveIdempotencyDecision,
   setProgressStatus,
 } from './advance'
 export type { AdvanceInput } from './advance'
+
+export { assertServiceBearer, isMutationMethod } from './auth'
 
 export { contentFingerprint } from './contentFingerprint'
 
@@ -36,6 +41,8 @@ export type { TrailEngineErrorCode } from './errors'
 export { decideNextAction, getNextContent } from './getNextContent'
 
 export { getStatus } from './getStatus'
+
+export { buildStableIdempotencyKey } from './idempotencyKey'
 
 export {
   isValidCanonicalPhone,

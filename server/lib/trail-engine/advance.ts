@@ -1,4 +1,4 @@
-import type { Firestore } from 'firebase-admin/firestore'
+import type { Firestore, Transaction } from 'firebase-admin/firestore'
 import { FieldValue } from 'firebase-admin/firestore'
 
 import { contentFingerprint } from './contentFingerprint'
@@ -6,7 +6,6 @@ import {
   parsePositiveInt,
   parseProgressVersion,
   parseStatus,
-  questionDocId,
   studentTrailDocId,
 } from './enrollment'
 import { TrailEngineError } from './errors'
@@ -150,23 +149,56 @@ export function computeLegacyPrimitiveAdvance(input: {
 export function resolveIdempotencyDecision(input: {
   last_key: string | null
   incoming_key: string
-  /** Snapshot serializado da última resposta (opcional satélite). */
+  /** Efeito/request fingerprint persistido (satélite ou last_idempotency_effect). */
   stored_effect?: string | null
   incoming_effect: string
+  /** Se true, key já tem satélite → replay directo (não recompute). */
+  satellite_hit?: boolean
 }): 'replay' | 'conflict' | 'proceed' {
+  if (input.satellite_hit) {
+    if (
+      input.stored_effect != null &&
+      input.stored_effect !== '' &&
+      input.stored_effect !== input.incoming_effect
+    ) {
+      return 'conflict'
+    }
+    return 'replay'
+  }
   if (!input.last_key || input.last_key !== input.incoming_key) {
     return 'proceed'
   }
-  if (
-    input.stored_effect != null &&
-    input.stored_effect !== input.incoming_effect
-  ) {
+  // B3: mesma key sem efeito armazenado → conflict
+  if (input.stored_effect == null || input.stored_effect === '') {
     return 'conflict'
   }
+  // last_key bate: replay da posição actual (não comparar com efeito recomputeado
+  // a partir da nova posição — isso geraria falso conflict).
   return 'replay'
 }
 
-function effectFingerprint(computed: ComputedAdvance, reason: string): string {
+/**
+ * Fingerprint do *pedido* (não do resultado pós-advance).
+ * Permite conflict key+body incompatível sem depender da posição actual.
+ */
+export function requestFingerprint(input: {
+  reason: string
+  legacy_primitive?: string
+  set_stage?: number
+  set_question?: number
+}): string {
+  return [
+    input.reason,
+    input.legacy_primitive ?? '',
+    input.set_stage ?? '',
+    input.set_question ?? '',
+  ].join('|')
+}
+
+export function effectFingerprint(
+  computed: ComputedAdvance,
+  reason: string,
+): string {
   return [
     reason,
     computed.next_stage_number,
@@ -176,13 +208,18 @@ function effectFingerprint(computed: ComputedAdvance, reason: string): string {
   ].join('|')
 }
 
-async function loadTrailTotals(
+/**
+ * Totais da trilha: TOTAL_STAGE do doc trails; total_questions = max
+ * question_number em toda a trilha (não scoped ao stage corrente — B4).
+ */
+export async function loadTrailTotals(
   db: Firestore,
   trailId: string,
-  stageNumber: number,
   collections: CollectionNames,
+  tx?: Transaction,
 ): Promise<{ total_stages: number; total_questions: number }> {
-  const trailSnap = await db.collection(collections.trails).doc(trailId).get()
+  const trailRef = db.collection(collections.trails).doc(trailId)
+  const trailSnap = tx ? await tx.get(trailRef) : await trailRef.get()
   if (!trailSnap.exists) {
     throw new TrailEngineError('not_found', `Trilha "${trailId}" não encontrada.`)
   }
@@ -192,26 +229,19 @@ async function loadTrailTotals(
     1,
   )
 
-  const questionsSnap = await db
+  const questionsQuery = db
     .collection(collections.trailStageQuestions)
     .where('trail_id', '==', trailId)
-    .where('stage_number', '==', stageNumber)
-    .get()
+
+  const questionsSnap = tx
+    ? await tx.get(questionsQuery)
+    : await questionsQuery.get()
 
   let maxQ = 0
   for (const doc of questionsSnap.docs) {
     const q = (doc.data() ?? {}) as Record<string, unknown>
     const n = parsePositiveInt(q.question_number, 0)
     if (n > maxQ) maxQ = n
-  }
-
-  // Fallback: tenta doc canônico da questão atual se query vazia
-  if (maxQ < 1) {
-    const qSnap = await db
-      .collection(collections.trailStageQuestions)
-      .doc(questionDocId(trailId, stageNumber, 1))
-      .get()
-    maxQ = qSnap.exists ? 1 : 1
   }
 
   return { total_stages, total_questions: Math.max(1, maxQ) }
@@ -249,22 +279,6 @@ export async function advance(
     .collection(collections.idempotencyKeys)
     .doc(`${studentId}_${trailId}_${key}`)
   const now = FieldValue.serverTimestamp()
-
-  // Pré-carrega totais fora da tx quando necessário (semantic).
-  let totals: { total_stages: number; total_questions: number } | null = null
-  if (input.reason !== 'legacy_primitive' && input.reason !== 'legacy_update_position') {
-    // stage atual será lido na tx; usamos um peek rápido
-    const peek = await ref.get()
-    if (!peek.exists) {
-      throw new TrailEngineError(
-        'not_found',
-        'Progresso da trilha não encontrado para este aluno.',
-      )
-    }
-    const peekData = (peek.data() ?? {}) as Record<string, unknown>
-    const stage = parsePositiveInt(peekData.current_stage_number, 1)
-    totals = await loadTrailTotals(db, trailId, stage, collections)
-  }
 
   type TxResult =
     | { kind: 'ok' | 'replay'; result: AdvanceResult }
@@ -386,31 +400,59 @@ export async function advance(
           ),
         }
       }
-      const t = totals ?? { total_stages: 1, total_questions: 1 }
+      // B5: totais dentro da tx após ler posição
+      let totals: { total_stages: number; total_questions: number }
+      try {
+        totals = await loadTrailTotals(db, trailId, collections, tx)
+      } catch (e) {
+        if (e instanceof TrailEngineError) {
+          return { kind: 'error', error: e }
+        }
+        throw e
+      }
       computed = computeSemanticAdvance({
         current_stage_number,
         current_question_number,
-        total_stages: t.total_stages,
-        total_questions: t.total_questions,
+        total_stages: totals.total_stages,
+        total_questions: totals.total_questions,
         status,
       })
     }
 
+    const reqFp = requestFingerprint({
+      reason: input.reason,
+      legacy_primitive: input.legacy_primitive,
+      set_stage: input.set_stage,
+      set_question: input.set_question,
+    })
     const effect = effectFingerprint(computed, input.reason)
     const idemSnap = await tx.get(idemRef)
-    const storedEffect =
-      idemSnap.exists &&
-      typeof (idemSnap.data() as Record<string, unknown>)?.effect === 'string'
-        ? ((idemSnap.data() as Record<string, unknown>).effect as string)
-        : last_key === key
-          ? effect
+    const satelliteData = idemSnap.exists
+      ? ((idemSnap.data() ?? {}) as Record<string, unknown>)
+      : null
+    const satelliteReqFp =
+      satelliteData && typeof satelliteData.request_fingerprint === 'string'
+        ? satelliteData.request_fingerprint
+        : satelliteData && typeof satelliteData.effect === 'string'
+          ? // legado: effect era resultado; não usar para conflict de pedido
+            null
           : null
+    const last_req_fp =
+      typeof data.last_idempotency_request === 'string'
+        ? data.last_idempotency_request
+        : typeof data.last_idempotency_effect === 'string'
+          ? data.last_idempotency_effect
+          : null
+
+    const storedForConflict =
+      satelliteReqFp ?? (last_key === key ? last_req_fp : null)
 
     const decision = resolveIdempotencyDecision({
       last_key,
       incoming_key: key,
-      stored_effect: storedEffect,
-      incoming_effect: effect,
+      stored_effect: storedForConflict,
+      incoming_effect: reqFp,
+      satellite_hit: idemSnap.exists,
     })
 
     if (decision === 'conflict') {
@@ -436,10 +478,8 @@ export async function advance(
         channel: input.channel,
         idempotency_key: key,
       }
-      // Se satélite tem snapshot, preferir
-      if (idemSnap.exists) {
-        const d = (idemSnap.data() ?? {}) as Record<string, unknown>
-        const snapResult = d.response_snapshot
+      if (idemSnap.exists && satelliteData) {
+        const snapResult = satelliteData.response_snapshot
         if (snapResult && typeof snapResult === 'object') {
           const s = snapResult as Record<string, unknown>
           return {
@@ -482,6 +522,8 @@ export async function advance(
       status: newStatus,
       progress_version: newVersion,
       last_idempotency_key: key,
+      last_idempotency_effect: effect,
+      last_idempotency_request: reqFp,
       last_channel: input.channel,
       last_advance_at: now,
       last_interaction_at: now,
@@ -528,6 +570,7 @@ export async function advance(
         trail_id: trailId,
         idempotency_key: key,
         effect,
+        request_fingerprint: reqFp,
         response_snapshot: result,
         created_at: now,
         expires_at: null,

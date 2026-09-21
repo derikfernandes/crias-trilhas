@@ -21,9 +21,11 @@ import {
 } from '../server/lib/studentTrailValidation'
 import {
   advance as engineAdvance,
+  assertServiceBearer,
   getNextContent,
   getStatus as engineGetStatus,
   isTrailEngineError,
+  isMutationMethod,
   trailEngineErrorToJson,
   type TrailChannel,
 } from '../server/lib/trail-engine'
@@ -307,9 +309,25 @@ async function handleRequest(request: Request): Promise<Response> {
     })
   }
 
+  // Auth Bearer em mutações (POST/PUT) — AC Wave A / B1. GETs legados abertos.
+  if (isMutationMethod(request.method)) {
+    try {
+      assertServiceBearer(request.headers)
+    } catch (e) {
+      if (isTrailEngineError(e)) {
+        return respond(e.httpStatus, trailEngineErrorToJson(e) as Json)
+      }
+      throw e
+    }
+  }
+
   const qStudentId = url.searchParams.get('student_id')?.trim() || null
   const qTrailId = url.searchParams.get('trail_id')?.trim() || null
   const facade = url.searchParams.get('facade')?.trim() || null
+  const requestIdempotencyKey =
+    request.headers.get('Idempotency-Key')?.trim() ||
+    request.headers.get('idempotency-key')?.trim() ||
+    null
 
   try {
     // Fachada Wave A: GET next-content | GET status | POST advance
@@ -646,6 +664,10 @@ async function handleRequest(request: Request): Promise<Response> {
             collection,
             targetStudentId,
             targetTrailId,
+            {
+              channel: 'whatsapp',
+              idempotency_key: requestIdempotencyKey ?? undefined,
+            },
           )
           return jsonResponse(pos as Json, {
             status: 200,
@@ -666,6 +688,10 @@ async function handleRequest(request: Request): Promise<Response> {
             collection,
             targetStudentId,
             targetTrailId,
+            {
+              channel: 'whatsapp',
+              idempotency_key: requestIdempotencyKey ?? undefined,
+            },
           )
           return jsonResponse(pos as Json, {
             status: 200,
@@ -789,7 +815,7 @@ async function handleRequest(request: Request): Promise<Response> {
                 ? { current_question_number: parsedQuestion }
                 : {}),
             },
-            { channel: 'whatsapp' },
+            { channel: 'whatsapp', idempotency_key: requestIdempotencyKey ?? undefined },
           )
           return jsonResponse(
             {
