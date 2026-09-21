@@ -62,15 +62,28 @@ function corsHeaders(): Record<string, string> {
   }
 }
 
+/** Allowlist RT-C1 — nunca tratar facade arbitrário como “skip Bearer”. */
+const KNOWN_FACADES = new Set([
+  'home',
+  'next-content',
+  'status',
+  'advance',
+  'submit-exercise',
+])
+
+function isKnownFacade(facade: string | null): boolean {
+  return facade !== null && KNOWN_FACADES.has(facade)
+}
+
 function requireFacadeAuth(
   request: Request,
   targetStudentId: string,
 ):
-  | { ok: true }
+  | { ok: true; principal: ReturnType<typeof resolveAuthPrincipal> }
   | { ok: false; status: number; body: Json } {
   const principal = resolveAuthPrincipal(request.headers.get('Authorization'))
   const authz = authorizeStudentResource(principal, targetStudentId)
-  if (authz.ok) return { ok: true }
+  if (authz.ok) return { ok: true, principal }
   return {
     ok: false,
     status: authz.status,
@@ -80,6 +93,19 @@ function requireFacadeAuth(
       error: authz.error,
     },
   }
+}
+
+/**
+ * Canal efectivo: aluno HMAC → sempre `app` (RT-M2).
+ * Service/admin podem setar whatsapp/admin.
+ */
+function resolveMutationChannel(
+  request: Request,
+  requested: TrailChannel | null,
+): TrailChannel {
+  const principal = resolveAuthPrincipal(request.headers.get('Authorization'))
+  if (principal.kind === 'student') return 'app'
+  return requested ?? 'app'
 }
 
 function parseChannel(v: unknown): TrailChannel | null {
@@ -339,15 +365,26 @@ async function handleRequest(request: Request): Promise<Response> {
 
   const qStudentId = url.searchParams.get('student_id')?.trim() || null
   const qTrailId = url.searchParams.get('trail_id')?.trim() || null
-  const facade = url.searchParams.get('facade')?.trim() || null
+  const facadeRaw = url.searchParams.get('facade')?.trim() || null
+  const facade = facadeRaw
   const requestIdempotencyKey =
     request.headers.get('Idempotency-Key')?.trim() ||
     request.headers.get('idempotency-key')?.trim() ||
     null
 
+  // RT-C1: facade desconhecido NÃO salta Bearer — 400 + allowlist.
+  if (facade !== null && !isKnownFacade(facade)) {
+    return respond(400, {
+      status: 'error',
+      code: 'invalid_facade',
+      error:
+        'Parâmetro facade inválido. Use: home, next-content, status, advance, submit-exercise.',
+    })
+  }
+
   // Mutações legadas (Chatis CRUD / ?action=): service Bearer (Ciclo 1 B1).
-  // Fachada Wave B (?facade=): AuthZ via requireFacadeAuth (service OU sessão aluno).
-  if (isMutationMethod(request.method) && !facade) {
+  // Fachada conhecida: AuthZ via requireFacadeAuth (service OU sessão aluno).
+  if (isMutationMethod(request.method) && !isKnownFacade(facade)) {
     try {
       assertServiceBearer(request.headers)
     } catch (e) {
@@ -507,6 +544,7 @@ async function handleRequest(request: Request): Promise<Response> {
       if (!authz.ok) return respond(authz.status, authz.body)
       try {
         const statusDoc = await engineGetStatus(db, qStudentId, qTrailId)
+        const forStudent = authz.principal.kind === 'student'
         return jsonResponse(
           {
             status: 'ok',
@@ -518,7 +556,10 @@ async function handleRequest(request: Request): Promise<Response> {
             progress_status: statusDoc.status,
             progress_version: statusDoc.progress_version,
             last_channel: statusDoc.last_channel,
-            last_idempotency_key: statusDoc.last_idempotency_key,
+            // RT-L1: não expor last_idempotency_key ao aluno
+            ...(forStudent
+              ? {}
+              : { last_idempotency_key: statusDoc.last_idempotency_key }),
             last_delivered: statusDoc.last_delivered,
             last_advance_at: serializeTs(statusDoc.last_advance_at),
             started_at: serializeTs(statusDoc.started_at),
@@ -546,10 +587,9 @@ async function handleRequest(request: Request): Promise<Response> {
       const studentId =
         qStudentId ?? sanitizeString(body.student_id) ?? null
       const trailId = qTrailId ?? sanitizeString(body.trail_id) ?? null
-      const channel =
+      const requestedChannel =
         parseChannel(body.channel) ??
-        parseChannel(url.searchParams.get('channel')) ??
-        'app'
+        parseChannel(url.searchParams.get('channel'))
       const idempotencyKey =
         request.headers.get('Idempotency-Key')?.trim() ||
         sanitizeString(body.idempotency_key) ||
@@ -575,6 +615,7 @@ async function handleRequest(request: Request): Promise<Response> {
       }
       const authz = requireFacadeAuth(request, studentId)
       if (!authz.ok) return respond(authz.status, authz.body)
+      const channel = resolveMutationChannel(request, requestedChannel)
       if (!idempotencyKey) {
         return respond(400, {
           status: 'error',
@@ -629,10 +670,9 @@ async function handleRequest(request: Request): Promise<Response> {
       const stageNumber = parseIntLoose(body.stage_number)
       const questionNumber = parseIntLoose(body.question_number)
       const answer = sanitizeString(body.student_answer) ?? sanitizeString(body.answer)
-      const channel =
+      const requestedChannel =
         parseChannel(body.channel) ??
-        parseChannel(url.searchParams.get('channel')) ??
-        'app'
+        parseChannel(url.searchParams.get('channel'))
       const idempotencyKey =
         request.headers.get('Idempotency-Key')?.trim() ||
         sanitizeString(body.idempotency_key) ||
@@ -651,6 +691,7 @@ async function handleRequest(request: Request): Promise<Response> {
       }
       const authz = requireFacadeAuth(request, studentId)
       if (!authz.ok) return respond(authz.status, authz.body)
+      const channel = resolveMutationChannel(request, requestedChannel)
       if (!idempotencyKey || !answer || stageNumber === null || questionNumber === null) {
         return respond(400, {
           status: 'error',
@@ -690,18 +731,33 @@ async function handleRequest(request: Request): Promise<Response> {
     // GET /student_trails/
     // GET /student_trails?id=...
     // GET /student_trails?student_id=...&trail_id=...
+    // RT-H1: leitura sensível exige service Bearer OU sessão do próprio aluno.
     if (request.method === 'GET') {
       if (id) {
         const snap = await getStudentTrailById(db, collection, id)
         if (!snap.exists) return respond(404, { error: 'Not found' })
         const data = (snap.data() ?? {}) as Record<string, unknown>
-        return jsonResponse(toStudentTrailOutput(data, snap.id), {
+        const ownerId =
+          typeof data.student_id === 'string' ? data.student_id.trim() : ''
+        if (!ownerId) {
+          return respond(404, { error: 'Not found' })
+        }
+        const authz = requireFacadeAuth(request, ownerId)
+        if (!authz.ok) return respond(authz.status, authz.body)
+        const out = toStudentTrailOutput(data, snap.id)
+        if (authz.principal.kind === 'student') {
+          delete out.last_idempotency_key
+        }
+        return jsonResponse(out, {
           status: 200,
           headers: corsHeaders(),
         })
       }
 
       if (qStudentId && qTrailId) {
+        const authz = requireFacadeAuth(request, qStudentId)
+        if (!authz.ok) return respond(authz.status, authz.body)
+
         const snap = await getStudentTrailByComposite(
           db,
           collection,
@@ -711,7 +767,6 @@ async function handleRequest(request: Request): Promise<Response> {
         if (!snap.exists) return respond(404, { error: 'Not found' })
         const data = (snap.data() ?? {}) as Record<string, unknown>
 
-        // Função runtime principal: posição atual do aluno na trilha.
         const pos = await getStudentTrailPosition(
           db,
           collection,
@@ -720,27 +775,31 @@ async function handleRequest(request: Request): Promise<Response> {
         )
         if (!pos) return respond(404, { error: 'Not found' })
 
-        return jsonResponse(
-          {
-            ...pos,
-            started_at: serializeTs(data.started_at),
-            completed_at: serializeTs(data.completed_at),
-            last_interaction_at: serializeTs(data.last_interaction_at),
-            progress_version:
-              typeof data.progress_version === 'number' &&
-              Number.isFinite(data.progress_version)
-                ? data.progress_version
-                : (pos.progress_version ?? 0),
-            last_idempotency_key:
-              typeof data.last_idempotency_key === 'string'
-                ? data.last_idempotency_key
-                : null,
-            last_channel: parseChannel(data.last_channel),
-            last_delivered: serializeLastDelivered(data.last_delivered),
-            last_advance_at: serializeTs(data.last_advance_at),
-          },
-          { status: 200, headers: corsHeaders() },
-        )
+        const body: Json = {
+          ...pos,
+          started_at: serializeTs(data.started_at),
+          completed_at: serializeTs(data.completed_at),
+          last_interaction_at: serializeTs(data.last_interaction_at),
+          progress_version:
+            typeof data.progress_version === 'number' &&
+            Number.isFinite(data.progress_version)
+              ? data.progress_version
+              : (pos.progress_version ?? 0),
+          last_channel: parseChannel(data.last_channel),
+          last_delivered: serializeLastDelivered(data.last_delivered),
+          last_advance_at: serializeTs(data.last_advance_at),
+        }
+        if (authz.principal.kind !== 'student') {
+          body.last_idempotency_key =
+            typeof data.last_idempotency_key === 'string'
+              ? data.last_idempotency_key
+              : null
+        }
+
+        return jsonResponse(body, {
+          status: 200,
+          headers: corsHeaders(),
+        })
       }
 
       return respond(400, {

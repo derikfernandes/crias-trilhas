@@ -1,5 +1,10 @@
 /**
  * Auth aluno Trilha — login por telefone → sessão HMAC (Wave B).
+ *
+ * U1 / RT-H4 residual (v1): **sem OTP**. Qualquer telefone cadastrado activo
+ * obtém sessão. Mitigações v1: Trusted Sources / rede privada, rate-limit na
+ * edge (ops), respostas de erro uniformes (RT-H3). OTP/magic-link = follow-up.
+ *
  * POST { phone_number } → { token, student }
  * GET  Authorization: Bearer <session> → { student }
  */
@@ -15,7 +20,6 @@ import {
 import {
   isTrailEngineError,
   resolveStudentByPhone,
-  trailEngineErrorToJson,
 } from '../server/lib/trail-engine'
 
 type Json = Record<string, unknown>
@@ -36,6 +40,15 @@ function respond(status: number, body: Json): Response {
       'Content-Type': 'application/json; charset=utf-8',
       ...corsHeaders(),
     },
+  })
+}
+
+/** RT-H3: resposta uniforme — sem oráculo 404/409 nem student_id. */
+function loginDenied(): Response {
+  return respond(401, {
+    status: 'error',
+    code: 'unauthorized',
+    error: 'Não foi possível entrar com este telefone.',
   })
 }
 
@@ -103,7 +116,7 @@ async function handleRequest(request: Request): Promise<Response> {
     })
   }
 
-  // POST /api/trilha_auth — login telefone
+  // POST /api/trilha_auth — login telefone (sem OTP — residual U1/RT-H4)
   if (request.method === 'POST') {
     let payload: unknown
     try {
@@ -129,14 +142,24 @@ async function handleRequest(request: Request): Promise<Response> {
       const student = await resolveStudentByPhone(db, phone, undefined, {
         requireActive: true,
       })
-      const { token, claims } = issueStudentSessionToken({
-        student_id: student.student_id,
-        institution_id: student.institution_id,
-        name: student.name,
-        phone_number: student.phone_number || phone,
-      })
+      let token: string
+      let claims
+      try {
+        ;({ token, claims } = issueStudentSessionToken({
+          student_id: student.student_id,
+          institution_id: student.institution_id,
+          name: student.name,
+          phone_number: student.phone_number || phone,
+        }))
+      } catch (e) {
+        return respond(500, {
+          status: 'error',
+          code: 'session_issue_failed',
+          error:
+            e instanceof Error ? e.message : 'Falha ao emitir sessão.',
+        })
+      }
 
-      // Re-verify garante formato estável
       const verified = verifyStudentSessionToken(token)
       if (!verified) {
         return respond(500, {
@@ -158,8 +181,20 @@ async function handleRequest(request: Request): Promise<Response> {
         },
       })
     } catch (e) {
+      // RT-H3: miss / inactivo / inválido → mesma resposta (sem student_id).
       if (isTrailEngineError(e)) {
-        return respond(e.httpStatus, trailEngineErrorToJson(e) as Json)
+        if (
+          e.code === 'not_found' ||
+          e.code === 'inactive_student' ||
+          e.code === 'invalid_phone'
+        ) {
+          return loginDenied()
+        }
+        return respond(e.httpStatus, {
+          status: 'error',
+          code: e.code,
+          error: e.message,
+        })
       }
       throw e
     }

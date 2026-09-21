@@ -10,11 +10,8 @@ import {
 
 function loginErrorMessage(err: unknown): string {
   if (err instanceof TrilhaApiError) {
-    if (err.code === 'not_found') {
-      return 'Não encontrámos este número.'
-    }
-    if (err.code === 'inactive_student') {
-      return 'Conta inativa.'
+    if (err.code === 'unauthorized' || err.status === 401) {
+      return 'Não foi possível entrar com este telefone.'
     }
     if (err.code === 'invalid_phone') {
       return 'Informe um telefone válido.'

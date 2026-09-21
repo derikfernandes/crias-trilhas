@@ -18,6 +18,26 @@ function resolveApiBaseUrl(): string {
   return window.location.origin
 }
 
+/**
+ * Facades conhecidas (server allowlist RT-C1). O client NÃO lê `facade`
+ * da URL do browser — só estes literais hardcoded.
+ */
+export const TRILHA_KNOWN_FACADES = [
+  'home',
+  'next-content',
+  'status',
+  'advance',
+  'submit-exercise',
+] as const
+
+export type TrilhaKnownFacade = (typeof TRILHA_KNOWN_FACADES)[number]
+
+function facadeQuery(facade: TrilhaKnownFacade): URLSearchParams {
+  const params = new URLSearchParams()
+  params.set('facade', facade)
+  return params
+}
+
 export class TrilhaApiError extends Error {
   status: number
   code: string
@@ -181,7 +201,7 @@ export async function fetchTrilhaHome(
   token?: string,
 ): Promise<TrilhaHomeResponse> {
   const url = new URL('/api/student_trails', resolveApiBaseUrl())
-  url.searchParams.set('facade', 'home')
+  url.search = facadeQuery('home').toString()
   const res = await fetch(url.toString(), {
     method: 'GET',
     headers: authHeaders(token),
@@ -200,10 +220,11 @@ export async function fetchNextContent(
   token?: string,
 ): Promise<TrilhaNextContent> {
   const url = new URL('/api/student_trails', resolveApiBaseUrl())
-  url.searchParams.set('facade', 'next-content')
-  url.searchParams.set('student_id', studentId)
-  url.searchParams.set('trail_id', trailId)
-  url.searchParams.set('channel', 'app')
+  const params = facadeQuery('next-content')
+  params.set('student_id', studentId)
+  params.set('trail_id', trailId)
+  params.set('channel', 'app')
+  url.search = params.toString()
   const res = await fetch(url.toString(), {
     method: 'GET',
     headers: authHeaders(token),
@@ -232,7 +253,7 @@ export async function advanceProgress(input: {
     )
   }
   const url = new URL('/api/student_trails', resolveApiBaseUrl())
-  url.searchParams.set('facade', 'advance')
+  url.search = facadeQuery('advance').toString()
   const res = await fetch(url.toString(), {
     method: 'POST',
     headers: {
@@ -316,7 +337,7 @@ export async function submitExercise(input: {
     )
   }
   const url = new URL('/api/student_trails', resolveApiBaseUrl())
-  url.searchParams.set('facade', 'submit-exercise')
+  url.search = facadeQuery('submit-exercise').toString()
   const res = await fetch(url.toString(), {
     method: 'POST',
     headers: {

@@ -44,15 +44,28 @@ export function getStudentSessionSecret(
 ): string {
   const explicit = env.STUDENT_SESSION_SECRET?.trim()
   if (explicit) return explicit
-  // Fallback determinístico para ambientes sem secret dedicado (dev/preview).
-  // Produção deve definir STUDENT_SESSION_SECRET.
+
+  const isProd =
+    env.VERCEL_ENV === 'production' ||
+    env.NODE_ENV === 'production' ||
+    env.STUDENT_SESSION_REQUIRE_SECRET === '1'
+
+  // RT-M3: fail-closed em produção — sem secret previsível.
+  if (isProd) {
+    throw new Error(
+      'STUDENT_SESSION_SECRET ausente. Defina um secret forte em produção.',
+    )
+  }
+
+  // Dev/preview sem secret: deriva do SA JSON se existir; senão secret de lab
+  // marcado (nunca usar em prod — gated acima).
   const sa = env.FIREBASE_ADMIN_SERVICE_ACCOUNT_JSON?.trim()
   if (sa) {
     return createHmac('sha256', 'crias-student-session-v1')
       .update(sa.slice(0, 256))
       .digest('hex')
   }
-  return 'crias-dev-student-session-secret'
+  return 'crias-dev-student-session-secret-LAB-ONLY'
 }
 
 export function getServiceBearerToken(

@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   authorizeStudentResource,
   extractBearerToken,
+  getStudentSessionSecret,
   issueStudentSessionToken,
   resolveAuthPrincipal,
   verifyStudentSessionToken,
@@ -107,5 +108,13 @@ describe('AuthZ I8 — aluno não acede a outro sN', () => {
   it('extractBearerToken', () => {
     expect(extractBearerToken('Bearer abc')).toBe('abc')
     expect(extractBearerToken('Basic x')).toBeNull()
+  })
+
+  it('produção sem STUDENT_SESSION_SECRET falha fechado (RT-M3)', () => {
+    expect(() =>
+      getStudentSessionSecret({
+        NODE_ENV: 'production',
+      } as NodeJS.ProcessEnv),
+    ).toThrow(/STUDENT_SESSION_SECRET/)
   })
 })
