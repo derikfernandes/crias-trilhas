@@ -99,6 +99,39 @@ export function TrilhaUxDemoPage() {
     )
   }
 
+
+  if (scene === 'feedback') {
+    return (
+      <StudentShellView studentName="Dérik" onLogout={noop}>
+        <TrilhaPlayerPageView
+          stageNumber={2}
+          questionNumber={2}
+          totalQuestions={5}
+          totalStages={4}
+          stageType="exercise"
+          title="Situações do dia a dia"
+          body="Qual atitude demonstra cidadania?"
+          options={[
+            { key: 'A', label: 'A) Ignorar' },
+            { key: 'B', label: 'B) Ajudar o colega' },
+            { key: 'C', label: 'C) Atrapalhar' },
+          ]}
+          nextAction="await_answer"
+          submitting={false}
+          answerValue="B"
+          feedbackState="correct"
+          loadState="ready"
+          onAnswerChange={noop}
+          onContinue={noop}
+          onSubmitAnswer={noop}
+          onContinueAfterFeedback={noop}
+          onBack={noop}
+          onOpenHistory={noop}
+        />
+      </StudentShellView>
+    )
+  }
+
   if (scene === 'mcq') {
     return (
       <StudentShellView studentName="Dérik" onLogout={noop}>

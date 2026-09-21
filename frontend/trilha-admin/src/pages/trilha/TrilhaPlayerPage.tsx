@@ -51,10 +51,17 @@ export function TrilhaPlayerPage() {
   const [totalQuestions, setTotalQuestions] = useState<number | null>(null)
   const [totalStages, setTotalStages] = useState<number | null>(null)
   const [content, setContent] = useState<TrilhaNextContent | null>(null)
+  const [feedbackState, setFeedbackState] = useState<'correct' | 'incorrect' | 'recorded' | null>(
+    null,
+  )
+  const [victoryMessage, setVictoryMessage] = useState<string | null>(null)
+  const [pendingNext, setPendingNext] = useState<TrilhaNextContent | null>(null)
 
   const applyContent = useCallback((next: TrilhaNextContent) => {
     setContent({ ...next, next_action: normalizeNextAction(next) })
     setAnswerValue('')
+    setFeedbackState(null)
+    setPendingNext(null)
     setLoadState('ready')
   }, [])
 
@@ -156,7 +163,13 @@ export function TrilhaPlayerPage() {
         trailId,
         session.token,
       )
-      applyContent(next)
+      setVictoryMessage(
+        `Etapa ${content.stage_number} · Q${content.question_number} concluída`,
+      )
+      window.setTimeout(() => {
+        setVictoryMessage(null)
+        applyContent(next)
+      }, 180)
     } catch (e) {
       setErrorMessage(
         e instanceof Error ? e.message : 'Falha ao avançar.',
@@ -183,8 +196,9 @@ export function TrilhaPlayerPage() {
     )
 
     try {
+      let submitResult: { status: string; is_correct?: boolean }
       try {
-        await submitExercise({
+        submitResult = await submitExercise({
           studentId: session.student.student_id,
           trailId,
           institutionId,
@@ -208,30 +222,17 @@ export function TrilhaPlayerPage() {
           applyContent(next)
           return
         }
-        // Fallback: se submit-exercise falhar por feature gap, tentar advance após resposta
+        // C3.5: sem feedback do motor, NÃO avançar às cegas
         if (
           e instanceof TrilhaApiError &&
           (e.status === 404 || e.status === 501 || e.status === 405)
         ) {
-          const outcome = await advanceWithConflictHandling({
-            studentId: session.student.student_id,
-            trailId,
-            idempotencyKey: key,
-            expectedVersion: content.progress_version,
-            reason: 'answered',
-            token: session.token,
-          })
-          if (outcome.kind === 'conflict') {
-            setConflictMessage(
-              'Atualizámos o passo (também avançou no WhatsApp). Aqui está onde ficou.',
-            )
-            const next = await outcome.resync()
-            applyContent(next)
-            return
-          }
-        } else {
-          throw e
+          setErrorMessage(
+            'Não conseguimos corrigir agora. Tente de novo — nada foi perdido.',
+          )
+          return
         }
+        throw e
       }
 
       const next = await fetchNextContent(
@@ -239,14 +240,40 @@ export function TrilhaPlayerPage() {
         trailId,
         session.token,
       )
-      applyContent(next)
+      setPendingNext(next)
+      if (submitResult.is_correct === true) {
+        setFeedbackState('correct')
+      } else if (submitResult.is_correct === false) {
+        setFeedbackState('incorrect')
+      } else {
+        setFeedbackState('recorded')
+      }
     } catch (e) {
       setErrorMessage(
-        e instanceof Error ? e.message : 'Falha ao enviar resposta.',
+        e instanceof Error
+          ? e.message
+          : 'Não conseguimos corrigir agora. Tente de novo — nada foi perdido.',
       )
     } finally {
       setSubmitting(false)
     }
+  }
+
+  function handleContinueAfterFeedback() {
+    if (pendingNext) {
+      setVictoryMessage(
+        feedbackState === 'correct'
+          ? `Etapa ${content?.stage_number ?? ''} · Q${content?.question_number ?? ''} concluída`
+          : null,
+      )
+      const next = pendingNext
+      window.setTimeout(() => {
+        setVictoryMessage(null)
+        applyContent(next)
+      }, feedbackState === 'correct' ? 160 : 0)
+      return
+    }
+    void load()
   }
 
   const stageType = mapStageType(content?.stage_type ?? 'fixed')
@@ -283,9 +310,12 @@ export function TrilhaPlayerPage() {
         loadState={loadState}
         errorMessage={errorMessage}
         conflictMessage={conflictMessage}
+        feedbackState={feedbackState}
+        victoryMessage={victoryMessage}
         onAnswerChange={setAnswerValue}
         onContinue={() => void handleContinue()}
         onSubmitAnswer={() => void handleSubmitAnswer()}
+        onContinueAfterFeedback={handleContinueAfterFeedback}
         onBack={() => navigate('/trilha')}
         onRetry={() => void load()}
         onOpenHistory={() => navigate('/trilha/historico')}

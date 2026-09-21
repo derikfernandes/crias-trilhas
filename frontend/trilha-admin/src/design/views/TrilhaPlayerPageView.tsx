@@ -24,9 +24,13 @@ export type TrilhaPlayerPageViewProps = {
   loadState: 'loading' | 'ready' | 'error'
   errorMessage?: string
   conflictMessage?: string | null
+  /** Feedback pós-exercício (Ciclo 3) — null = ainda a responder. */
+  feedbackState?: 'correct' | 'incorrect' | 'recorded' | null
+  victoryMessage?: string | null
   onAnswerChange: (value: string) => void
   onContinue: () => void
   onSubmitAnswer: () => void
+  onContinueAfterFeedback?: () => void
   onBack: () => void
   onRetry?: () => void
   onOpenHistory?: () => void
@@ -53,9 +57,12 @@ export function TrilhaPlayerPageView({
   loadState,
   errorMessage,
   conflictMessage,
+  feedbackState = null,
+  victoryMessage = null,
   onAnswerChange,
   onContinue,
   onSubmitAnswer,
+  onContinueAfterFeedback,
   onBack,
   onRetry,
   onOpenHistory,
@@ -160,13 +167,21 @@ export function TrilhaPlayerPageView({
         />
       ) : null}
 
+      {victoryMessage ? (
+        <p className="trilha-player__victory banner banner--success" role="status" aria-live="polite">
+          {victoryMessage}
+        </p>
+      ) : null}
+
       {(nextAction === 'deliver_content' || nextAction === 'await_answer') && (
         <>
-          <StageContentBlock
-            body={body}
-            stageType={stageType}
-            aiHint={stageType === 'ai'}
-          />
+          <div className="trilha-player__step-pane" key={`${stageNumber}-${questionNumber}-${feedbackState ?? 'ans'}`}>
+            <StageContentBlock
+              body={body}
+              stageType={stageType}
+              aiHint={stageType === 'ai'}
+            />
+          </div>
 
           {nextAction === 'deliver_content' ? (
             <div className="trilha-player__actions">
@@ -182,6 +197,29 @@ export function TrilhaPlayerPageView({
               <p className="trilha-player__safe muted">
                 Pode sair; o progresso fica guardado.
               </p>
+            </div>
+          ) : feedbackState ? (
+            <div className="trilha-player__feedback" role="status" aria-live="polite">
+              <p
+                className={
+                  feedbackState === 'correct'
+                    ? 'trilha-player__feedback-msg trilha-player__feedback-msg--ok'
+                    : 'trilha-player__feedback-msg'
+                }
+              >
+                {feedbackState === 'correct'
+                  ? 'Boa! Resposta correta.'
+                  : feedbackState === 'incorrect'
+                    ? 'Ainda não — mas o progresso segue. Pode rever depois na Revisão.'
+                    : 'Resposta registada. Pode seguir para o próximo passo.'}
+              </p>
+              <button
+                type="button"
+                className="btn btn--primary trilha-cta"
+                onClick={onContinueAfterFeedback ?? onContinue}
+              >
+                Próximo passo
+              </button>
             </div>
           ) : (
             <ExerciseAnswerForm

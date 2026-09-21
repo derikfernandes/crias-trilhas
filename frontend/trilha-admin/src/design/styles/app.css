@@ -6016,6 +6016,37 @@
   gap: 0.5rem;
 }
 
+
+.trilha-player__step-pane {
+  animation: trilha-content-in 180ms ease;
+}
+
+.trilha-player__feedback {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.85rem;
+  margin-top: 0.5rem;
+}
+
+.trilha-player__feedback-msg {
+  margin: 0;
+  padding: 0.75rem 0.9rem;
+  border-radius: 10px;
+  background: var(--surface-muted);
+  color: var(--text-h);
+  font-weight: 600;
+}
+
+.trilha-player__feedback-msg--ok {
+  background: color-mix(in srgb, var(--sidebar-bg) 18%, var(--surface));
+  color: var(--text-h);
+}
+
+.trilha-player__victory {
+  margin-bottom: 1rem;
+}
+
 .trilha-player__safe {
   margin: 0;
   font-size: 0.85rem;
@@ -6437,6 +6468,7 @@
   .trilha-progress__bar-fill,
   .trilha-path__dot,
   .trilha-unit__dot,
+  .trilha-player__step-pane,
   .trilha-skeleton {
     animation: none;
     transition: none;
