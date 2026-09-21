@@ -4,6 +4,10 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    function signedIn() {
+      return request.auth != null;
+    }
+
     match /institutions/{institutionId} {
       allow read, write: if true;
     }
@@ -29,8 +33,12 @@ service cloud.firestore {
       allow read, write: if true;
     }
 
+    // Wave B (I8 / ADR-008): progresso exige Auth Firebase no client.
+    // App aluno Trilha NÃO usa Client SDK — só API com sessão HMAC.
+    // Admin painel (Firebase Auth) mantém leitura/escrita até migração total ao motor.
+    // Writes anónimos / sem auth bloqueados.
     match /student_trails/{studentTrailId} {
-      allow read, write: if true;
+      allow read, write: if signedIn();
     }
 
     match /conversation_logs/{logId} {

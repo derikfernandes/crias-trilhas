@@ -20,6 +20,7 @@ const EXPECTED_API_FILES = [
   'conversation_logs.ts',
   'exercise_attempts.ts',
   'dashboard_summary.ts',
+  'trilha_auth.ts',
 ]
 
 /** Pares source → destination que sistemas externos e o admin dependem. */
@@ -43,6 +44,18 @@ const CRITICAL_REWRITES = [
   {
     source: '/student_trails/status',
     destination: '/api/student_trails?facade=status',
+  },
+  {
+    source: '/student_trails/home',
+    destination: '/api/student_trails?facade=home',
+  },
+  {
+    source: '/student_trails/submit-exercise',
+    destination: '/api/student_trails?facade=submit-exercise',
+  },
+  {
+    source: '/trilha/auth',
+    destination: '/api/trilha_auth',
   },
   {
     source: '/student/by-phone/:phone([0-9]+)',

@@ -254,3 +254,44 @@ export async function requireEnrollment(
   }
   return progress
 }
+
+/**
+ * Lista matrículas do aluno. U3 Wave B: trilha ativa = primeira (ordem de doc id).
+ * Exclui namespaces tutor (`Tutor -` / `Trilha -`) se aparecerem como trail_id.
+ */
+export async function listEnrollmentsForStudent(
+  db: Firestore,
+  studentId: string,
+  collections: CollectionNames = defaultCollectionNames(),
+): Promise<StudentTrailProgress[]> {
+  const id = studentId.trim()
+  if (!id) return []
+
+  const snap = await db
+    .collection(collections.studentTrails)
+    .where('student_id', '==', id)
+    .limit(50)
+    .get()
+
+  const rows: StudentTrailProgress[] = []
+  for (const doc of snap.docs) {
+    const progress = snapshotToProgress(doc)
+    if (!progress) continue
+    const tid = progress.trail_id
+    if (tid.startsWith('Tutor -') || tid.startsWith('Trilha -')) continue
+    rows.push(progress)
+  }
+
+  rows.sort((a, b) => a.id.localeCompare(b.id))
+  return rows
+}
+
+/** Trilha ativa v1 = primeiro enrollment curricular (U3). */
+export async function getActiveEnrollment(
+  db: Firestore,
+  studentId: string,
+  collections: CollectionNames = defaultCollectionNames(),
+): Promise<StudentTrailProgress | null> {
+  const list = await listEnrollmentsForStudent(db, studentId, collections)
+  return list[0] ?? null
+}

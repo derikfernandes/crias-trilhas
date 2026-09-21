@@ -117,6 +117,34 @@
       "destination": "/api/student_trails?facade=status"
     },
     {
+      "source": "/student_trails/home",
+      "destination": "/api/student_trails?facade=home"
+    },
+    {
+      "source": "/student_trails/home/",
+      "destination": "/api/student_trails?facade=home"
+    },
+    {
+      "source": "/student_trails/submit-exercise",
+      "destination": "/api/student_trails?facade=submit-exercise"
+    },
+    {
+      "source": "/student_trails/submit-exercise/",
+      "destination": "/api/student_trails?facade=submit-exercise"
+    },
+    {
+      "source": "/trilha/auth",
+      "destination": "/api/trilha_auth"
+    },
+    {
+      "source": "/trilha/auth/",
+      "destination": "/api/trilha_auth"
+    },
+    {
+      "source": "/api/trilha/auth",
+      "destination": "/api/trilha_auth"
+    },
+    {
       "source": "/student/by-phone/:phone([0-9]+)",
       "destination": "/api/student?phone_number=:phone"
     },

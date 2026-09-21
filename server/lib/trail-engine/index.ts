@@ -18,7 +18,9 @@ export { contentFingerprint } from './contentFingerprint'
 export {
   additiveProgressDefaults,
   ensureEnrollment,
+  getActiveEnrollment,
   getEnrollment,
+  listEnrollmentsForStudent,
   questionDocId,
   requireEnrollment,
   snapshotToProgress,

@@ -20,10 +20,16 @@ import {
   type StudentTrailStatus,
 } from '../server/lib/studentTrailValidation'
 import {
+  authorizeStudentResource,
+  resolveAuthPrincipal,
+} from '../server/lib/studentAuth'
+import {
   advance as engineAdvance,
+  getActiveEnrollment,
   getNextContent,
   getStatus as engineGetStatus,
   isTrailEngineError,
+  submitExerciseAnswer,
   trailEngineErrorToJson,
   type TrailChannel,
 } from '../server/lib/trail-engine'
@@ -49,6 +55,26 @@ function corsHeaders(): Record<string, string> {
     'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
     'Access-Control-Allow-Headers':
       'Content-Type, Authorization, Idempotency-Key, X-Request-Id',
+  }
+}
+
+function requireFacadeAuth(
+  request: Request,
+  targetStudentId: string,
+):
+  | { ok: true }
+  | { ok: false; status: number; body: Json } {
+  const principal = resolveAuthPrincipal(request.headers.get('Authorization'))
+  const authz = authorizeStudentResource(principal, targetStudentId)
+  if (authz.ok) return { ok: true }
+  return {
+    ok: false,
+    status: authz.status,
+    body: {
+      status: 'error',
+      code: authz.code,
+      error: authz.error,
+    },
   }
 }
 
@@ -312,7 +338,80 @@ async function handleRequest(request: Request): Promise<Response> {
   const facade = url.searchParams.get('facade')?.trim() || null
 
   try {
-    // Fachada Wave A: GET next-content | GET status | POST advance
+    // Fachada Wave A/B: GET next-content | GET status | GET home | POST advance | POST submit-exercise
+    if (facade === 'home' && request.method === 'GET') {
+      const homeStudentId =
+        qStudentId ||
+        (() => {
+          const p = resolveAuthPrincipal(request.headers.get('Authorization'))
+          return p.kind === 'student' ? p.claims.student_id : null
+        })()
+      if (!homeStudentId) {
+        return respond(401, {
+          status: 'error',
+          code: 'unauthorized',
+          error: 'Autenticação necessária.',
+        })
+      }
+      const authz = requireFacadeAuth(request, homeStudentId)
+      if (!authz.ok) return respond(authz.status, authz.body)
+
+      try {
+        const enrollment = await getActiveEnrollment(db, homeStudentId)
+        if (!enrollment) {
+          return jsonResponse(
+            {
+              status: 'ok',
+              student_id: homeStudentId,
+              enrollment: null,
+              trail: null,
+            },
+            { status: 200, headers: corsHeaders() },
+          )
+        }
+
+        const trailsCollection = process.env.TRAILS_COLLECTION ?? 'trails'
+        const trailSnap = await db
+          .collection(trailsCollection)
+          .doc(enrollment.trail_id)
+          .get()
+        const trailData = (trailSnap.data() ?? {}) as Record<string, unknown>
+        const trailTitle =
+          typeof trailData.name === 'string'
+            ? trailData.name
+            : typeof trailData.title === 'string'
+              ? trailData.title
+              : enrollment.trail_id
+
+        return jsonResponse(
+          {
+            status: 'ok',
+            student_id: homeStudentId,
+            enrollment: {
+              student_id: enrollment.student_id,
+              trail_id: enrollment.trail_id,
+              institution_id: enrollment.institution_id,
+              current_stage_number: enrollment.current_stage_number,
+              current_question_number: enrollment.current_question_number,
+              progress_status: enrollment.status,
+              progress_version: enrollment.progress_version,
+              last_channel: enrollment.last_channel,
+            },
+            trail: {
+              id: enrollment.trail_id,
+              title: trailTitle,
+            },
+          },
+          { status: 200, headers: corsHeaders() },
+        )
+      } catch (e) {
+        if (isTrailEngineError(e)) {
+          return respond(e.httpStatus, trailEngineErrorToJson(e) as Json)
+        }
+        throw e
+      }
+    }
+
     if (facade === 'next-content' && request.method === 'GET') {
       if (!qStudentId || !qTrailId) {
         return respond(400, {
@@ -321,6 +420,8 @@ async function handleRequest(request: Request): Promise<Response> {
           error: 'Informe student_id e trail_id.',
         })
       }
+      const authz = requireFacadeAuth(request, qStudentId)
+      if (!authz.ok) return respond(authz.status, authz.body)
       try {
         const content = await getNextContent(db, {
           student_id: qStudentId,
@@ -347,6 +448,8 @@ async function handleRequest(request: Request): Promise<Response> {
           error: 'Informe student_id e trail_id.',
         })
       }
+      const authz = requireFacadeAuth(request, qStudentId)
+      if (!authz.ok) return respond(authz.status, authz.body)
       try {
         const statusDoc = await engineGetStatus(db, qStudentId, qTrailId)
         return jsonResponse(
@@ -415,6 +518,8 @@ async function handleRequest(request: Request): Promise<Response> {
           error: 'student_id e trail_id são obrigatórios.',
         })
       }
+      const authz = requireFacadeAuth(request, studentId)
+      if (!authz.ok) return respond(authz.status, authz.body)
       if (!idempotencyKey) {
         return respond(400, {
           status: 'error',
@@ -443,6 +548,79 @@ async function handleRequest(request: Request): Promise<Response> {
             progress_version: result.progress_version,
             channel: result.channel,
             idempotency_key: result.idempotency_key,
+          },
+          { status: 200, headers: corsHeaders() },
+        )
+      } catch (e) {
+        if (isTrailEngineError(e)) {
+          return respond(e.httpStatus, trailEngineErrorToJson(e) as Json)
+        }
+        throw e
+      }
+    }
+
+    if (facade === 'submit-exercise' && request.method === 'POST') {
+      let payload: unknown
+      try {
+        payload = await request.json()
+      } catch {
+        payload = {}
+      }
+      const body = (payload ?? {}) as Record<string, unknown>
+      const studentId =
+        qStudentId ?? sanitizeString(body.student_id) ?? null
+      const trailId = qTrailId ?? sanitizeString(body.trail_id) ?? null
+      const institutionId = sanitizeString(body.institution_id)
+      const stageNumber = parseIntLoose(body.stage_number)
+      const questionNumber = parseIntLoose(body.question_number)
+      const answer = sanitizeString(body.student_answer) ?? sanitizeString(body.answer)
+      const channel =
+        parseChannel(body.channel) ??
+        parseChannel(url.searchParams.get('channel')) ??
+        'app'
+      const idempotencyKey =
+        request.headers.get('Idempotency-Key')?.trim() ||
+        sanitizeString(body.idempotency_key) ||
+        null
+      const expectedVersion =
+        body.expected_version === undefined || body.expected_version === null
+          ? undefined
+          : parseIntLoose(body.expected_version) ?? undefined
+
+      if (!studentId || !trailId || !institutionId) {
+        return respond(400, {
+          status: 'error',
+          code: 'invalid_payload',
+          error: 'student_id, trail_id e institution_id são obrigatórios.',
+        })
+      }
+      const authz = requireFacadeAuth(request, studentId)
+      if (!authz.ok) return respond(authz.status, authz.body)
+      if (!idempotencyKey || !answer || stageNumber === null || questionNumber === null) {
+        return respond(400, {
+          status: 'error',
+          code: 'invalid_payload',
+          error:
+            'Idempotency-Key, student_answer, stage_number e question_number são obrigatórios.',
+        })
+      }
+
+      try {
+        const result = await submitExerciseAnswer(db, {
+          student_id: studentId,
+          institution_id: institutionId,
+          trail_id: trailId,
+          stage_number: stageNumber,
+          question_number: questionNumber,
+          student_answer: answer,
+          idempotency_key: idempotencyKey,
+          channel,
+          expected_version: expectedVersion ?? undefined,
+        })
+        return jsonResponse(
+          {
+            status: 'ok',
+            ...result,
           },
           { status: 200, headers: corsHeaders() },
         )
