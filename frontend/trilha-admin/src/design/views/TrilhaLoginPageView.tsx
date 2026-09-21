@@ -49,6 +49,7 @@ export function TrilhaLoginPageView({
               onChange={(e) => onPhoneChange(e.target.value)}
               disabled={submitting}
               required
+              aria-invalid={formError ? true : undefined}
               aria-describedby={formError ? errorId : undefined}
             />
           </label>
@@ -63,6 +64,7 @@ export function TrilhaLoginPageView({
             type="submit"
             className="btn btn--primary trilha-cta"
             disabled={submitting || !phone.trim()}
+            aria-busy={submitting || undefined}
           >
             {submitting ? 'A entrar…' : 'Entrar'}
           </button>

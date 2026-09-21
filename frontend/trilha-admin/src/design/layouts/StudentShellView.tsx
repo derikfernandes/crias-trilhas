@@ -21,13 +21,17 @@ export function StudentShellView({
   return (
     <div className="student-shell" data-shell="student">
       {showNav ? (
-        <aside className="student-shell__rail" aria-label="Navegação do aluno">
+        <aside className="student-shell__rail">
           <Link to="/trilha" className="student-shell__brand">
             <span className="student-shell__brand-mark" aria-hidden="true" />
             <span className="student-shell__brand-text">{brandLabel}</span>
           </Link>
-          <nav className="student-shell__nav">
-            <Link to="/trilha" className="student-shell__nav-item is-active">
+          <nav className="student-shell__nav" aria-label="Navegação do aluno">
+            <Link
+              to="/trilha"
+              className="student-shell__nav-item is-active"
+              aria-current="page"
+            >
               <TrilhaPathIcon size={20} aria-hidden />
               <span>Trilha</span>
             </Link>

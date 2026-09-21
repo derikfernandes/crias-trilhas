@@ -66,6 +66,7 @@ export function ExerciseAnswerForm({
         type="submit"
         className="btn btn--primary trilha-cta"
         disabled={disabled || submitting || !value.trim()}
+        aria-busy={submitting || undefined}
       >
         {submitting ? 'A enviar…' : 'Enviar resposta'}
       </button>

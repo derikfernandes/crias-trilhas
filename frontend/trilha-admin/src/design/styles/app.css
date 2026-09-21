@@ -5788,6 +5788,12 @@
   font-weight: 600;
 }
 
+.trilha-player__heading {
+  margin: 0 0 0.75rem;
+  color: var(--text-h);
+  font-size: 1.25rem;
+}
+
 .trilha-player__type {
   margin-left: 0.5rem;
   padding: 0.15rem 0.45rem;

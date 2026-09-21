@@ -36,10 +36,15 @@ export function TrilhaHomePageView({
 }: TrilhaHomePageViewProps) {
   if (loadState === 'loading') {
     return (
-      <div className="trilha-home trilha-home--skeleton" aria-busy="true">
-        <div className="trilha-skeleton trilha-skeleton--title" />
-        <div className="trilha-skeleton trilha-skeleton--block" />
-        <div className="trilha-skeleton trilha-skeleton--cta" />
+      <div
+        className="trilha-home trilha-home--skeleton"
+        aria-busy="true"
+        aria-live="polite"
+      >
+        <p className="visually-hidden">A carregar a sua trilha…</p>
+        <div className="trilha-skeleton trilha-skeleton--title" aria-hidden="true" />
+        <div className="trilha-skeleton trilha-skeleton--block" aria-hidden="true" />
+        <div className="trilha-skeleton trilha-skeleton--cta" aria-hidden="true" />
       </div>
     )
   }
@@ -111,8 +116,14 @@ export function TrilhaHomePageView({
 
       {whatsappHelpHref ? (
         <p className="trilha-home__wa">
-          <a href={whatsappHelpHref} target="_blank" rel="noreferrer">
+          <a
+            href={whatsappHelpHref}
+            target="_blank"
+            rel="noreferrer"
+            aria-label="Tirar dúvida no WhatsApp (abre numa nova janela)"
+          >
             Tirar dúvida no WhatsApp
+            <span className="visually-hidden"> (abre numa nova janela)</span>
           </a>
         </p>
       ) : null}

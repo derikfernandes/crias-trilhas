@@ -55,9 +55,14 @@ export function TrilhaPlayerPageView({
 }: TrilhaPlayerPageViewProps) {
   if (loadState === 'loading') {
     return (
-      <div className="trilha-player trilha-player--skeleton" aria-busy="true">
-        <div className="trilha-skeleton trilha-skeleton--title" />
-        <div className="trilha-skeleton trilha-skeleton--block" />
+      <div
+        className="trilha-player trilha-player--skeleton"
+        aria-busy="true"
+        aria-live="polite"
+      >
+        <p className="visually-hidden">A carregar o passo da trilha…</p>
+        <div className="trilha-skeleton trilha-skeleton--title" aria-hidden="true" />
+        <div className="trilha-skeleton trilha-skeleton--block" aria-hidden="true" />
       </div>
     )
   }
@@ -65,8 +70,10 @@ export function TrilhaPlayerPageView({
   if (loadState === 'error') {
     return (
       <div className="trilha-player">
+        <h1 className="visually-hidden">Player da trilha</h1>
         <button type="button" className="btn btn--ghost" onClick={onBack}>
-          ← Voltar
+          <span aria-hidden="true">← </span>
+          Voltar
         </button>
         <TrilhaErrorBanner
           message={errorMessage ?? 'Falha ao carregar o conteúdo.'}
@@ -76,11 +83,17 @@ export function TrilhaPlayerPageView({
     )
   }
 
+  const hasTitle = Boolean(title?.trim())
+  const heading = hasTitle
+    ? title!.trim()
+    : `Etapa ${stageNumber}, questão ${questionNumber}`
+
   return (
-    <div className="trilha-player" aria-live="polite">
+    <div className="trilha-player">
       <header className="trilha-player__chrome">
         <button type="button" className="btn btn--ghost" onClick={onBack}>
-          ← Voltar
+          <span aria-hidden="true">← </span>
+          Voltar
         </button>
         <p className="trilha-player__pos">
           Etapa {stageNumber} · Questão {questionNumber}
@@ -91,6 +104,11 @@ export function TrilhaPlayerPageView({
           ) : null}
         </p>
       </header>
+      <h1
+        className={hasTitle ? 'trilha-player__heading' : 'visually-hidden'}
+      >
+        {heading}
+      </h1>
 
       {conflictMessage ? (
         <p className="banner banner--info" role="status">
@@ -123,7 +141,6 @@ export function TrilhaPlayerPageView({
       {(nextAction === 'deliver_content' || nextAction === 'await_answer') && (
         <>
           <StageContentBlock
-            title={title}
             body={body}
             stageType={stageType}
             aiHint={stageType === 'ai'}
@@ -135,6 +152,7 @@ export function TrilhaPlayerPageView({
                 type="button"
                 className="btn btn--primary trilha-cta"
                 disabled={submitting}
+                aria-busy={submitting || undefined}
                 onClick={onContinue}
               >
                 {submitting ? 'A guardar…' : 'Continuar'}
