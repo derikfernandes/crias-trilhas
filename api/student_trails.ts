@@ -450,12 +450,16 @@ async function handleRequest(request: Request): Promise<Response> {
         })
 
         let progress_ratio: number | null = null
+        let total_stages: number | null = null
+        let total_questions: number | null = null
         try {
           const totals = await loadTrailTotals(
             db,
             enrollment.trail_id,
             defaultCollectionNames(),
           )
+          total_stages = totals.total_stages
+          total_questions = totals.total_questions
           const denom = Math.max(
             1,
             totals.total_stages * totals.total_questions,
@@ -472,6 +476,8 @@ async function handleRequest(request: Request): Promise<Response> {
           }
         } catch {
           progress_ratio = null
+          total_stages = null
+          total_questions = null
         }
 
         return jsonResponse(
@@ -494,7 +500,10 @@ async function handleRequest(request: Request): Promise<Response> {
             },
             next_action: next.next_action,
             is_released: next.is_released,
+            stage_type: next.stage_type ?? null,
             progress_ratio,
+            total_stages,
+            total_questions,
           },
           { status: 200, headers: corsHeaders() },
         )

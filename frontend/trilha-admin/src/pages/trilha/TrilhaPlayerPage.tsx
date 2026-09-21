@@ -48,6 +48,8 @@ export function TrilhaPlayerPage() {
   const [institutionId, setInstitutionId] = useState(
     session.student.institution_id,
   )
+  const [totalQuestions, setTotalQuestions] = useState<number | null>(null)
+  const [totalStages, setTotalStages] = useState<number | null>(null)
   const [content, setContent] = useState<TrilhaNextContent | null>(null)
 
   const applyContent = useCallback((next: TrilhaNextContent) => {
@@ -69,6 +71,18 @@ export function TrilhaPlayerPage() {
       setTrailId(home.enrollment.trail_id)
       setInstitutionId(
         home.enrollment.institution_id || session.student.institution_id,
+      )
+      setTotalQuestions(
+        typeof home.total_questions === 'number' &&
+          Number.isFinite(home.total_questions)
+          ? home.total_questions
+          : null,
+      )
+      setTotalStages(
+        typeof home.total_stages === 'number' &&
+          Number.isFinite(home.total_stages)
+          ? home.total_stages
+          : null,
       )
       const next = await fetchNextContent(
         session.student.student_id,
@@ -130,7 +144,7 @@ export function TrilhaPlayerPage() {
 
       if (outcome.kind === 'conflict') {
         setConflictMessage(
-          'O progresso foi atualizado noutro dispositivo. A mostrar o passo atual.',
+          'Atualizámos o passo (também avançou no WhatsApp). Aqui está onde ficou.',
         )
         const next = await outcome.resync()
         applyContent(next)
@@ -184,7 +198,7 @@ export function TrilhaPlayerPage() {
       } catch (e) {
         if (e instanceof TrilhaApiError && e.isConflict) {
           setConflictMessage(
-            'O progresso foi atualizado noutro dispositivo. A mostrar o passo atual.',
+            'Atualizámos o passo (também avançou no WhatsApp). Aqui está onde ficou.',
           )
           const next = await fetchNextContent(
             session.student.student_id,
@@ -209,7 +223,7 @@ export function TrilhaPlayerPage() {
           })
           if (outcome.kind === 'conflict') {
             setConflictMessage(
-              'O progresso foi atualizado noutro dispositivo. A mostrar o passo atual.',
+              'Atualizámos o passo (também avançou no WhatsApp). Aqui está onde ficou.',
             )
             const next = await outcome.resync()
             applyContent(next)
@@ -257,6 +271,8 @@ export function TrilhaPlayerPage() {
       <TrilhaPlayerPageView
         stageNumber={content?.stage_number ?? 1}
         questionNumber={content?.question_number ?? 1}
+        totalQuestions={totalQuestions}
+        totalStages={totalStages}
         stageType={stageType}
         title={content?.title ?? undefined}
         body={body}

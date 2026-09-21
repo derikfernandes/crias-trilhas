@@ -1,9 +1,10 @@
 /**
- * DEV-only: estados fixos para screenshots UX (histórico / markdown / MCQ).
+ * DEV-only: estados fixos para screenshots UX (histórico / markdown / MCQ / home).
  * Não chama API — só monta as views de design com fixtures.
  */
 import { StudentShellView } from '../../design/layouts/StudentShellView'
 import { TrilhaHistoryPageView } from '../../design/views/TrilhaHistoryPageView'
+import { TrilhaHomePageView } from '../../design/views/TrilhaHomePageView'
 import { TrilhaPlayerPageView } from '../../design/views/TrilhaPlayerPageView'
 
 const noop = () => undefined
@@ -11,6 +12,31 @@ const noop = () => undefined
 export function TrilhaUxDemoPage() {
   const params = new URLSearchParams(window.location.search)
   const scene = params.get('scene') ?? 'markdown'
+
+  if (scene === 'home' || scene === 'home-paused') {
+    const paused = scene === 'home-paused'
+    return (
+      <StudentShellView studentName="Ana" onLogout={noop}>
+        <TrilhaHomePageView
+          studentName="Ana"
+          trailTitle="Introdução à cidadania"
+          stageNumber={2}
+          questionNumber={2}
+          progressRatio={paused ? 0.35 : 0.4}
+          totalStages={4}
+          stageType={paused ? 'fixed' : 'exercise'}
+          statusLabel={paused ? 'Aguardando liberação' : 'Em progresso'}
+          homeHint={paused ? 'await_release' : null}
+          nextAction={paused ? 'await_release' : 'await_answer'}
+          canContinue={!paused}
+          whatsappHelpHref="https://wa.me/5512974085258"
+          loadState="ready"
+          onContinue={noop}
+          onOpenHistory={noop}
+        />
+      </StudentShellView>
+    )
+  }
 
   if (scene === 'history') {
     return (
@@ -37,6 +63,15 @@ export function TrilhaUxDemoPage() {
               studentAnswer: '**A**',
               isCorrect: true,
             },
+            {
+              stageNumber: 2,
+              questionNumber: 1,
+              stageType: 'exercise',
+              title: 'Situações do dia a dia',
+              body: 'Qual atitude demonstra cidadania?',
+              studentAnswer: 'C',
+              isCorrect: false,
+            },
           ]}
         />
       </StudentShellView>
@@ -47,10 +82,12 @@ export function TrilhaUxDemoPage() {
     return (
       <StudentShellView studentName="Dérik" onLogout={noop}>
         <TrilhaPlayerPageView
-          stageNumber={9}
-          questionNumber={76}
+          stageNumber={2}
+          questionNumber={2}
+          totalQuestions={5}
+          totalStages={4}
           stageType="exercise"
-          title="Questão 76"
+          title="Situações do dia a dia"
           body="O segmento que une dois vértices não consecutivos de um polígono é chamado de:"
           options={[
             { key: 'A', label: 'A) Lado' },
@@ -75,7 +112,9 @@ export function TrilhaUxDemoPage() {
     <StudentShellView studentName="Dérik" onLogout={noop}>
       <TrilhaPlayerPageView
         stageNumber={2}
-        questionNumber={76}
+        questionNumber={1}
+        totalQuestions={5}
+        totalStages={4}
         stageType="ai"
         title="Questão 76 IA"
         body={

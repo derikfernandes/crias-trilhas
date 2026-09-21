@@ -26,6 +26,26 @@ const TYPE_LABEL: Record<'fixed' | 'exercise' | 'ai', string> = {
   ai: 'IA',
 }
 
+type StageGroup = {
+  stageNumber: number
+  items: HistoryListItem[]
+}
+
+function groupByStage(items: HistoryListItem[]): StageGroup[] {
+  const map = new Map<number, HistoryListItem[]>()
+  for (const item of items) {
+    const list = map.get(item.stageNumber) ?? []
+    list.push(item)
+    map.set(item.stageNumber, list)
+  }
+  return Array.from(map.entries())
+    .sort(([a], [b]) => a - b)
+    .map(([stageNumber, groupItems]) => ({
+      stageNumber,
+      items: groupItems,
+    }))
+}
+
 export function TrilhaHistoryPageView({
   items,
   loadState,
@@ -62,6 +82,10 @@ export function TrilhaHistoryPageView({
     )
   }
 
+  const groups = groupByStage(items)
+  const exerciseCount = items.filter((i) => i.stageType === 'exercise').length
+  const correctCount = items.filter((i) => i.isCorrect === true).length
+
   return (
     <div className="trilha-history">
       <header className="trilha-history__chrome">
@@ -70,67 +94,101 @@ export function TrilhaHistoryPageView({
           Voltar
         </button>
       </header>
-      <h1 className="trilha-history__heading">Histórico</h1>
+      <h1 className="trilha-history__heading">Revisar</h1>
       <p className="trilha-history__lead muted">
-        Passos já concluídos — só leitura. Não é possível alterar respostas
-        antigas.
+        Passos já concluídos para rever o que aprendeu — só leitura. Não é
+        possível alterar respostas antigas nem o progresso da trilha.
       </p>
 
       {loadState === 'empty' || items.length === 0 ? (
         <TrilhaEmptyState
           title="Ainda sem histórico"
-          message="Quando avançar na trilha, os passos concluídos aparecem aqui."
+          message="Quando avançar na trilha, os passos concluídos aparecem aqui para revisão."
           actionLabel="Voltar à home"
           onAction={onBack}
         />
       ) : (
-        <ol className="trilha-history__list">
-          {items.map((item) => {
-            const typeLabel =
-              item.stageType && item.stageType in TYPE_LABEL
-                ? TYPE_LABEL[item.stageType]
-                : null
-            return (
-              <li
-                key={`${item.stageNumber}-${item.questionNumber}`}
-                className="trilha-history__item"
+        <>
+          <p className="trilha-history__summary" role="status">
+            {items.length} passo{items.length === 1 ? '' : 's'} concluído
+            {items.length === 1 ? '' : 's'}
+            {exerciseCount > 0
+              ? ` · ${correctCount}/${exerciseCount} exercício${exerciseCount === 1 ? '' : 's'} corretos`
+              : null}
+          </p>
+          <div className="trilha-history__groups">
+            {groups.map((group) => (
+              <section
+                key={group.stageNumber}
+                className="trilha-history__stage"
+                aria-labelledby={`hist-stage-${group.stageNumber}`}
               >
-                <header className="trilha-history__item-head">
-                  <p className="trilha-history__pos">
-                    Etapa {item.stageNumber} · Questão {item.questionNumber}
-                    {typeLabel ? (
-                      <span className="trilha-player__type">{typeLabel}</span>
-                    ) : null}
-                  </p>
-                  {item.title ? (
-                    <h2 className="trilha-history__item-title">
-                      <SafeMarkdown text={item.title} inline />
-                    </h2>
-                  ) : null}
-                </header>
-                <div className="trilha-content__body trilha-history__body">
-                  <SafeMarkdown text={item.body || '—'} />
-                </div>
-                {item.studentAnswer != null && item.studentAnswer !== '' ? (
-                  <p className="trilha-history__answer" aria-label="Sua resposta">
-                    <span className="trilha-history__answer-label">
-                      Sua resposta:
-                    </span>{' '}
-                    <SafeMarkdown text={item.studentAnswer} inline />
-                    {item.isCorrect === true ? (
-                      <span className="trilha-history__badge trilha-history__badge--ok">
-                        {' '}
-                        correta
-                      </span>
-                    ) : item.isCorrect === false ? (
-                      <span className="trilha-history__badge"> incorreta</span>
-                    ) : null}
-                  </p>
-                ) : null}
-              </li>
-            )
-          })}
-        </ol>
+                <h2
+                  id={`hist-stage-${group.stageNumber}`}
+                  className="trilha-history__stage-title"
+                >
+                  Etapa {group.stageNumber}
+                </h2>
+                <ol className="trilha-history__list">
+                  {group.items.map((item) => {
+                    const typeLabel =
+                      item.stageType && item.stageType in TYPE_LABEL
+                        ? TYPE_LABEL[item.stageType]
+                        : null
+                    return (
+                      <li
+                        key={`${item.stageNumber}-${item.questionNumber}`}
+                        className="trilha-history__item"
+                      >
+                        <header className="trilha-history__item-head">
+                          <p className="trilha-history__pos">
+                            Questão {item.questionNumber}
+                            {typeLabel ? (
+                              <span className="trilha-player__type">
+                                {typeLabel}
+                              </span>
+                            ) : null}
+                          </p>
+                          {item.title ? (
+                            <h3 className="trilha-history__item-title">
+                              <SafeMarkdown text={item.title} inline />
+                            </h3>
+                          ) : null}
+                        </header>
+                        <div className="trilha-content__body trilha-history__body">
+                          <SafeMarkdown text={item.body || '—'} />
+                        </div>
+                        {item.studentAnswer != null &&
+                        item.studentAnswer !== '' ? (
+                          <p
+                            className="trilha-history__answer"
+                            aria-label="Sua resposta"
+                          >
+                            <span className="trilha-history__answer-label">
+                              Sua resposta:
+                            </span>{' '}
+                            <SafeMarkdown text={item.studentAnswer} inline />
+                            {item.isCorrect === true ? (
+                              <span className="trilha-history__badge trilha-history__badge--ok">
+                                {' '}
+                                correta
+                              </span>
+                            ) : item.isCorrect === false ? (
+                              <span className="trilha-history__badge">
+                                {' '}
+                                incorreta
+                              </span>
+                            ) : null}
+                          </p>
+                        ) : null}
+                      </li>
+                    )
+                  })}
+                </ol>
+              </section>
+            ))}
+          </div>
+        </>
       )}
     </div>
   )

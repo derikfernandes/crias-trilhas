@@ -39,6 +39,10 @@ export function TrilhaHomePage() {
   const [stageNumber, setStageNumber] = useState(1)
   const [questionNumber, setQuestionNumber] = useState(1)
   const [progressRatio, setProgressRatio] = useState<number | null>(null)
+  const [totalStages, setTotalStages] = useState<number | null>(null)
+  const [stageType, setStageType] = useState<
+    'fixed' | 'exercise' | 'ai' | null
+  >(null)
   const [status, setStatus] = useState<
     'in_progress' | 'completed' | 'blocked' | 'not_started'
   >('not_started')
@@ -52,6 +56,8 @@ export function TrilhaHomePage() {
       if (!home.enrollment || !home.trail) {
         setNextAction(null)
         setProgressRatio(null)
+        setTotalStages(null)
+        setStageType(null)
         setLoadState('empty')
         return
       }
@@ -62,6 +68,18 @@ export function TrilhaHomePage() {
         typeof home.progress_ratio === 'number' &&
           Number.isFinite(home.progress_ratio)
           ? home.progress_ratio
+          : null,
+      )
+      setTotalStages(
+        typeof home.total_stages === 'number' &&
+          Number.isFinite(home.total_stages)
+          ? home.total_stages
+          : null,
+      )
+      const stype = home.stage_type
+      setStageType(
+        stype === 'fixed' || stype === 'exercise' || stype === 'ai'
+          ? stype
           : null,
       )
       const st = home.enrollment.progress_status
@@ -127,8 +145,11 @@ export function TrilhaHomePage() {
         stageNumber={stageNumber}
         questionNumber={questionNumber}
         progressRatio={progressRatio}
+        totalStages={totalStages}
+        stageType={stageType}
         statusLabel={homeStatusLabel(status, nextAction)}
         homeHint={homeHint}
+        nextAction={nextAction}
         canContinue={canContinue}
         whatsappHelpHref={WA_HELP}
         loadState={loadState}

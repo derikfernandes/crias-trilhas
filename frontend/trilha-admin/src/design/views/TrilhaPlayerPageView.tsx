@@ -2,10 +2,13 @@ import { ExerciseAnswerForm } from '../components/trilha/ExerciseAnswerForm'
 import { StageContentBlock } from '../components/trilha/StageContentBlock'
 import { TrilhaEmptyState } from '../components/trilha/TrilhaEmptyState'
 import { TrilhaErrorBanner } from '../components/trilha/TrilhaErrorBanner'
+import { unitPositionLabel } from '../../lib/trilha/trailPath'
 
 export type TrilhaPlayerPageViewProps = {
   stageNumber: number
   questionNumber: number
+  totalQuestions?: number | null
+  totalStages?: number | null
   stageType: 'fixed' | 'exercise' | 'ai'
   title?: string
   body: string
@@ -38,6 +41,8 @@ const TYPE_LABEL: Record<'fixed' | 'exercise' | 'ai', string> = {
 export function TrilhaPlayerPageView({
   stageNumber,
   questionNumber,
+  totalQuestions = null,
+  totalStages = null,
   stageType,
   title,
   body,
@@ -75,7 +80,7 @@ export function TrilhaPlayerPageView({
         <h1 className="visually-hidden">Player da trilha</h1>
         <button type="button" className="btn btn--ghost" onClick={onBack}>
           <span aria-hidden="true">← </span>
-          Voltar
+          Voltar ao mapa
         </button>
         <TrilhaErrorBanner
           message={errorMessage ?? 'Falha ao carregar o conteúdo.'}
@@ -89,20 +94,26 @@ export function TrilhaPlayerPageView({
   const heading = hasTitle
     ? title!.trim()
     : `Etapa ${stageNumber}, questão ${questionNumber}`
+  const unitPos = unitPositionLabel(questionNumber, totalQuestions)
+  const stagePos =
+    typeof totalStages === 'number' && totalStages >= 1
+      ? `Etapa ${stageNumber} de ${totalStages}`
+      : `Etapa ${stageNumber}`
 
   return (
     <div className="trilha-player">
       <header className="trilha-player__chrome">
         <button type="button" className="btn btn--ghost" onClick={onBack}>
           <span aria-hidden="true">← </span>
-          Voltar
+          Voltar ao mapa
         </button>
         <p className="trilha-player__pos">
-          Etapa {stageNumber} · Questão {questionNumber}
+          {stagePos}
+          {unitPos ? ` · ${unitPos}` : ` · Questão ${questionNumber}`}
           {nextAction === 'deliver_content' || nextAction === 'await_answer' ? (
             <span className="trilha-player__type">{TYPE_LABEL[stageType]}</span>
           ) : nextAction === 'await_release' ? (
-            <span className="trilha-player__type">aguardando</span>
+            <span className="trilha-player__type">pausado</span>
           ) : null}
         </p>
         {onOpenHistory ? (
@@ -111,7 +122,7 @@ export function TrilhaPlayerPageView({
             className="btn btn--ghost btn--small trilha-player__history"
             onClick={onOpenHistory}
           >
-            Histórico
+            Revisão
           </button>
         ) : null}
       </header>
@@ -133,9 +144,9 @@ export function TrilhaPlayerPageView({
 
       {nextAction === 'await_release' || nextAction === 'blocked' ? (
         <TrilhaEmptyState
-          title="Ainda não liberado"
-          message="O próximo conteúdo ainda não foi liberado. Volte mais tarde ou fale com a escola."
-          actionLabel="Voltar à home"
+          title="Pausa — aguardando liberação"
+          message="O próximo conteúdo ainda não foi liberado. O seu progresso está seguro. Volte mais tarde ou fale com a escola."
+          actionLabel="Voltar ao mapa"
           onAction={onBack}
         />
       ) : null}
@@ -144,7 +155,7 @@ export function TrilhaPlayerPageView({
         <TrilhaEmptyState
           title="Trilha concluída"
           message="Parabéns — concluiu esta trilha."
-          actionLabel="Voltar à home"
+          actionLabel="Voltar ao mapa"
           onAction={onBack}
         />
       ) : null}
@@ -168,6 +179,9 @@ export function TrilhaPlayerPageView({
               >
                 {submitting ? 'A guardar…' : 'Continuar'}
               </button>
+              <p className="trilha-player__safe muted">
+                Pode sair; o progresso fica guardado.
+              </p>
             </div>
           ) : (
             <ExerciseAnswerForm

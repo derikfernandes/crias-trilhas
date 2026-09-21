@@ -1,6 +1,14 @@
+import { useEffect } from 'react'
 import { ProgressSummary } from '../components/trilha/ProgressSummary'
+import { TrailPathMap } from '../components/trilha/TrailPathMap'
 import { TrilhaEmptyState } from '../components/trilha/TrilhaEmptyState'
 import { TrilhaErrorBanner } from '../components/trilha/TrilhaErrorBanner'
+import {
+  buildTrailPathNodes,
+  nowFocusCopy,
+  sessionEffortHint,
+} from '../../lib/trilha/trailPath'
+import type { HomeNextAction } from '../../lib/trilha/homeCta'
 
 export type TrilhaHomePageViewProps = {
   studentName: string
@@ -8,9 +16,12 @@ export type TrilhaHomePageViewProps = {
   stageNumber: number
   questionNumber: number
   progressRatio: number | null
+  totalStages?: number | null
+  stageType?: 'fixed' | 'exercise' | 'ai' | null
   statusLabel: string
   /** Estado pedagógico alinhado a next_action (sem CTA). */
   homeHint?: 'await_release' | 'blocked' | 'completed' | null
+  nextAction?: HomeNextAction | null
   canContinue: boolean
   whatsappHelpHref?: string
   loadState: 'loading' | 'ready' | 'empty' | 'error'
@@ -26,8 +37,11 @@ export function TrilhaHomePageView({
   stageNumber,
   questionNumber,
   progressRatio,
+  totalStages = null,
+  stageType = null,
   statusLabel,
   homeHint = null,
+  nextAction = null,
   canContinue,
   whatsappHelpHref,
   loadState,
@@ -36,6 +50,20 @@ export function TrilhaHomePageView({
   onOpenHistory,
   onRetry,
 }: TrilhaHomePageViewProps) {
+  useEffect(() => {
+    if (loadState !== 'ready') return
+    const el = document.getElementById('trilha-path-current')
+    if (!el || typeof el.scrollIntoView !== 'function') return
+    const reduce =
+      typeof window !== 'undefined' &&
+      window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+    el.scrollIntoView({
+      block: 'nearest',
+      inline: 'center',
+      behavior: reduce ? 'auto' : 'smooth',
+    })
+  }, [loadState, stageNumber, homeHint])
+
   if (loadState === 'loading') {
     return (
       <div
@@ -73,10 +101,31 @@ export function TrilhaHomePageView({
     )
   }
 
+  const focus = nowFocusCopy(
+    nextAction ?? homeHint,
+    stageNumber,
+    questionNumber,
+    stageType,
+  )
+  const effort = sessionEffortHint(nextAction ?? homeHint, stageType)
+  const pathNodes = buildTrailPathNodes(stageNumber, totalStages ?? null, {
+    completed: homeHint === 'completed',
+    paused: homeHint === 'await_release',
+    compact: true,
+  })
+  const hasFullTrail =
+    typeof totalStages === 'number' &&
+    Number.isFinite(totalStages) &&
+    totalStages >= 1
+
   return (
     <div className="trilha-home">
       <p className="trilha-home__hello">Olá, {studentName}</p>
-      <h1 className="trilha-home__heading">Sua trilha</h1>
+      <p className="trilha-home__brand-label">Trilha</p>
+      <h1 className="trilha-home__heading">{trailTitle || 'Sua trilha'}</h1>
+      <p className="trilha-home__sync muted">
+        O progresso é o mesmo do WhatsApp.
+      </p>
 
       <ProgressSummary
         trailTitle={trailTitle}
@@ -84,46 +133,81 @@ export function TrilhaHomePageView({
         questionNumber={questionNumber}
         progressRatio={progressRatio}
         statusLabel={statusLabel}
+        totalStages={totalStages}
       />
 
-      {homeHint === 'completed' ? (
-        <p className="banner banner--success" role="status">
-          Parabéns — concluiu esta trilha.
-        </p>
-      ) : null}
+      <TrailPathMap nodes={pathNodes} hasFullTrail={hasFullTrail} />
 
-      {homeHint === 'await_release' ? (
-        <TrilhaEmptyState
-          title="Ainda não liberado"
-          message="O próximo conteúdo ainda não foi liberado. Volte mais tarde ou fale com a escola."
-        />
-      ) : null}
+      <section className="trilha-home__now" aria-labelledby="trilha-now-title">
+        <h2 id="trilha-now-title" className="trilha-home__section-title">
+          {focus.title}
+        </h2>
+        <p className="trilha-home__now-detail">{focus.detail}</p>
+        {effort ? (
+          <p className="trilha-home__effort muted">{effort}</p>
+        ) : null}
 
-      {homeHint === 'blocked' ? (
-        <TrilhaEmptyState
-          title="Trilha bloqueada"
-          message="Não é possível continuar neste momento. Fale com a escola."
-        />
-      ) : null}
+        {homeHint === 'completed' ? (
+          <p className="banner banner--success" role="status">
+            Parabéns — concluiu esta trilha.
+          </p>
+        ) : null}
 
-      {canContinue ? (
-        <button
-          type="button"
-          className="btn btn--primary trilha-cta"
-          onClick={onContinue}
+        {homeHint === 'await_release' ? (
+          <TrilhaEmptyState
+            title="Pausa esperada"
+            message="O próximo conteúdo ainda não foi liberado. O seu progresso está seguro — volte mais tarde ou fale com a escola."
+          />
+        ) : null}
+
+        {homeHint === 'blocked' ? (
+          <TrilhaEmptyState
+            title="Trilha pausada"
+            message="Não é possível continuar neste momento. Fale com a escola."
+          />
+        ) : null}
+
+        {canContinue && focus.cta ? (
+          <button
+            type="button"
+            className="btn btn--primary trilha-cta"
+            onClick={onContinue}
+          >
+            {focus.cta}
+          </button>
+        ) : null}
+
+        {homeHint === 'completed' && onOpenHistory ? (
+          <button
+            type="button"
+            className="btn btn--primary trilha-cta"
+            onClick={onOpenHistory}
+          >
+            Revisar o que aprendeu
+          </button>
+        ) : null}
+      </section>
+
+      {onOpenHistory && homeHint !== 'completed' ? (
+        <section
+          className="trilha-home__review"
+          aria-labelledby="trilha-review-title"
         >
-          Continuar
-        </button>
-      ) : null}
-
-      {onOpenHistory ? (
-        <button
-          type="button"
-          className="btn btn--ghost trilha-home__history"
-          onClick={onOpenHistory}
-        >
-          Ver histórico
-        </button>
+          <h2 id="trilha-review-title" className="trilha-home__section-title">
+            Revisar o que aprendeu
+          </h2>
+          <p className="trilha-home__review-detail muted">
+            Veja passos concluídos e respostas — só leitura, sem alterar o
+            progresso.
+          </p>
+          <button
+            type="button"
+            className="btn btn--ghost trilha-home__history"
+            onClick={onOpenHistory}
+          >
+            Abrir revisão
+          </button>
+        </section>
       ) : null}
 
       {whatsappHelpHref ? (

@@ -56,7 +56,10 @@ describe('Trilha a11y — login / home / player', () => {
             stageNumber={2}
             questionNumber={1}
             progressRatio={0.4}
+            totalStages={4}
+            stageType="fixed"
             statusLabel="Em progresso"
+            nextAction="deliver_content"
             canContinue
             whatsappHelpHref="https://wa.me/5512974085258"
             loadState="ready"
@@ -75,16 +78,48 @@ describe('Trilha a11y — login / home / player', () => {
       'aria-current',
       'page',
     )
-    expect(screen.getByRole('link', { name: /histórico/i })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { level: 1, name: /sua trilha/i }))
+    expect(screen.getByRole('link', { name: /revisão/i })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 1, name: /trilha crias/i }))
     expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '40')
     expect(
       screen.getByRole('link', {
         name: /tirar dúvida no whatsapp \(abre numa nova janela\)/i,
       }),
     ).toHaveAttribute('target', '_blank')
-    expect(screen.getByRole('button', { name: /continuar/i })).toBeEnabled()
-    expect(screen.getByRole('button', { name: /ver histórico/i })).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: /continuar de onde parou/i }),
+    ).toBeEnabled()
+    expect(
+      screen.getByRole('button', { name: /abrir revisão/i }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('list', { name: /mapa de etapas/i }),
+    ).toBeInTheDocument()
+  })
+
+  it('home await_release: sem CTA Continuar mentiroso', () => {
+    render(
+      <TrilhaHomePageView
+        studentName="Ana"
+        trailTitle="Trilha Crias"
+        stageNumber={2}
+        questionNumber={1}
+        progressRatio={0.4}
+        totalStages={4}
+        statusLabel="Aguardando liberação"
+        homeHint="await_release"
+        nextAction="await_release"
+        canContinue={false}
+        loadState="ready"
+        onContinue={noop}
+        onOpenHistory={noop}
+      />,
+    )
+
+    expect(
+      screen.queryByRole('button', { name: /continuar/i }),
+    ).not.toBeInTheDocument()
+    expect(screen.getByText(/pausa — aguardando liberação/i)).toBeInTheDocument()
   })
 
   it('home loading: anuncia estado busy com texto para leitores de ecrã', () => {
@@ -138,7 +173,7 @@ describe('Trilha a11y — login / home / player', () => {
     expect(
       screen.getByRole('heading', { level: 1, name: /questão de leitura/i }),
     ).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /voltar/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /voltar ao mapa/i })).toBeInTheDocument()
 
     const group = screen.getByRole('group', { name: /escolha uma opção/i })
     expect(within(group).getByLabelText(/opção a/i)).toBeInTheDocument()

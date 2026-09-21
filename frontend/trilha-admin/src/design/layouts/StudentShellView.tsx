@@ -21,7 +21,7 @@ export function StudentShellView({
   const location = useLocation()
   const onHistory = location.pathname.includes('/historico')
   const path = location.pathname.replace(/\/$/, '') || '/'
-  const onHome = path === '/trilha'
+  const onHome = path === '/trilha' || path.startsWith('/trilha/play')
 
   return (
     <div className="student-shell" data-shell="student">
@@ -54,7 +54,7 @@ export function StudentShellView({
               aria-current={onHistory ? 'page' : undefined}
             >
               <span className="student-shell__nav-dot" aria-hidden="true" />
-              <span>Histórico</span>
+              <span>Revisão</span>
             </Link>
           </nav>
           <div className="student-shell__rail-foot">

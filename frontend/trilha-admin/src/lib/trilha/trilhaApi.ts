@@ -134,7 +134,10 @@ export type TrilhaHomeResponse = {
     | 'blocked'
     | 'completed'
   is_released?: boolean
+  stage_type?: 'fixed' | 'exercise' | 'ai' | null
   progress_ratio?: number | null
+  total_stages?: number | null
+  total_questions?: number | null
 }
 
 export type TrilhaNextContent = {
