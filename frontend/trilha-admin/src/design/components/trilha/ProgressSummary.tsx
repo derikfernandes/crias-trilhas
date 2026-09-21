@@ -5,8 +5,13 @@ export type ProgressSummaryProps = {
   progressRatio: number | null
   statusLabel: string
   totalStages?: number | null
-  /** Resumo curto do que já foi feito (derivado do cursor). */
+  /** True quando next_action/status === completed — glance deve ser N de N. */
+  completed?: boolean
+  /** Resumo curto do que já foi feito (derivado do cursor / completed). */
   doneSummary?: string | null
+  /** Label do “Agora”; se omitido, deriva de etapa/questão ou “Trilha concluída”. */
+  nowPrimary?: string | null
+  nowStatus?: string | null
 }
 
 export function ProgressSummary({
@@ -16,21 +21,44 @@ export function ProgressSummary({
   progressRatio,
   statusLabel,
   totalStages = null,
+  completed = false,
   doneSummary = null,
+  nowPrimary = null,
+  nowStatus,
 }: ProgressSummaryProps) {
   const pct =
     progressRatio === null
       ? null
       : Math.max(0, Math.min(100, Math.round(progressRatio * 100)))
 
-  const stagesDone = Math.max(0, stageNumber - 1)
+  const stagesDone = completed
+    ? typeof totalStages === 'number' && totalStages > 0
+      ? Math.floor(totalStages)
+      : Math.max(0, stageNumber)
+    : Math.max(0, stageNumber - 1)
   const doneText =
     doneSummary ??
-    (stagesDone === 0
-      ? 'Ainda no começo — nenhuma etapa concluída.'
-      : typeof totalStages === 'number' && totalStages > 0
-        ? `${stagesDone} de ${totalStages} etapas concluídas.`
-        : `${stagesDone} etapa${stagesDone === 1 ? '' : 's'} concluída${stagesDone === 1 ? '' : 's'}.`)
+    (completed
+      ? typeof totalStages === 'number' && totalStages > 0
+        ? `${Math.floor(totalStages)} de ${Math.floor(totalStages)} etapas concluídas.`
+        : 'Todas as etapas concluídas.'
+      : stagesDone === 0
+        ? 'Ainda no começo — nenhuma etapa concluída.'
+        : typeof totalStages === 'number' && totalStages > 0
+          ? `${stagesDone} de ${totalStages} etapas concluídas.`
+          : `${stagesDone} etapa${stagesDone === 1 ? '' : 's'} concluída${stagesDone === 1 ? '' : 's'}.`)
+
+  const agoraPrimary =
+    nowPrimary ??
+    (completed
+      ? 'Trilha concluída'
+      : `Etapa ${stageNumber} · Questão ${questionNumber}`)
+  const agoraStatus =
+    nowStatus !== undefined
+      ? nowStatus
+      : completed
+        ? null
+        : statusLabel
 
   return (
     <div className="trilha-progress">
@@ -43,8 +71,10 @@ export function ProgressSummary({
         <div className="trilha-progress__glance-item">
           <dt>Agora</dt>
           <dd>
-            Etapa {stageNumber} · Questão {questionNumber}
-            <span className="trilha-progress__status"> · {statusLabel}</span>
+            {agoraPrimary}
+            {agoraStatus ? (
+              <span className="trilha-progress__status"> · {agoraStatus}</span>
+            ) : null}
           </dd>
         </div>
       </dl>

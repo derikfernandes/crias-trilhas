@@ -10,6 +10,10 @@ import {
   sessionEffortHint,
 } from '../../lib/trilha/trailPath'
 import {
+  glanceDoneSummary,
+  glanceNowLabel,
+} from '../../lib/trilha/progressGlance'
+import {
   buildUnitSections,
   type HistoryStepHint,
 } from '../../lib/trilha/unitMap'
@@ -140,6 +144,18 @@ export function TrilhaHomePageView({
     completed: homeHint === 'completed',
     history: historyHints,
   })
+  const isCompleted = homeHint === 'completed'
+  const glanceDone = glanceDoneSummary({
+    stageNumber,
+    totalStages,
+    completed: isCompleted,
+  })
+  const glanceNow = glanceNowLabel({
+    stageNumber,
+    questionNumber,
+    statusLabel,
+    completed: isCompleted,
+  })
 
   return (
     <div className="trilha-home">
@@ -157,6 +173,10 @@ export function TrilhaHomePageView({
         progressRatio={progressRatio}
         statusLabel={statusLabel}
         totalStages={totalStages}
+        completed={isCompleted}
+        doneSummary={glanceDone}
+        nowPrimary={glanceNow.primary}
+        nowStatus={glanceNow.status}
       />
 
       <TrailPathMap nodes={pathNodes} hasFullTrail={hasFullTrail} />
