@@ -89,6 +89,11 @@ const TrilhaHistoryPage = lazy(() =>
     default: m.TrilhaHistoryPage,
   })),
 )
+const TrilhaUxDemoPage = lazy(() =>
+  import('./pages/trilha/TrilhaUxDemoPage').then((m) => ({
+    default: m.TrilhaUxDemoPage,
+  })),
+)
 
 const routerBasename =
   import.meta.env.BASE_URL === '/'
@@ -116,6 +121,9 @@ function TrilhaRoutes() {
             </RequireStudentAuth>
           }
         />
+        {import.meta.env.DEV ? (
+          <Route path="ux-demo" element={<TrilhaUxDemoPage />} />
+        ) : null}
         <Route
           index
           element={
