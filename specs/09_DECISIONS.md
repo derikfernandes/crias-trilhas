@@ -46,3 +46,19 @@ Antes de implementar uma nova ação, deve ser definido:
 - entrada;
 - saída;
 - regra de erro.
+
+## Decisão 9 — Uso de agentes no dashboard via summary server-side
+
+Os agentes de IA do Chatis gravam `conversation_logs` com `trail_id` textual
+(ex.: `Trilha - Matemática`, `Tutor - Linguagens`), distinto dos ids `tN` das
+trilhas reais.
+
+Decisões:
+
+1. Classificar agente por allowlist canônica e/ou prefixo `Trilha -` / `Tutor -`
+   (ver `10_AGENT_USAGE_DASHBOARD.md`).
+2. Agregar uso **somente** em `GET /api/dashboard_summary` (campo aditivo
+   `agent_usage`), sem misturar agentes no índice de trilhas de progressão.
+3. O painel **não** deve baixar `conversation_logs` brutos no browser para
+   montar essas métricas; em falha do endpoint, erro + retry.
+4. Não inventar agentes sem `trail_id` confirmado pelo produto.

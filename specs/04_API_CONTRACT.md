@@ -268,3 +268,23 @@ Códigos esperados:
 - `invalid_payload`
 - `unauthorized`
 - `internal_error`
+
+## 11. Dashboard summary (painel)
+
+### `GET /api/dashboard_summary`
+
+Agregação server-side de `conversation_logs` para o dashboard admin.
+
+Query:
+
+- `institution_id` (obrigatório)
+- `period_days` (opcional: `0` | `7` | `30`; padrão `0` = todo o período)
+
+Resposta (campos principais):
+
+- `institution_id`, `student_count`, `trail_ids`, `students` — progressão nas
+  trilhas reais (`tN` presentes em `trails`).
+- `agent_usage` — uso dos agentes canônicos / prefixo `Trilha -` | `Tutor -`
+  (ver `10_AGENT_USAGE_DASHBOARD.md`). Não mistura agentes em `trail_ids`.
+
+Somente leitura. Não altera coleções.

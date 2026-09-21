@@ -6,7 +6,8 @@ Na fase inicial, não implementar:
 - pagamento;
 - gamificação avançada;
 - ranking de alunos;
-- dashboard pedagógico avançado;
+- dashboard pedagógico avançado (exceto o bloco de **uso de agentes de IA**
+  definido em `10_AGENT_USAGE_DASHBOARD.md`);
 - recomendação automática de trilha por IA;
 - correção automática de redação;
 - multi-idioma;
@@ -16,7 +17,14 @@ Na fase inicial, não implementar:
 - migração automática de dados legados;
 - alteração do padrão de ids sem plano de migração;
 - substituição do Firestore por outro banco;
-- endpoints HTTP para o painel administrativo enquanto o painel continuar usando Firestore Client SDK.
+- endpoints HTTP genéricos para o painel administrativo enquanto o painel
+  continuar usando Firestore Client SDK (exceção: `GET /api/dashboard_summary`
+  para agregação server-side de métricas / uso de agentes).
+
+## Liberado do out-of-scope (ver specs)
+
+- Acompanhamento de uso dos agentes canônicos no dashboard
+  (`specs/10_AGENT_USAGE_DASHBOARD.md`, decisão em `09_DECISIONS.md`).
 
 ## Regra
 

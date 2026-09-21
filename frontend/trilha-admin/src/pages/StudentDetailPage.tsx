@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
-import { useParams } from 'react-router-dom'
+import { useParams, useSearchParams } from 'react-router-dom'
 import {
   collection,
   doc,
@@ -22,6 +22,7 @@ import {
   CONVERSATION_LOGS_COLLECTION,
   snapshotToConversationLog,
 } from '../lib/conversationLogFirestore'
+import { agentLabelForTrailId } from '../lib/agentUsage'
 import { StudentForm } from '../components/StudentForm'
 import {
   ConversationChat,
@@ -36,6 +37,20 @@ import type { Trail } from '../types/trail'
 
 export function StudentDetailPage() {
   const { id } = useParams<{ id: string }>()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const agentTrailFilter = (searchParams.get('agent_trail_id') ?? '').trim()
+  const agentTrailFilters = useMemo(() => {
+    const raw = (searchParams.get('agent_trail_ids') ?? '').trim()
+    const fromList = raw
+      ? raw
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean)
+      : []
+    if (fromList.length > 0) return [...new Set(fromList)]
+    return agentTrailFilter ? [agentTrailFilter] : []
+  }, [searchParams, agentTrailFilter])
+  const agentTrailFiltersKey = agentTrailFilters.join('\0')
   const [stu, setStu] = useState<Student | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -99,10 +114,23 @@ export function StudentDetailPage() {
       setLoadingLogs(true)
       setLogsError(null)
 
-      const q = query(
-        collection(dbOk, CONVERSATION_LOGS_COLLECTION),
-        where('student_id', '==', id),
-      )
+      const q =
+        agentTrailFilters.length > 1
+          ? query(
+              collection(dbOk, CONVERSATION_LOGS_COLLECTION),
+              where('student_id', '==', id),
+              where('trail_id', 'in', agentTrailFilters.slice(0, 30)),
+            )
+          : agentTrailFilters.length === 1
+            ? query(
+                collection(dbOk, CONVERSATION_LOGS_COLLECTION),
+                where('student_id', '==', id),
+                where('trail_id', '==', agentTrailFilters[0]),
+              )
+            : query(
+                collection(dbOk, CONVERSATION_LOGS_COLLECTION),
+                where('student_id', '==', id),
+              )
 
       unsub = onSnapshot(
         q,
@@ -126,11 +154,11 @@ export function StudentDetailPage() {
 
     void run()
     return () => unsub?.()
-  }, [id])
+  }, [id, agentTrailFilters, agentTrailFiltersKey])
 
   useEffect(() => {
     setLogsVisibleCount(LOGS_PAGE_SIZE)
-  }, [id])
+  }, [id, agentTrailFiltersKey])
 
   useEffect(() => {
     if (!db || !id) return
@@ -411,12 +439,27 @@ export function StudentDetailPage() {
       loadingLogs={loadingLogs}
       logsError={logsError}
       logsEmpty={logs.length === 0}
+      agentHistoryFilterLabel={
+        agentTrailFilters.length > 0
+          ? agentLabelForTrailId(agentTrailFilters[0]!)
+          : null
+      }
+      onClearAgentHistoryFilter={
+        agentTrailFilters.length > 0
+          ? () => {
+              const next = new URLSearchParams(searchParams)
+              next.delete('agent_trail_id')
+              next.delete('agent_trail_ids')
+              setSearchParams(next, { replace: true })
+            }
+          : null
+      }
       chatSlot={
         logs.length > 0 ? (
           <ConversationChat
             logs={logs}
             visibleCount={logsVisibleCount}
-            showTrail
+            showTrail={agentTrailFilters.length === 0}
             onLoadMore={() =>
               setLogsVisibleCount((count) =>
                 Math.min(count + LOGS_PAGE_SIZE, logs.length),

@@ -25,10 +25,28 @@ export function fullInstitutionUrl(id: string): string {
 }
 
 /** Caminho interno para abrir/editar um aluno no painel. */
-export function studentPath(id: string): string {
+export function studentPath(
+  id: string,
+  options?: { agentTrailId?: string; agentTrailIds?: string[] },
+): string {
   const base = import.meta.env.BASE_URL
-  if (base === '/') return `/alunos/${id}`
-  return `${base.replace(/\/$/, '')}/alunos/${id}`
+  const path =
+    base === '/'
+      ? `/alunos/${id}`
+      : `${base.replace(/\/$/, '')}/alunos/${id}`
+  const params = new URLSearchParams()
+  const agentTrailId = options?.agentTrailId?.trim()
+  const aliases = (options?.agentTrailIds ?? [])
+    .map((t) => t.trim())
+    .filter(Boolean)
+  if (aliases.length > 0) {
+    params.set('agent_trail_ids', aliases.join(','))
+    params.set('agent_trail_id', aliases[0]!)
+  } else if (agentTrailId) {
+    params.set('agent_trail_id', agentTrailId)
+  }
+  const qs = params.toString()
+  return qs ? `${path}?${qs}` : path
 }
 
 /** Caminho interno para abrir/editar uma trilha no painel. */

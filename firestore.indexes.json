@@ -16,6 +16,14 @@
         { "fieldPath": "sender", "order": "ASCENDING" },
         { "fieldPath": "student_id", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "conversation_logs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "student_id", "order": "ASCENDING" },
+        { "fieldPath": "trail_id", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

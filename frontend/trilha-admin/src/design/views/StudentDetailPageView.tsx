@@ -49,6 +49,8 @@ export function StudentDetailPageView(props: StudentDetailPageViewProps) {
     logsError,
     logsEmpty,
     chatSlot,
+    agentHistoryFilterLabel,
+    onClearAgentHistoryFilter,
   } = props
 
   return (
@@ -296,6 +298,27 @@ export function StudentDetailPageView(props: StudentDetailPageViewProps) {
           {loadingLogs ? <span className="muted">Carregando histórico…</span> : null}
         </div>
 
+        {agentHistoryFilterLabel ? (
+          <div
+            className="banner banner--info student-detail-agent-filter"
+            role="status"
+          >
+            <p>
+              Filtrado pelo agente <strong>{agentHistoryFilterLabel}</strong>{' '}
+              (vindo do dashboard).
+            </p>
+            {onClearAgentHistoryFilter ? (
+              <button
+                type="button"
+                className="btn btn--ghost"
+                onClick={onClearAgentHistoryFilter}
+              >
+                Mostrar todo o histórico
+              </button>
+            ) : null}
+          </div>
+        ) : null}
+
         {logsError ? (
           <p className="banner banner--error" role="alert">
             {logsError}
@@ -304,8 +327,9 @@ export function StudentDetailPageView(props: StudentDetailPageViewProps) {
 
         {!loadingLogs && logsEmpty ? (
           <p className="muted">
-            Nenhum log de conversa encontrado para este aluno ainda. Cada mensagem
-            trocada pelo chatbot gera um registro em <code>conversation_logs</code>.
+            {agentHistoryFilterLabel
+              ? 'Nenhum log deste agente para este aluno no histórico.'
+              : 'Nenhum log de conversa encontrado para este aluno ainda. Cada mensagem trocada pelo chatbot gera um registro em conversation_logs.'}
           </p>
         ) : null}
 

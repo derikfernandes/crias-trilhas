@@ -152,6 +152,51 @@ export type DashboardQuestionsChartsView = {
   trailBars: DashboardQuestionsChartTrailBar[]
 }
 
+export type DashboardAgentPeriodDays = 0 | 7 | 30
+
+export type DashboardAgentStudentStatView = {
+  id: string
+  name: string
+  href: string
+  messages: number
+  lastActivityLabel: string
+}
+
+export type DashboardAgentUsageRowView = {
+  trailId: string
+  trailIds: string[]
+  label: string
+  messages: number
+  uniqueStudents: number
+  pctOfTotal: number
+  lastActivityLabel: string
+  studentIds: string[]
+}
+
+export type DashboardAgentSeriesPointView = {
+  date: string
+  trailId: string
+  label: string
+  messages: number
+}
+
+export type DashboardAgentUsageView = {
+  totalMessages: number
+  uniqueStudents: number
+  coveragePct: number
+  msgsPerTutorPerDay: number
+  agents: DashboardAgentUsageRowView[]
+  series: DashboardAgentSeriesPointView[]
+}
+
+export type DashboardAgentStudentLink = {
+  id: string
+  name: string
+  href: string
+  messages: number
+  lastActivityLabel: string
+}
+
 export type DashboardPageViewProps = {
   loadingInst: boolean
   institutionOptions: DashboardInstitutionOption[]
@@ -249,4 +294,13 @@ export type DashboardPageViewProps = {
   pillPageCount: number
   onPillPagePrev: () => void
   onPillPageNext: () => void
+  agentUsage: DashboardAgentUsageView
+  agentPeriodDays: DashboardAgentPeriodDays
+  onAgentPeriodDaysChange: (days: DashboardAgentPeriodDays) => void
+  agentUsageLoading: boolean
+  /** Resposta OK sem campo agent_usage (não confundir com empty real). */
+  agentUsageUnavailable?: boolean
+  selectedAgentTrailId: string | null
+  onSelectAgentTrailId: (trailId: string | null) => void
+  selectedAgentStudents: DashboardAgentStudentLink[]
 }

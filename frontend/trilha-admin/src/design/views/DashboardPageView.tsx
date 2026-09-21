@@ -8,6 +8,7 @@ import { formatPct } from './dashboard/formatPct'
 import { LessonTopicCode } from './dashboard/LessonTopicCode'
 import { QuestionsCharts } from './dashboard/QuestionsCharts'
 import { StudentsCharts } from './dashboard/StudentsCharts'
+import { AgentUsageSection } from './dashboard/AgentUsageSection'
 
 export type {
   DashboardPageViewProps,
@@ -117,6 +118,14 @@ export function DashboardPageView({
   pillPageCount,
   onPillPagePrev,
   onPillPageNext,
+  agentUsage,
+  agentPeriodDays,
+  onAgentPeriodDaysChange,
+  agentUsageLoading,
+  agentUsageUnavailable = false,
+  selectedAgentTrailId,
+  onSelectAgentTrailId,
+  selectedAgentStudents,
 }: DashboardPageViewProps) {
   const [expandedEnunciado, setExpandedEnunciado] =
     useState<ExpandedEnunciado | null>(null)
@@ -238,13 +247,14 @@ export function DashboardPageView({
           </div>
         </section>
       ) : logsError ? (
-        <section className="panel">
+        <section className="panel" data-testid="dashboard-logs-error">
           <p className="banner banner--error" role="alert">
-            Não foi possível carregar as métricas dos alunos: {logsError}
+            Não foi possível carregar as métricas dos alunos e o uso dos
+            tutores: {logsError}
           </p>
           <p className="muted">
-            Os totais de alunos e trilhas foram carregados, mas os percentuais
-            de conclusão e acerto ficariam zerados. Tente novamente.
+            Os totais de alunos e trilhas foram carregados, mas conclusões,
+            acertos e o bloco de tutores ficariam incompletos. Tente novamente.
           </p>
           <button type="button" className="btn" onClick={onRetryLogs}>
             Tentar novamente
@@ -354,6 +364,18 @@ export function DashboardPageView({
               </Link>
             ) : null}
               </section>
+
+          <AgentUsageSection
+            agentUsage={agentUsage}
+            periodDays={agentPeriodDays}
+            onPeriodDaysChange={onAgentPeriodDaysChange}
+            loading={agentUsageLoading}
+            unavailable={agentUsageUnavailable}
+            onRetry={onRetryLogs}
+            selectedAgentTrailId={selectedAgentTrailId}
+            onSelectAgentTrailId={onSelectAgentTrailId}
+            selectedAgentStudents={selectedAgentStudents}
+          />
 
           <section className="panel">
             <div className="panel__head">
