@@ -24,11 +24,32 @@ export function TrilhaUxDemoPage() {
           questionNumber={2}
           progressRatio={paused ? 0.35 : 0.4}
           totalStages={4}
+          totalQuestions={4}
           stageType={paused ? 'fixed' : 'exercise'}
           statusLabel={paused ? 'Aguardando liberação' : 'Em progresso'}
           homeHint={paused ? 'await_release' : null}
           nextAction={paused ? 'await_release' : 'await_answer'}
           canContinue={!paused}
+          historyHints={[
+            {
+              stageNumber: 1,
+              questionNumber: 1,
+              stageType: 'fixed',
+              title: 'O que é cidadania',
+            },
+            {
+              stageNumber: 1,
+              questionNumber: 2,
+              stageType: 'exercise',
+              title: 'Direitos básicos',
+            },
+            {
+              stageNumber: 2,
+              questionNumber: 1,
+              stageType: 'fixed',
+              title: 'Leitura · Situações',
+            },
+          ]}
           whatsappHelpHref="https://wa.me/5512974085258"
           loadState="ready"
           onContinue={noop}

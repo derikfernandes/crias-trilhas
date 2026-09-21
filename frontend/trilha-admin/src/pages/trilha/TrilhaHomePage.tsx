@@ -7,7 +7,12 @@ import {
   homeStatusLabel,
   type HomeNextAction,
 } from '../../lib/trilha/homeCta'
-import { fetchTrilhaHome, TrilhaApiError } from '../../lib/trilha/trilhaApi'
+import {
+  fetchTrailHistory,
+  fetchTrilhaHome,
+  TrilhaApiError,
+} from '../../lib/trilha/trilhaApi'
+import type { HistoryStepHint } from '../../lib/trilha/unitMap'
 import {
   clearTrilhaSession,
   loadTrilhaSession,
@@ -40,9 +45,11 @@ export function TrilhaHomePage() {
   const [questionNumber, setQuestionNumber] = useState(1)
   const [progressRatio, setProgressRatio] = useState<number | null>(null)
   const [totalStages, setTotalStages] = useState<number | null>(null)
+  const [totalQuestions, setTotalQuestions] = useState<number | null>(null)
   const [stageType, setStageType] = useState<
     'fixed' | 'exercise' | 'ai' | null
   >(null)
+  const [historyHints, setHistoryHints] = useState<HistoryStepHint[]>([])
   const [status, setStatus] = useState<
     'in_progress' | 'completed' | 'blocked' | 'not_started'
   >('not_started')
@@ -57,7 +64,9 @@ export function TrilhaHomePage() {
         setNextAction(null)
         setProgressRatio(null)
         setTotalStages(null)
+        setTotalQuestions(null)
         setStageType(null)
+        setHistoryHints([])
         setLoadState('empty')
         return
       }
@@ -74,6 +83,12 @@ export function TrilhaHomePage() {
         typeof home.total_stages === 'number' &&
           Number.isFinite(home.total_stages)
           ? home.total_stages
+          : null,
+      )
+      setTotalQuestions(
+        typeof home.total_questions === 'number' &&
+          Number.isFinite(home.total_questions)
+          ? home.total_questions
           : null,
       )
       const stype = home.stage_type
@@ -105,6 +120,30 @@ export function TrilhaHomePage() {
       } else {
         setNextAction(null)
       }
+
+      try {
+        const hist = await fetchTrailHistory(
+          session.student.student_id,
+          home.enrollment.trail_id,
+          session.token,
+        )
+        setHistoryHints(
+          (hist.items ?? []).map((item) => ({
+            stageNumber: item.stage_number,
+            questionNumber: item.question_number,
+            stageType:
+              item.stage_type === 'fixed' ||
+              item.stage_type === 'exercise' ||
+              item.stage_type === 'ai'
+                ? item.stage_type
+                : null,
+            title: item.title ?? null,
+          })),
+        )
+      } catch {
+        setHistoryHints([])
+      }
+
       setLoadState('ready')
     } catch (e) {
       if (e instanceof TrilhaApiError && (e.status === 401 || e.status === 403)) {
@@ -117,7 +156,7 @@ export function TrilhaHomePage() {
       )
       setLoadState('error')
     }
-  }, [navigate, session.token])
+  }, [navigate, session.student.student_id, session.token])
 
   useEffect(() => {
     const id = window.setTimeout(() => {
@@ -146,11 +185,13 @@ export function TrilhaHomePage() {
         questionNumber={questionNumber}
         progressRatio={progressRatio}
         totalStages={totalStages}
+        totalQuestions={totalQuestions}
         stageType={stageType}
         statusLabel={homeStatusLabel(status, nextAction)}
         homeHint={homeHint}
         nextAction={nextAction}
         canContinue={canContinue}
+        historyHints={historyHints}
         whatsappHelpHref={WA_HELP}
         loadState={loadState}
         errorMessage={errorMessage}

@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { ProgressSummary } from '../components/trilha/ProgressSummary'
 import { TrailPathMap } from '../components/trilha/TrailPathMap'
+import { UnitMap } from '../components/trilha/UnitMap'
 import { TrilhaEmptyState } from '../components/trilha/TrilhaEmptyState'
 import { TrilhaErrorBanner } from '../components/trilha/TrilhaErrorBanner'
 import {
@@ -8,6 +9,10 @@ import {
   nowFocusCopy,
   sessionEffortHint,
 } from '../../lib/trilha/trailPath'
+import {
+  buildUnitSections,
+  type HistoryStepHint,
+} from '../../lib/trilha/unitMap'
 import type { HomeNextAction } from '../../lib/trilha/homeCta'
 
 export type TrilhaHomePageViewProps = {
@@ -17,12 +22,14 @@ export type TrilhaHomePageViewProps = {
   questionNumber: number
   progressRatio: number | null
   totalStages?: number | null
+  totalQuestions?: number | null
   stageType?: 'fixed' | 'exercise' | 'ai' | null
   statusLabel: string
   /** Estado pedagógico alinhado a next_action (sem CTA). */
   homeHint?: 'await_release' | 'blocked' | 'completed' | null
   nextAction?: HomeNextAction | null
   canContinue: boolean
+  historyHints?: HistoryStepHint[]
   whatsappHelpHref?: string
   loadState: 'loading' | 'ready' | 'empty' | 'error'
   errorMessage?: string
@@ -38,11 +45,13 @@ export function TrilhaHomePageView({
   questionNumber,
   progressRatio,
   totalStages = null,
+  totalQuestions = null,
   stageType = null,
   statusLabel,
   homeHint = null,
   nextAction = null,
   canContinue,
+  historyHints = [],
   whatsappHelpHref,
   loadState,
   errorMessage,
@@ -52,7 +61,9 @@ export function TrilhaHomePageView({
 }: TrilhaHomePageViewProps) {
   useEffect(() => {
     if (loadState !== 'ready') return
-    const el = document.getElementById('trilha-path-current')
+    const el =
+      document.getElementById('trilha-unit-current') ??
+      document.getElementById('trilha-path-current')
     if (!el || typeof el.scrollIntoView !== 'function') return
     const reduce =
       typeof window !== 'undefined' &&
@@ -62,7 +73,7 @@ export function TrilhaHomePageView({
       inline: 'center',
       behavior: reduce ? 'auto' : 'smooth',
     })
-  }, [loadState, stageNumber, homeHint])
+  }, [loadState, stageNumber, questionNumber, homeHint])
 
   if (loadState === 'loading') {
     return (
@@ -117,6 +128,16 @@ export function TrilhaHomePageView({
     typeof totalStages === 'number' &&
     Number.isFinite(totalStages) &&
     totalStages >= 1
+  const unitSections = buildUnitSections({
+    currentStage: stageNumber,
+    currentQuestion: questionNumber,
+    totalStages: totalStages ?? null,
+    totalQuestions: totalQuestions ?? null,
+    currentStageType: stageType,
+    paused: homeHint === 'await_release',
+    completed: homeHint === 'completed',
+    history: historyHints,
+  })
 
   return (
     <div className="trilha-home">
@@ -187,6 +208,8 @@ export function TrilhaHomePageView({
           </button>
         ) : null}
       </section>
+
+      <UnitMap sections={unitSections} />
 
       {onOpenHistory && homeHint !== 'completed' ? (
         <section
