@@ -84,7 +84,11 @@ export function TrilhaPlayerPageView({
         </button>
         <p className="trilha-player__pos">
           Etapa {stageNumber} · Questão {questionNumber}
-          <span className="trilha-player__type">{TYPE_LABEL[stageType]}</span>
+          {nextAction === 'deliver_content' || nextAction === 'await_answer' ? (
+            <span className="trilha-player__type">{TYPE_LABEL[stageType]}</span>
+          ) : nextAction === 'await_release' ? (
+            <span className="trilha-player__type">aguardando</span>
+          ) : null}
         </p>
       </header>
 

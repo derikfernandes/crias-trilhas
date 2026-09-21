@@ -26,11 +26,13 @@ import {
 import {
   advance as engineAdvance,
   assertServiceBearer,
+  defaultCollectionNames,
   getActiveEnrollment,
   getNextContent,
   getStatus as engineGetStatus,
   isTrailEngineError,
   isMutationMethod,
+  loadTrailTotals,
   submitExerciseAnswer,
   trailEngineErrorToJson,
   type TrailChannel,
@@ -402,6 +404,37 @@ async function handleRequest(request: Request): Promise<Response> {
               ? trailData.title
               : enrollment.trail_id
 
+        const next = await getNextContent(db, {
+          student_id: homeStudentId,
+          trail_id: enrollment.trail_id,
+          channel: 'app',
+        })
+
+        let progress_ratio: number | null = null
+        try {
+          const totals = await loadTrailTotals(
+            db,
+            enrollment.trail_id,
+            defaultCollectionNames(),
+          )
+          const denom = Math.max(
+            1,
+            totals.total_stages * totals.total_questions,
+          )
+          if (enrollment.status === 'completed' || next.next_action === 'completed') {
+            progress_ratio = 1
+          } else {
+            const idx =
+              (Math.max(1, enrollment.current_stage_number) - 1) *
+                totals.total_questions +
+              Math.max(1, enrollment.current_question_number) -
+              1
+            progress_ratio = Math.max(0, Math.min(1, idx / denom))
+          }
+        } catch {
+          progress_ratio = null
+        }
+
         return jsonResponse(
           {
             status: 'ok',
@@ -420,6 +453,9 @@ async function handleRequest(request: Request): Promise<Response> {
               id: enrollment.trail_id,
               title: trailTitle,
             },
+            next_action: next.next_action,
+            is_released: next.is_released,
+            progress_ratio,
           },
           { status: 200, headers: corsHeaders() },
         )

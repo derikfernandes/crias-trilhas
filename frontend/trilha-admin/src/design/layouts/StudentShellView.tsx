@@ -50,21 +50,23 @@ export function StudentShellView({
       ) : null}
 
       <div className="student-shell__main">
-        <header className="student-shell__top">
-          <Link to="/trilha" className="student-shell__top-brand">
-            <TrilhaPathIcon size={24} title="Trilha" />
-            <span>Trilha</span>
-          </Link>
-          {onLogout && showNav ? (
-            <button
-              type="button"
-              className="btn btn--ghost btn--small student-shell__top-logout"
-              onClick={onLogout}
-            >
-              Sair
-            </button>
-          ) : null}
-        </header>
+        {showNav ? (
+          <header className="student-shell__top">
+            <Link to="/trilha" className="student-shell__top-brand">
+              <TrilhaPathIcon size={24} title="Trilha" />
+              <span>Trilha</span>
+            </Link>
+            {onLogout ? (
+              <button
+                type="button"
+                className="btn btn--ghost btn--small student-shell__top-logout"
+                onClick={onLogout}
+              >
+                Sair
+              </button>
+            ) : null}
+          </header>
+        ) : null}
         <main className="student-shell__content">{children}</main>
       </div>
     </div>

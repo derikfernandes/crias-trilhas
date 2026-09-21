@@ -106,6 +106,14 @@ export type TrilhaHomeResponse = {
     last_channel: string | null
   } | null
   trail: { id: string; title: string } | null
+  next_action?:
+    | 'deliver_content'
+    | 'await_answer'
+    | 'await_release'
+    | 'blocked'
+    | 'completed'
+  is_released?: boolean
+  progress_ratio?: number | null
 }
 
 export type TrilhaNextContent = {

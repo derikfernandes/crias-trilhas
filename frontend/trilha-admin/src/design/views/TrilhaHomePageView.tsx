@@ -8,7 +8,9 @@ export type TrilhaHomePageViewProps = {
   stageNumber: number
   questionNumber: number
   progressRatio: number | null
-  status: 'in_progress' | 'completed' | 'blocked' | 'not_started'
+  statusLabel: string
+  /** Estado pedagógico alinhado a next_action (sem CTA). */
+  homeHint?: 'await_release' | 'blocked' | 'completed' | null
   canContinue: boolean
   whatsappHelpHref?: string
   loadState: 'loading' | 'ready' | 'empty' | 'error'
@@ -17,20 +19,14 @@ export type TrilhaHomePageViewProps = {
   onRetry?: () => void
 }
 
-const STATUS_LABEL: Record<TrilhaHomePageViewProps['status'], string> = {
-  in_progress: 'Em progresso',
-  completed: 'Concluída',
-  blocked: 'Bloqueada',
-  not_started: 'Não iniciada',
-}
-
 export function TrilhaHomePageView({
   studentName,
   trailTitle,
   stageNumber,
   questionNumber,
   progressRatio,
-  status,
+  statusLabel,
+  homeHint = null,
   canContinue,
   whatsappHelpHref,
   loadState,
@@ -80,13 +76,27 @@ export function TrilhaHomePageView({
         stageNumber={stageNumber}
         questionNumber={questionNumber}
         progressRatio={progressRatio}
-        statusLabel={STATUS_LABEL[status]}
+        statusLabel={statusLabel}
       />
 
-      {status === 'completed' ? (
+      {homeHint === 'completed' ? (
         <p className="banner banner--success" role="status">
           Parabéns — concluiu esta trilha.
         </p>
+      ) : null}
+
+      {homeHint === 'await_release' ? (
+        <TrilhaEmptyState
+          title="Ainda não liberado"
+          message="O próximo conteúdo ainda não foi liberado. Volte mais tarde ou fale com a escola."
+        />
+      ) : null}
+
+      {homeHint === 'blocked' ? (
+        <TrilhaEmptyState
+          title="Trilha bloqueada"
+          message="Não é possível continuar neste momento. Fale com a escola."
+        />
       ) : null}
 
       {canContinue ? (
