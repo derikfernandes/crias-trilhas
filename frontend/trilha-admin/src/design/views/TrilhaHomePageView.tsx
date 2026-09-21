@@ -30,6 +30,7 @@ export type TrilhaHomePageViewProps = {
   nextAction?: HomeNextAction | null
   canContinue: boolean
   historyHints?: HistoryStepHint[]
+  habitLine?: string | null
   whatsappHelpHref?: string
   loadState: 'loading' | 'ready' | 'empty' | 'error'
   errorMessage?: string
@@ -52,6 +53,7 @@ export function TrilhaHomePageView({
   nextAction = null,
   canContinue,
   historyHints = [],
+  habitLine = null,
   whatsappHelpHref,
   loadState,
   errorMessage,
@@ -199,13 +201,24 @@ export function TrilhaHomePageView({
         ) : null}
 
         {homeHint === 'completed' && onOpenHistory ? (
-          <button
-            type="button"
-            className="btn btn--primary trilha-cta"
-            onClick={onOpenHistory}
-          >
-            Revisar o que aprendeu
-          </button>
+          <div className="trilha-home__celebrate">
+            <p className="trilha-home__celebrate-lead">
+              Você percorreu todos os passos desta trilha.
+            </p>
+            <button
+              type="button"
+              className="btn btn--primary trilha-cta"
+              onClick={onOpenHistory}
+            >
+              Revisar a trilha
+            </button>
+          </div>
+        ) : null}
+
+        {habitLine ? (
+          <p className="trilha-home__habit muted" role="status">
+            {habitLine}
+          </p>
         ) : null}
       </section>
 

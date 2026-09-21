@@ -13,6 +13,41 @@ export function TrilhaUxDemoPage() {
   const params = new URLSearchParams(window.location.search)
   const scene = params.get('scene') ?? 'markdown'
 
+
+  if (scene === 'home-done') {
+    return (
+      <StudentShellView studentName="Ana" onLogout={noop}>
+        <TrilhaHomePageView
+          studentName="Ana"
+          trailTitle="Introdução à cidadania"
+          stageNumber={4}
+          questionNumber={4}
+          progressRatio={1}
+          totalStages={4}
+          totalQuestions={4}
+          stageType={null}
+          statusLabel="Concluída"
+          homeHint="completed"
+          nextAction="completed"
+          canContinue={false}
+          habitLine="Hoje: 2 passos registados."
+          historyHints={[
+            {
+              stageNumber: 1,
+              questionNumber: 1,
+              stageType: 'fixed',
+              title: 'O que é cidadania',
+              attemptedAt: '2026-09-21T10:00:00Z',
+            },
+          ]}
+          loadState="ready"
+          onContinue={noop}
+          onOpenHistory={noop}
+        />
+      </StudentShellView>
+    )
+  }
+
   if (scene === 'home' || scene === 'home-paused') {
     const paused = scene === 'home-paused'
     return (
@@ -30,6 +65,7 @@ export function TrilhaUxDemoPage() {
           homeHint={paused ? 'await_release' : null}
           nextAction={paused ? 'await_release' : 'await_answer'}
           canContinue={!paused}
+          habitLine={paused ? 'Ainda sem passo hoje — ~3–5 min quando puder.' : 'Hoje: 1 passo registado.'}
           historyHints={[
             {
               stageNumber: 1,

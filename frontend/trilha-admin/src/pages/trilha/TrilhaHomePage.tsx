@@ -13,6 +13,7 @@ import {
   TrilhaApiError,
 } from '../../lib/trilha/trilhaApi'
 import type { HistoryStepHint } from '../../lib/trilha/unitMap'
+import { habitLineFromAttempts } from '../../lib/trilha/habitLine'
 import {
   clearTrilhaSession,
   loadTrilhaSession,
@@ -138,6 +139,7 @@ export function TrilhaHomePage() {
                 ? item.stage_type
                 : null,
             title: item.title ?? null,
+            attemptedAt: item.attempted_at ?? null,
           })),
         )
       } catch {
@@ -192,6 +194,7 @@ export function TrilhaHomePage() {
         nextAction={nextAction}
         canContinue={canContinue}
         historyHints={historyHints}
+        habitLine={habitLineFromAttempts(historyHints.map((h) => h.attemptedAt))}
         whatsappHelpHref={WA_HELP}
         loadState={loadState}
         errorMessage={errorMessage}

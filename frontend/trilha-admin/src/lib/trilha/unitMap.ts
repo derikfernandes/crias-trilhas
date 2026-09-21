@@ -29,6 +29,7 @@ export type HistoryStepHint = {
   questionNumber: number
   stageType: UnitStepType
   title: string | null
+  attemptedAt?: string | null
 }
 
 const TYPE_LABEL: Record<'fixed' | 'exercise' | 'ai', string> = {
