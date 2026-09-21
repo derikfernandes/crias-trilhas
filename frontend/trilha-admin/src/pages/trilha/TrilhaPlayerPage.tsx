@@ -93,7 +93,10 @@ export function TrilhaPlayerPage() {
   }, [applyContent, navigate, session.student.institution_id, session.student.student_id, session.token])
 
   useEffect(() => {
-    void load()
+    const id = window.setTimeout(() => {
+      void load()
+    }, 0)
+    return () => window.clearTimeout(id)
   }, [load])
 
   function logout() {
