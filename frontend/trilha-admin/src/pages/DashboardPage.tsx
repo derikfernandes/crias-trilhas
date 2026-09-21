@@ -548,6 +548,7 @@ export function DashboardPage() {
     string | null
   >(null)
   const [agentUsageLoading, setAgentUsageLoading] = useState(false)
+  const [agentUsagePresent, setAgentUsagePresent] = useState(true)
   const [initialLogsLoaded, setInitialLogsLoaded] = useState(false)
   const initialLogsLoadedRef = useRef(false)
   const dashboardLoadStartedAtRef = useRef(0)
@@ -656,6 +657,7 @@ export function DashboardPage() {
         setStudentTrails([])
         setLogAggregates(EMPTY_LOG_AGGREGATES)
         setAgentUsage(EMPTY_AGENT_USAGE)
+        setAgentUsagePresent(true)
         setDataError(null)
         setLogsError(null)
         setLoadingData(false)
@@ -881,6 +883,7 @@ export function DashboardPage() {
     if (studentIds.length === 0) {
       setLogAggregates(EMPTY_LOG_AGGREGATES)
       setAgentUsage({ ...EMPTY_AGENT_USAGE, periodDays: agentPeriodDays })
+      setAgentUsagePresent(true)
       setLogsError(null)
       setLoadingLogs(false)
       setAgentUsageLoading(false)
@@ -929,6 +932,7 @@ export function DashboardPage() {
           answerMap: summary.answerMap,
         })
         setAgentUsage(summary.agentUsage)
+        setAgentUsagePresent(summary.agentUsagePresent)
         setLoadingLogs(false)
         setAgentUsageLoading(false)
         setInitialLogsLoaded(true)
@@ -944,15 +948,15 @@ export function DashboardPage() {
         if (!refreshingAgentsOnly) {
           setLogAggregates(EMPTY_LOG_AGGREGATES)
           setAgentUsage({ ...EMPTY_AGENT_USAGE, periodDays: agentPeriodDays })
+          // Libera o gate para o banner de erro + retry ficarem acessíveis.
+          setInitialLogsLoaded(true)
+          initialLogsLoadedRef.current = true
+          loadProgressRef.current.done = loadProgressRef.current.total
+          syncLoadProgress('', { complete: true })
         }
         // Refetch de período: mantém último snapshot (keep-previous).
         setLoadingLogs(false)
         setAgentUsageLoading(false)
-        if (!refreshingAgentsOnly) {
-          loadTargetPercentRef.current = 0
-          setLoadPercent(0)
-          setLoadLabel('')
-        }
       }
     }
 
@@ -2411,7 +2415,13 @@ export function DashboardPage() {
       loadLabel={loadLabel}
       loadPercent={loadPercent}
       logsError={logsError}
-      onRetryLogs={() => setLogsRetryKey((k) => k + 1)}
+      onRetryLogs={() => {
+        // Reabre o gate no retry após falha de first-load (banner acessível).
+        initialLogsLoadedRef.current = false
+        setInitialLogsLoaded(false)
+        setLogsError(null)
+        setLogsRetryKey((k) => k + 1)
+      }}
       summary={summary}
       missingGabaritoCount={missingGabaritoCount}
       annulledGabaritoCount={annulledGabaritoCount}
@@ -2539,6 +2549,7 @@ export function DashboardPage() {
         setSelectedAgentTrailId(null)
       }}
       agentUsageLoading={agentUsageLoading}
+      agentUsageUnavailable={!agentUsagePresent}
       selectedAgentTrailId={selectedAgentTrailId}
       onSelectAgentTrailId={setSelectedAgentTrailId}
       selectedAgentStudents={selectedAgentStudents}

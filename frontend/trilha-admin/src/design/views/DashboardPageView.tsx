@@ -122,6 +122,7 @@ export function DashboardPageView({
   agentPeriodDays,
   onAgentPeriodDaysChange,
   agentUsageLoading,
+  agentUsageUnavailable = false,
   selectedAgentTrailId,
   onSelectAgentTrailId,
   selectedAgentStudents,
@@ -246,13 +247,14 @@ export function DashboardPageView({
           </div>
         </section>
       ) : logsError ? (
-        <section className="panel">
+        <section className="panel" data-testid="dashboard-logs-error">
           <p className="banner banner--error" role="alert">
-            Não foi possível carregar as métricas dos alunos: {logsError}
+            Não foi possível carregar as métricas dos alunos e o uso dos
+            tutores: {logsError}
           </p>
           <p className="muted">
-            Os totais de alunos e trilhas foram carregados, mas os percentuais
-            de conclusão e acerto ficariam zerados. Tente novamente.
+            Os totais de alunos e trilhas foram carregados, mas conclusões,
+            acertos e o bloco de tutores ficariam incompletos. Tente novamente.
           </p>
           <button type="button" className="btn" onClick={onRetryLogs}>
             Tentar novamente
@@ -368,6 +370,8 @@ export function DashboardPageView({
             periodDays={agentPeriodDays}
             onPeriodDaysChange={onAgentPeriodDaysChange}
             loading={agentUsageLoading}
+            unavailable={agentUsageUnavailable}
+            onRetry={onRetryLogs}
             selectedAgentTrailId={selectedAgentTrailId}
             onSelectAgentTrailId={onSelectAgentTrailId}
             selectedAgentStudents={selectedAgentStudents}

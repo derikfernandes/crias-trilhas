@@ -19,6 +19,8 @@ export type DashboardLogSummary = {
   doneByStudent: Map<string, Set<string>>
   answerMap: Map<string, string>
   agentUsage: AgentUsageView
+  /** False quando a resposta OK omite `agent_usage` (deploy antigo / contrato incompleto). */
+  agentUsagePresent: boolean
 }
 
 function resolveApiBaseUrl(): string {
@@ -249,5 +251,7 @@ export async function fetchDashboardLogSummary(
     doneByStudent,
     answerMap,
     agentUsage: parseAgentUsage(body.agent_usage),
+    agentUsagePresent:
+      body.agent_usage != null && typeof body.agent_usage === 'object',
   }
 }

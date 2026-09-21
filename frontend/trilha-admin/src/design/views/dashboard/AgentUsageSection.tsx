@@ -11,6 +11,9 @@ type AgentUsageSectionProps = {
   periodDays: DashboardAgentPeriodDays
   onPeriodDaysChange: (days: DashboardAgentPeriodDays) => void
   loading: boolean
+  /** Resposta sem agent_usage — distinto de empty real. */
+  unavailable?: boolean
+  onRetry?: () => void
   selectedAgentTrailId: string | null
   onSelectAgentTrailId: (trailId: string | null) => void
   selectedAgentStudents: DashboardAgentStudentLink[]
@@ -35,6 +38,8 @@ export function AgentUsageSection({
   periodDays,
   onPeriodDaysChange,
   loading,
+  unavailable = false,
+  onRetry,
   selectedAgentTrailId,
   onSelectAgentTrailId,
   selectedAgentStudents,
@@ -48,9 +53,10 @@ export function AgentUsageSection({
   )
 
   const barMax = Math.max(1, ...activeAgents.map((a) => a.messages))
-  const hasData = agentUsage.totalMessages > 0
-  const showSkeleton = loading && !hasData
+  const hasData = agentUsage.totalMessages > 0 && !unavailable
+  const showSkeleton = loading && !hasData && !unavailable
   const showKeepPrevious = loading && hasData
+  const showUnavailable = unavailable && !loading
 
   const selectedAgent = agentUsage.agents.find(
     (a) => a.trailId === selectedAgentTrailId,
@@ -63,11 +69,18 @@ export function AgentUsageSection({
     })
   }, [selectedAgentStudents])
 
+  const barWidthPct = (messages: number) => {
+    const raw = (messages / barMax) * 100
+    // Barras mínimas legíveis (baixo volume vs líder).
+    return Math.max(8, raw)
+  }
+
   return (
     <section
       className={`dashboard-agent-usage${loading ? ' dashboard-agent-usage--loading' : ''}`}
       aria-label="Tutores de IA"
       aria-busy={loading}
+      data-testid="agent-usage-section"
     >
       <div className="dashboard-agent-usage__header">
         <div>
@@ -91,7 +104,7 @@ export function AgentUsageSection({
                   Number(e.target.value) as DashboardAgentPeriodDays,
                 )
               }
-              disabled={loading && !hasData}
+              disabled={(loading && !hasData) || showUnavailable}
             >
               {PERIOD_OPTIONS.map((opt) => (
                 <option key={opt.value} value={opt.value}>
@@ -117,8 +130,27 @@ export function AgentUsageSection({
           </div>
           <div className="dashboard-agent-usage__bars-skeleton" />
         </div>
+      ) : showUnavailable ? (
+        <div
+          className="dashboard-agent-usage__error"
+          role="alert"
+          data-testid="agent-usage-unavailable"
+        >
+          <p className="banner banner--error">
+            Não foi possível carregar o uso dos tutores nesta resposta (campo
+            ausente ou incompleto). Isso é diferente de “nenhum uso no período”.
+          </p>
+          {onRetry ? (
+            <button type="button" className="btn btn--small" onClick={onRetry}>
+              Tentar novamente
+            </button>
+          ) : null}
+        </div>
       ) : !hasData ? (
-        <p className="muted dashboard-agent-usage__empty">
+        <p
+          className="muted dashboard-agent-usage__empty"
+          data-testid="agent-usage-empty"
+        >
           Nenhum uso de tutores no período. Incentive os alunos a consultar os
           tutores fora da trilha quando travarem em um tópico.
         </p>
@@ -147,9 +179,12 @@ export function AgentUsageSection({
                 {agentUsage.coveragePct}%
               </span>
             </div>
-            <div className="dashboard-agent-usage__kpi">
+            <div
+              className="dashboard-agent-usage__kpi"
+              title="Mensagens ÷ tutores com uso ÷ dias do período (ou dias com atividade, se ‘todo o período’)."
+            >
               <span className="dashboard-agent-usage__kpi-label">
-                Msgs / tutor / dia
+                Média diária por tutor
               </span>
               <span className="dashboard-agent-usage__kpi-value">
                 {agentUsage.msgsPerTutorPerDay}
@@ -183,7 +218,7 @@ export function AgentUsageSection({
                         <span
                           className="dashboard-agent-usage__bar-fill"
                           style={{
-                            width: `${(agent.messages / barMax) * 100}%`,
+                            width: `${barWidthPct(agent.messages)}%`,
                           }}
                         />
                       </span>

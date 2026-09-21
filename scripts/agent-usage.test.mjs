@@ -72,6 +72,17 @@ test('índice Firestore student_id + trail_id existe para filtro de agente', () 
   assert.ok(hit, 'faltando índice conversation_logs student_id+trail_id')
 })
 
+test('dashboard libera gate em erro de first-load do summary', () => {
+  const page = readFileSync(
+    join(root, 'frontend/trilha-admin/src/pages/DashboardPage.tsx'),
+    'utf8',
+  )
+  // Catch de first-load deve setar initialLogsLoaded para o banner/retry.
+  assert.match(page, /setInitialLogsLoaded\(true\)/)
+  assert.match(page, /Não foi possível carregar|onRetryLogs/)
+  assert.match(page, /agentUsagePresent/)
+})
+
 test('specs/10_AGENT_USAGE_DASHBOARD.md existe', () => {
   const src = readFileSync(
     join(root, 'specs/10_AGENT_USAGE_DASHBOARD.md'),

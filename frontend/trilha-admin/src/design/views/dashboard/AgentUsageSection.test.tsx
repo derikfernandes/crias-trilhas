@@ -105,8 +105,27 @@ describe('AgentUsageSection', () => {
   it('mantém KPIs no refetch e mostra badge Atualizando', () => {
     renderSection({ loading: true, agentUsage: baseUsage })
     expect(screen.getByRole('status')).toHaveTextContent('Atualizando…')
-    expect(screen.getByText('Msgs / tutor / dia')).toBeInTheDocument()
+    expect(screen.getByText('Média diária por tutor')).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Volume por tutor' })).toBeInTheDocument()
+  })
+
+  it('distingue unavailable de empty real', () => {
+    renderSection({
+      agentUsage: emptyUsage,
+      unavailable: true,
+      onRetry: vi.fn(),
+    })
+    expect(screen.getByTestId('agent-usage-unavailable')).toBeInTheDocument()
+    expect(screen.queryByTestId('agent-usage-empty')).not.toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: 'Tentar novamente' }),
+    ).toBeInTheDocument()
+  })
+
+  it('mostra empty pedagógico sem confundir com erro', () => {
+    renderSection({ agentUsage: emptyUsage, unavailable: false })
+    expect(screen.getByTestId('agent-usage-empty')).toBeInTheDocument()
+    expect(screen.queryByTestId('agent-usage-unavailable')).not.toBeInTheDocument()
   })
 
   it('renderiza KPIs e barras só com uso (>0), sem tabela espelho nem pizza', () => {

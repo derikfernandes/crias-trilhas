@@ -298,6 +298,8 @@ export type DashboardPageViewProps = {
   agentPeriodDays: DashboardAgentPeriodDays
   onAgentPeriodDaysChange: (days: DashboardAgentPeriodDays) => void
   agentUsageLoading: boolean
+  /** Resposta OK sem campo agent_usage (não confundir com empty real). */
+  agentUsageUnavailable?: boolean
   selectedAgentTrailId: string | null
   onSelectAgentTrailId: (trailId: string | null) => void
   selectedAgentStudents: DashboardAgentStudentLink[]
