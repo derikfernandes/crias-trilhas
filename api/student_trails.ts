@@ -11,6 +11,7 @@ import {
   markStudentTrailLastInteraction,
   completeStudentTrail,
   blockStudentTrail,
+  updateStudentTrailPosition,
 } from '../server/lib/studentTrailService'
 import {
   validateStudentTrailCreate,
@@ -18,6 +19,14 @@ import {
   parseIntLoose,
   type StudentTrailStatus,
 } from '../server/lib/studentTrailValidation'
+import {
+  advance as engineAdvance,
+  getNextContent,
+  getStatus as engineGetStatus,
+  isTrailEngineError,
+  trailEngineErrorToJson,
+  type TrailChannel,
+} from '../server/lib/trail-engine'
 
 type Json = Record<string, unknown>
 
@@ -38,8 +47,37 @@ function corsHeaders(): Record<string, string> {
   return {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    'Access-Control-Allow-Headers':
+      'Content-Type, Authorization, Idempotency-Key, X-Request-Id',
   }
+}
+
+function parseChannel(v: unknown): TrailChannel | null {
+  if (v === 'whatsapp' || v === 'app' || v === 'admin') return v
+  return null
+}
+
+function serializeLastDelivered(value: unknown): Json | null {
+  if (!value || typeof value !== 'object') return null
+  const o = value as Record<string, unknown>
+  const stage_number =
+    typeof o.stage_number === 'number' && Number.isFinite(o.stage_number)
+      ? o.stage_number
+      : null
+  const question_number =
+    typeof o.question_number === 'number' && Number.isFinite(o.question_number)
+      ? o.question_number
+      : null
+  const content_fingerprint =
+    typeof o.content_fingerprint === 'string' ? o.content_fingerprint : null
+  if (
+    stage_number === null ||
+    question_number === null ||
+    content_fingerprint === null
+  ) {
+    return null
+  }
+  return { stage_number, question_number, content_fingerprint }
 }
 
 function serializeTs(value: unknown): string | null {
@@ -124,6 +162,18 @@ function toStudentTrailOutput(
     current_stage_number,
     current_question_number,
     status,
+    progress_version:
+      typeof data.progress_version === 'number' &&
+      Number.isFinite(data.progress_version)
+        ? data.progress_version
+        : 0,
+    last_idempotency_key:
+      typeof data.last_idempotency_key === 'string'
+        ? data.last_idempotency_key
+        : null,
+    last_channel: parseChannel(data.last_channel),
+    last_delivered: serializeLastDelivered(data.last_delivered),
+    last_advance_at: serializeTs(data.last_advance_at),
     started_at: serializeTs(data.started_at),
     completed_at: serializeTs(data.completed_at),
     last_interaction_at: serializeTs(data.last_interaction_at),
@@ -259,8 +309,151 @@ async function handleRequest(request: Request): Promise<Response> {
 
   const qStudentId = url.searchParams.get('student_id')?.trim() || null
   const qTrailId = url.searchParams.get('trail_id')?.trim() || null
+  const facade = url.searchParams.get('facade')?.trim() || null
 
   try {
+    // Fachada Wave A: GET next-content | GET status | POST advance
+    if (facade === 'next-content' && request.method === 'GET') {
+      if (!qStudentId || !qTrailId) {
+        return respond(400, {
+          status: 'error',
+          code: 'invalid_payload',
+          error: 'Informe student_id e trail_id.',
+        })
+      }
+      try {
+        const content = await getNextContent(db, {
+          student_id: qStudentId,
+          trail_id: qTrailId,
+          channel: parseChannel(url.searchParams.get('channel')) ?? undefined,
+        })
+        return jsonResponse(content as Json, {
+          status: 200,
+          headers: corsHeaders(),
+        })
+      } catch (e) {
+        if (isTrailEngineError(e)) {
+          return respond(e.httpStatus, trailEngineErrorToJson(e) as Json)
+        }
+        throw e
+      }
+    }
+
+    if (facade === 'status' && request.method === 'GET') {
+      if (!qStudentId || !qTrailId) {
+        return respond(400, {
+          status: 'error',
+          code: 'invalid_payload',
+          error: 'Informe student_id e trail_id.',
+        })
+      }
+      try {
+        const statusDoc = await engineGetStatus(db, qStudentId, qTrailId)
+        return jsonResponse(
+          {
+            status: 'ok',
+            student_id: statusDoc.student_id,
+            trail_id: statusDoc.trail_id,
+            institution_id: statusDoc.institution_id,
+            current_stage_number: statusDoc.current_stage_number,
+            current_question_number: statusDoc.current_question_number,
+            progress_status: statusDoc.status,
+            progress_version: statusDoc.progress_version,
+            last_channel: statusDoc.last_channel,
+            last_idempotency_key: statusDoc.last_idempotency_key,
+            last_delivered: statusDoc.last_delivered,
+            last_advance_at: serializeTs(statusDoc.last_advance_at),
+            started_at: serializeTs(statusDoc.started_at),
+            completed_at: serializeTs(statusDoc.completed_at),
+            last_interaction_at: serializeTs(statusDoc.last_interaction_at),
+          },
+          { status: 200, headers: corsHeaders() },
+        )
+      } catch (e) {
+        if (isTrailEngineError(e)) {
+          return respond(e.httpStatus, trailEngineErrorToJson(e) as Json)
+        }
+        throw e
+      }
+    }
+
+    if (facade === 'advance' && request.method === 'POST') {
+      let payload: unknown
+      try {
+        payload = await request.json()
+      } catch {
+        payload = {}
+      }
+      const body = (payload ?? {}) as Record<string, unknown>
+      const studentId =
+        qStudentId ?? sanitizeString(body.student_id) ?? null
+      const trailId = qTrailId ?? sanitizeString(body.trail_id) ?? null
+      const channel =
+        parseChannel(body.channel) ??
+        parseChannel(url.searchParams.get('channel')) ??
+        'app'
+      const idempotencyKey =
+        request.headers.get('Idempotency-Key')?.trim() ||
+        sanitizeString(body.idempotency_key) ||
+        null
+      const expectedVersion =
+        body.expected_version === undefined || body.expected_version === null
+          ? undefined
+          : parseIntLoose(body.expected_version) ?? undefined
+      const reasonRaw = sanitizeString(body.reason) ?? 'delivered'
+      const reason =
+        reasonRaw === 'answered' ||
+        reasonRaw === 'skip' ||
+        reasonRaw === 'delivered'
+          ? reasonRaw
+          : 'delivered'
+
+      if (!studentId || !trailId) {
+        return respond(400, {
+          status: 'error',
+          code: 'invalid_payload',
+          error: 'student_id e trail_id são obrigatórios.',
+        })
+      }
+      if (!idempotencyKey) {
+        return respond(400, {
+          status: 'error',
+          code: 'invalid_payload',
+          error: 'Header Idempotency-Key (ou body.idempotency_key) é obrigatório.',
+        })
+      }
+
+      try {
+        const result = await engineAdvance(db, {
+          student_id: studentId,
+          trail_id: trailId,
+          idempotency_key: idempotencyKey,
+          channel,
+          reason,
+          expected_version: expectedVersion ?? undefined,
+          mark_delivered: true,
+        })
+        return jsonResponse(
+          {
+            status: result.status === 'replay' ? 'ok' : 'ok',
+            replay: result.status === 'replay',
+            next_stage_number: result.next_stage_number,
+            next_question_number: result.next_question_number,
+            completed: result.completed,
+            progress_version: result.progress_version,
+            channel: result.channel,
+            idempotency_key: result.idempotency_key,
+          },
+          { status: 200, headers: corsHeaders() },
+        )
+      } catch (e) {
+        if (isTrailEngineError(e)) {
+          return respond(e.httpStatus, trailEngineErrorToJson(e) as Json)
+        }
+        throw e
+      }
+    }
+
     // GET /student_trails/
     // GET /student_trails?id=...
     // GET /student_trails?student_id=...&trail_id=...
@@ -300,6 +493,18 @@ async function handleRequest(request: Request): Promise<Response> {
             started_at: serializeTs(data.started_at),
             completed_at: serializeTs(data.completed_at),
             last_interaction_at: serializeTs(data.last_interaction_at),
+            progress_version:
+              typeof data.progress_version === 'number' &&
+              Number.isFinite(data.progress_version)
+                ? data.progress_version
+                : (pos.progress_version ?? 0),
+            last_idempotency_key:
+              typeof data.last_idempotency_key === 'string'
+                ? data.last_idempotency_key
+                : null,
+            last_channel: parseChannel(data.last_channel),
+            last_delivered: serializeLastDelivered(data.last_delivered),
+            last_advance_at: serializeTs(data.last_advance_at),
           },
           { status: 200, headers: corsHeaders() },
         )
@@ -435,29 +640,43 @@ async function handleRequest(request: Request): Promise<Response> {
       }
 
       if (action === 'advance_question') {
-        const pos = await advanceStudentTrailQuestion(
-          db,
-          collection,
-          targetStudentId,
-          targetTrailId,
-        )
-        return jsonResponse(pos as Json, {
-          status: 200,
-          headers: corsHeaders(),
-        })
+        try {
+          const pos = await advanceStudentTrailQuestion(
+            db,
+            collection,
+            targetStudentId,
+            targetTrailId,
+          )
+          return jsonResponse(pos as Json, {
+            status: 200,
+            headers: corsHeaders(),
+          })
+        } catch (e) {
+          if (isTrailEngineError(e)) {
+            return respond(e.httpStatus, { error: e.message })
+          }
+          throw e
+        }
       }
 
       if (action === 'advance_stage') {
-        const pos = await advanceStudentTrailStage(
-          db,
-          collection,
-          targetStudentId,
-          targetTrailId,
-        )
-        return jsonResponse(pos as Json, {
-          status: 200,
-          headers: corsHeaders(),
-        })
+        try {
+          const pos = await advanceStudentTrailStage(
+            db,
+            collection,
+            targetStudentId,
+            targetTrailId,
+          )
+          return jsonResponse(pos as Json, {
+            status: 200,
+            headers: corsHeaders(),
+          })
+        } catch (e) {
+          if (isTrailEngineError(e)) {
+            return respond(e.httpStatus, { error: e.message })
+          }
+          throw e
+        }
       }
 
       if (action === 'mark_last_interaction') {
@@ -550,35 +769,46 @@ async function handleRequest(request: Request): Promise<Response> {
           })
         }
 
-        const snap = await getStudentTrailByComposite(
-          db,
-          collection,
-          targetStudentId,
-          targetTrailId,
-        )
-        if (!snap.exists) return respond(404, { error: 'Not found' })
-
-        const patch: Record<string, unknown> = {}
-        if (parsedStage !== null) patch.current_stage_number = parsedStage
-        if (parsedQuestion !== null)
-          patch.current_question_number = parsedQuestion
-
-        if (Object.keys(patch).length === 0) {
+        if (parsedStage === null && parsedQuestion === null) {
           return respond(400, {
             error:
               'Envie ao menos um de: current_stage_number, current_question_number.',
           })
         }
 
-        const { updateStudentTrailFields } = await import(
-          '../server/lib/studentTrailService.js'
-        )
-        await updateStudentTrailFields(db, collection, snap.id, patch)
-
-        return jsonResponse({ ok: true }, {
-          status: 200,
-          headers: corsHeaders(),
-        })
+        try {
+          const pos = await updateStudentTrailPosition(
+            db,
+            targetStudentId,
+            targetTrailId,
+            {
+              ...(parsedStage !== null
+                ? { current_stage_number: parsedStage }
+                : {}),
+              ...(parsedQuestion !== null
+                ? { current_question_number: parsedQuestion }
+                : {}),
+            },
+            { channel: 'whatsapp' },
+          )
+          return jsonResponse(
+            {
+              ok: true,
+              current_stage_number: pos.current_stage_number,
+              current_question_number: pos.current_question_number,
+              progress_version: pos.progress_version ?? 0,
+            },
+            {
+              status: 200,
+              headers: corsHeaders(),
+            },
+          )
+        } catch (e) {
+          if (isTrailEngineError(e)) {
+            return respond(e.httpStatus, { error: e.message })
+          }
+          throw e
+        }
       }
 
       return respond(400, {

@@ -1,6 +1,11 @@
 import { cert, getApps, initializeApp, type ServiceAccount } from 'firebase-admin/app'
 import { FieldValue, getFirestore } from 'firebase-admin/firestore'
 
+import {
+  resolveStudentByPhoneSoft,
+  toCanonicalPhone,
+} from '../server/lib/trail-engine'
+
 type Json = Record<string, unknown>
 
 function jsonResponse(
@@ -235,22 +240,20 @@ async function handleRequest(request: Request): Promise<Response> {
         }
 
         // GET /student/{phone_number} (via ?phone_number=:phone_number)
+        // Lookup com variantes (55… ↔ local) — não-destrutivo (I6).
         if (rawPhoneNumber && !qPhoneNumber) {
           return respond(400, { error: 'phone_number inválido (sem dígitos)' })
         }
         if (qPhoneNumber) {
-          const snap = await db
-            .collection(collection)
-            .where('phone_number', '==', qPhoneNumber)
-            .limit(1)
-            .get()
+          const resolved = await resolveStudentByPhoneSoft(db, qPhoneNumber)
+          if (!resolved) return respond(200, {})
 
-          if (snap.empty) return respond(200, {})
+          const snap = await db.collection(collection).doc(resolved.student_id).get()
+          if (!snap.exists) return respond(200, {})
 
-          const docSnap = snap.docs[0]
           const out = toStudentOutput(
-            docSnap.data() ?? {},
-            docSnap.id,
+            snap.data() ?? {},
+            snap.id,
           )
 
           if (simple) {
@@ -342,6 +345,10 @@ async function handleRequest(request: Request): Promise<Response> {
         const institution_id = sanitizeString(body.institution_id)
         const name = sanitizeString(body.name)
         const phone_number = sanitizePhoneNumber(body.phone_number)
+        // Escrita nova: preferir canónico BR 55… quando válido; senão dígitos sanitizados.
+        const canonical = phone_number ? toCanonicalPhone(phone_number) : null
+        const phoneToStore =
+          canonical && canonical.ok ? canonical.canonical : phone_number
         const school_level = sanitizeString(body.school_level)
         const school_grade = sanitizeString(body.school_grade)
 
@@ -398,7 +405,7 @@ async function handleRequest(request: Request): Promise<Response> {
           tx.set(studentRef, {
             institution_id,
             name,
-            phone_number,
+            phone_number: phoneToStore,
             school_level: normalizedSchoolLevel,
             school_grade,
             student_level: studentLevel,
@@ -417,7 +424,7 @@ async function handleRequest(request: Request): Promise<Response> {
             id: newId,
             institution_id,
             name,
-            phone_number,
+            phone_number: phoneToStore,
             school_level: normalizedSchoolLevel,
             school_grade,
             student_level: studentLevel,
@@ -461,7 +468,10 @@ async function handleRequest(request: Request): Promise<Response> {
                 'Campo "phone_number" inválido. Informe apenas números (o backend remove caracteres não numéricos).',
             })
           }
-          updates.phone_number = sanitizedPhone
+          const canonical = toCanonicalPhone(sanitizedPhone)
+          updates.phone_number = canonical.ok
+            ? canonical.canonical
+            : sanitizedPhone
         }
 
         const school_level = sanitizeString(body.school_level)
