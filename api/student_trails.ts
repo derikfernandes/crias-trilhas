@@ -29,6 +29,7 @@ import {
   defaultCollectionNames,
   getActiveEnrollment,
   getNextContent,
+  getTrailHistory,
   getStatus as engineGetStatus,
   isTrailEngineError,
   isMutationMethod,
@@ -69,6 +70,7 @@ const KNOWN_FACADES = new Set([
   'status',
   'advance',
   'submit-exercise',
+  'history',
 ])
 
 function isKnownFacade(facade: string | null): boolean {
@@ -378,7 +380,7 @@ async function handleRequest(request: Request): Promise<Response> {
       status: 'error',
       code: 'invalid_facade',
       error:
-        'Parâmetro facade inválido. Use: home, next-content, status, advance, submit-exercise.',
+        'Parâmetro facade inválido. Use: home, next-content, status, advance, submit-exercise, history.',
     })
   }
 
@@ -396,7 +398,7 @@ async function handleRequest(request: Request): Promise<Response> {
   }
 
   try {
-    // Fachada Wave A/B: GET next-content | GET status | GET home | POST advance | POST submit-exercise
+    // Fachada Wave A/B: GET next-content | history | status | home | POST advance | submit-exercise
     if (facade === 'home' && request.method === 'GET') {
       const homeStudentId =
         qStudentId ||
@@ -524,6 +526,33 @@ async function handleRequest(request: Request): Promise<Response> {
           ),
         })
         return jsonResponse(content as Json, {
+          status: 200,
+          headers: corsHeaders(),
+        })
+      } catch (e) {
+        if (isTrailEngineError(e)) {
+          return respond(e.httpStatus, trailEngineErrorToJson(e) as Json)
+        }
+        throw e
+      }
+    }
+
+    if (facade === 'history' && request.method === 'GET') {
+      if (!qStudentId || !qTrailId) {
+        return respond(400, {
+          status: 'error',
+          code: 'invalid_payload',
+          error: 'Informe student_id e trail_id.',
+        })
+      }
+      const authz = requireFacadeAuth(request, qStudentId)
+      if (!authz.ok) return respond(authz.status, authz.body)
+      try {
+        const history = await getTrailHistory(db, {
+          student_id: qStudentId,
+          trail_id: qTrailId,
+        })
+        return jsonResponse(history as Json, {
           status: 200,
           headers: corsHeaders(),
         })

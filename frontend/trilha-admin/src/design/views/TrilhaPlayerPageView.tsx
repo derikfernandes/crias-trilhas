@@ -9,7 +9,7 @@ export type TrilhaPlayerPageViewProps = {
   stageType: 'fixed' | 'exercise' | 'ai'
   title?: string
   body: string
-  options: string[] | null
+  options: { key: string; label: string }[] | null
   nextAction:
     | 'deliver_content'
     | 'await_answer'
@@ -26,6 +26,7 @@ export type TrilhaPlayerPageViewProps = {
   onSubmitAnswer: () => void
   onBack: () => void
   onRetry?: () => void
+  onOpenHistory?: () => void
 }
 
 const TYPE_LABEL: Record<'fixed' | 'exercise' | 'ai', string> = {
@@ -52,6 +53,7 @@ export function TrilhaPlayerPageView({
   onSubmitAnswer,
   onBack,
   onRetry,
+  onOpenHistory,
 }: TrilhaPlayerPageViewProps) {
   if (loadState === 'loading') {
     return (
@@ -103,6 +105,15 @@ export function TrilhaPlayerPageView({
             <span className="trilha-player__type">aguardando</span>
           ) : null}
         </p>
+        {onOpenHistory ? (
+          <button
+            type="button"
+            className="btn btn--ghost btn--small trilha-player__history"
+            onClick={onOpenHistory}
+          >
+            Histórico
+          </button>
+        ) : null}
       </header>
       <h1
         className={hasTitle ? 'trilha-player__heading' : 'visually-hidden'}

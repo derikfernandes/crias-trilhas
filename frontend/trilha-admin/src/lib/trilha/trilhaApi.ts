@@ -28,6 +28,7 @@ export const TRILHA_KNOWN_FACADES = [
   'status',
   'advance',
   'submit-exercise',
+  'history',
 ] as const
 
 export type TrilhaKnownFacade = (typeof TRILHA_KNOWN_FACADES)[number]
@@ -167,6 +168,29 @@ export type TrilhaAdvanceResult = {
   progress_version: number
 }
 
+export type TrilhaHistoryItem = {
+  stage_number: number
+  question_number: number
+  stage_type: 'fixed' | 'exercise' | 'ai' | null
+  title: string | null
+  content: string | null
+  prompt: string | null
+  options: unknown
+  student_answer: string | null
+  is_correct: boolean | null
+  attempted_at: string | null
+}
+
+export type TrilhaHistoryResponse = {
+  status: 'ok'
+  student_id: string
+  trail_id: string
+  current_stage_number: number
+  current_question_number: number
+  progress_status: string
+  items: TrilhaHistoryItem[]
+}
+
 /** Resultado tipado para o player: ok/replay vs conflict (resync). */
 export type AdvanceOutcome =
   | { kind: 'ok'; result: TrilhaAdvanceResult }
@@ -235,6 +259,28 @@ export async function fetchNextContent(
   }
   if (!res.ok) throw await parseError(res)
   return (await res.json()) as TrilhaNextContent
+}
+
+export async function fetchTrailHistory(
+  studentId: string,
+  trailId: string,
+  token?: string,
+): Promise<TrilhaHistoryResponse> {
+  const url = new URL('/api/student_trails', resolveApiBaseUrl())
+  const params = facadeQuery('history')
+  params.set('student_id', studentId)
+  params.set('trail_id', trailId)
+  url.search = params.toString()
+  const res = await fetch(url.toString(), {
+    method: 'GET',
+    headers: authHeaders(token),
+  })
+  if (res.status === 401 || res.status === 403) {
+    clearTrilhaSession()
+    throw await parseError(res)
+  }
+  if (!res.ok) throw await parseError(res)
+  return (await res.json()) as TrilhaHistoryResponse
 }
 
 export async function advanceProgress(input: {
@@ -370,26 +416,4 @@ export async function submitExercise(input: {
     is_correct?: boolean
     advanced?: boolean
   }
-}
-
-export function normalizeOptions(raw: unknown): string[] | null {
-  if (raw == null) return null
-  if (Array.isArray(raw)) {
-    const opts = raw
-      .map((o) => {
-        if (typeof o === 'string') return o
-        if (o && typeof o === 'object' && 'text' in o) {
-          const t = (o as { text?: unknown }).text
-          return typeof t === 'string' ? t : null
-        }
-        if (o && typeof o === 'object' && 'label' in o) {
-          const t = (o as { label?: unknown }).label
-          return typeof t === 'string' ? t : null
-        }
-        return null
-      })
-      .filter((s): s is string => !!s && s.trim().length > 0)
-    return opts.length ? opts : null
-  }
-  return null
 }

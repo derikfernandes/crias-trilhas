@@ -1,7 +1,12 @@
 import type { FormEvent } from 'react'
 
+export type ExerciseOption = {
+  key: string
+  label: string
+}
+
 export type ExerciseAnswerFormProps = {
-  options: string[] | null
+  options: ExerciseOption[] | null
   value: string
   submitting: boolean
   onChange: (value: string) => void
@@ -22,26 +27,28 @@ export function ExerciseAnswerForm({
     if (!disabled && !submitting && value.trim()) onSubmit()
   }
 
+  const isMcq = Boolean(options && options.length > 0)
+
   return (
     <form className="trilha-exercise" onSubmit={handleSubmit}>
-      {options && options.length > 0 ? (
+      {isMcq ? (
         <fieldset className="trilha-exercise__options" disabled={disabled || submitting}>
           <legend className="trilha-exercise__legend">Escolha uma opção</legend>
-          <ul className="trilha-exercise__list">
-            {options.map((opt) => {
-              const id = `ex-opt-${opt.slice(0, 24).replace(/\s+/g, '-')}`
+          <ul className="trilha-exercise__list" role="list">
+            {options!.map((opt) => {
+              const id = `ex-opt-${opt.key.replace(/[^A-Za-z0-9_-]/g, '')}`
               return (
-                <li key={opt}>
+                <li key={opt.key}>
                   <label className="trilha-exercise__option" htmlFor={id}>
                     <input
                       id={id}
                       type="radio"
                       name="exercise-answer"
-                      value={opt}
-                      checked={value === opt}
-                      onChange={() => onChange(opt)}
+                      value={opt.key}
+                      checked={value === opt.key}
+                      onChange={() => onChange(opt.key)}
                     />
-                    <span>{opt}</span>
+                    <span>{opt.label}</span>
                   </label>
                 </li>
               )

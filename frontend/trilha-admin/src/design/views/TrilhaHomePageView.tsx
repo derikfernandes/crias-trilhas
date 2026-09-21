@@ -16,6 +16,7 @@ export type TrilhaHomePageViewProps = {
   loadState: 'loading' | 'ready' | 'empty' | 'error'
   errorMessage?: string
   onContinue: () => void
+  onOpenHistory?: () => void
   onRetry?: () => void
 }
 
@@ -32,6 +33,7 @@ export function TrilhaHomePageView({
   loadState,
   errorMessage,
   onContinue,
+  onOpenHistory,
   onRetry,
 }: TrilhaHomePageViewProps) {
   if (loadState === 'loading') {
@@ -111,6 +113,16 @@ export function TrilhaHomePageView({
           onClick={onContinue}
         >
           Continuar
+        </button>
+      ) : null}
+
+      {onOpenHistory ? (
+        <button
+          type="button"
+          className="btn btn--ghost trilha-home__history"
+          onClick={onOpenHistory}
+        >
+          Ver histórico
         </button>
       ) : null}
 

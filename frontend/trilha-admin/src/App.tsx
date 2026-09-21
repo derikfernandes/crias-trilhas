@@ -84,6 +84,11 @@ const TrilhaPlayerPage = lazy(() =>
     default: m.TrilhaPlayerPage,
   })),
 )
+const TrilhaHistoryPage = lazy(() =>
+  import('./pages/trilha/TrilhaHistoryPage').then((m) => ({
+    default: m.TrilhaHistoryPage,
+  })),
+)
 
 const routerBasename =
   import.meta.env.BASE_URL === '/'
@@ -100,6 +105,14 @@ function TrilhaRoutes() {
           element={
             <RequireStudentAuth>
               <TrilhaPlayerPage />
+            </RequireStudentAuth>
+          }
+        />
+        <Route
+          path="historico"
+          element={
+            <RequireStudentAuth>
+              <TrilhaHistoryPage />
             </RequireStudentAuth>
           }
         />

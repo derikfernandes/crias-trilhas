@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import { TrilhaPathIcon } from '../icons/trilha/TrilhaPathIcon'
 
 export type StudentShellViewProps = {
@@ -18,6 +18,11 @@ export function StudentShellView({
   children,
   showNav = true,
 }: StudentShellViewProps) {
+  const location = useLocation()
+  const onHistory = location.pathname.includes('/historico')
+  const path = location.pathname.replace(/\/$/, '') || '/'
+  const onHome = path === '/trilha'
+
   return (
     <div className="student-shell" data-shell="student">
       {showNav ? (
@@ -29,11 +34,27 @@ export function StudentShellView({
           <nav className="student-shell__nav" aria-label="Navegação do aluno">
             <Link
               to="/trilha"
-              className="student-shell__nav-item is-active"
-              aria-current="page"
+              className={
+                onHome
+                  ? 'student-shell__nav-item is-active'
+                  : 'student-shell__nav-item'
+              }
+              aria-current={onHome ? 'page' : undefined}
             >
               <TrilhaPathIcon size={20} aria-hidden />
               <span>Trilha</span>
+            </Link>
+            <Link
+              to="/trilha/historico"
+              className={
+                onHistory
+                  ? 'student-shell__nav-item is-active'
+                  : 'student-shell__nav-item'
+              }
+              aria-current={onHistory ? 'page' : undefined}
+            >
+              <span className="student-shell__nav-dot" aria-hidden="true" />
+              <span>Histórico</span>
             </Link>
           </nav>
           <div className="student-shell__rail-foot">

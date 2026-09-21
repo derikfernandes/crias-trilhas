@@ -134,6 +134,7 @@ export function TrilhaHomePage() {
         loadState={loadState}
         errorMessage={errorMessage}
         onContinue={() => navigate('/trilha/play')}
+        onOpenHistory={() => navigate('/trilha/historico')}
         onRetry={() => void load()}
       />
     </StudentShellView>

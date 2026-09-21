@@ -41,6 +41,7 @@ const KNOWN_FACADES = new Set([
   'status',
   'advance',
   'submit-exercise',
+  'history',
 ])
 
 /** Espelho do gate CORRIGIDO (RT-C1): só facade conhecida salta Bearer global. */

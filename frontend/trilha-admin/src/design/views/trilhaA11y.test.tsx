@@ -48,7 +48,7 @@ describe('Trilha a11y — login / home / player', () => {
 
   it('home: landmarks, CTA, link WhatsApp anuncia nova janela', () => {
     render(
-      <MemoryRouter>
+      <MemoryRouter initialEntries={['/trilha']}>
         <StudentShellView studentName="Ana" onLogout={noop}>
           <TrilhaHomePageView
             studentName="Ana"
@@ -56,11 +56,12 @@ describe('Trilha a11y — login / home / player', () => {
             stageNumber={2}
             questionNumber={1}
             progressRatio={0.4}
-            status="in_progress"
+            statusLabel="Em progresso"
             canContinue
             whatsappHelpHref="https://wa.me/5512974085258"
             loadState="ready"
             onContinue={noop}
+            onOpenHistory={noop}
           />
         </StudentShellView>
       </MemoryRouter>,
@@ -74,6 +75,7 @@ describe('Trilha a11y — login / home / player', () => {
       'aria-current',
       'page',
     )
+    expect(screen.getByRole('link', { name: /histórico/i })).toBeInTheDocument()
     expect(screen.getByRole('heading', { level: 1, name: /sua trilha/i }))
     expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '40')
     expect(
@@ -82,6 +84,7 @@ describe('Trilha a11y — login / home / player', () => {
       }),
     ).toHaveAttribute('target', '_blank')
     expect(screen.getByRole('button', { name: /continuar/i })).toBeEnabled()
+    expect(screen.getByRole('button', { name: /ver histórico/i })).toBeInTheDocument()
   })
 
   it('home loading: anuncia estado busy com texto para leitores de ecrã', () => {
@@ -92,7 +95,7 @@ describe('Trilha a11y — login / home / player', () => {
         stageNumber={1}
         questionNumber={1}
         progressRatio={null}
-        status="not_started"
+        statusLabel="—"
         canContinue={false}
         loadState="loading"
         onContinue={noop}
@@ -117,7 +120,10 @@ describe('Trilha a11y — login / home / player', () => {
         stageType="exercise"
         title="Questão de leitura"
         body="Qual a resposta?"
-        options={['A', 'B']}
+        options={[
+          { key: 'A', label: 'A) Opção A' },
+          { key: 'B', label: 'B) Opção B' },
+        ]}
         nextAction="await_answer"
         submitting={false}
         answerValue=""
@@ -135,10 +141,10 @@ describe('Trilha a11y — login / home / player', () => {
     expect(screen.getByRole('button', { name: /voltar/i })).toBeInTheDocument()
 
     const group = screen.getByRole('group', { name: /escolha uma opção/i })
-    expect(within(group).getByLabelText('A')).toBeInTheDocument()
-    expect(within(group).getByLabelText('B')).toBeInTheDocument()
+    expect(within(group).getByLabelText(/opção a/i)).toBeInTheDocument()
+    expect(within(group).getByLabelText(/opção b/i)).toBeInTheDocument()
 
-    await user.click(within(group).getByLabelText('A'))
+    await user.click(within(group).getByLabelText(/opção a/i))
   })
 
   it('player: conflito usa role=status; loading anuncia', () => {

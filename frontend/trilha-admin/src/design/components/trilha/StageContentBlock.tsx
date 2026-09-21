@@ -1,3 +1,5 @@
+import { SafeMarkdown } from './SafeMarkdown'
+
 export type StageContentBlockProps = {
   title?: string | null
   body: string
@@ -18,9 +20,7 @@ export function StageContentBlock({
         <p className="trilha-content__ai-hint">Atividade com IA</p>
       ) : null}
       <div className="trilha-content__body">
-        {body.split(/\n{2,}/).map((para, i) => (
-          <p key={i}>{para}</p>
-        ))}
+        <SafeMarkdown text={body} />
       </div>
     </article>
   )

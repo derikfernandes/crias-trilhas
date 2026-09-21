@@ -6,11 +6,11 @@ import {
   advanceWithConflictHandling,
   fetchNextContent,
   fetchTrilhaHome,
-  normalizeOptions,
   submitExercise,
   TrilhaApiError,
   type TrilhaNextContent,
 } from '../../lib/trilha/trilhaApi'
+import { resolveExerciseOptions } from '../../lib/trilha/exerciseOptions'
 import {
   clearTrilhaSession,
   loadTrilhaSession,
@@ -236,10 +236,18 @@ export function TrilhaPlayerPage() {
   }
 
   const stageType = mapStageType(content?.stage_type ?? 'fixed')
-  const body =
+  const rawBody =
     content?.content?.trim() ||
     content?.prompt?.trim() ||
     'Conteúdo indisponível neste passo.'
+  const resolved =
+    content?.next_action === 'await_answer'
+      ? resolveExerciseOptions(content?.content ?? content?.prompt, content?.options)
+      : { options: null, displayBody: rawBody }
+  const body =
+    content?.next_action === 'await_answer'
+      ? resolved.displayBody || rawBody
+      : rawBody
 
   return (
     <StudentShellView
@@ -252,7 +260,7 @@ export function TrilhaPlayerPage() {
         stageType={stageType}
         title={content?.title ?? undefined}
         body={body}
-        options={normalizeOptions(content?.options ?? null)}
+        options={resolved.options}
         nextAction={content?.next_action ?? 'deliver_content'}
         submitting={submitting}
         answerValue={answerValue}
@@ -264,6 +272,7 @@ export function TrilhaPlayerPage() {
         onSubmitAnswer={() => void handleSubmitAnswer()}
         onBack={() => navigate('/trilha')}
         onRetry={() => void load()}
+        onOpenHistory={() => navigate('/trilha/historico')}
       />
     </StudentShellView>
   )

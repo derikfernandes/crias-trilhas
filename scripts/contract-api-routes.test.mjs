@@ -54,6 +54,10 @@ const CRITICAL_REWRITES = [
     destination: '/api/student_trails?facade=submit-exercise',
   },
   {
+    source: '/student_trails/history',
+    destination: '/api/student_trails?facade=history',
+  },
+  {
     source: '/trilha/auth',
     destination: '/api/trilha_auth',
   },

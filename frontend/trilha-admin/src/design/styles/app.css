@@ -5615,6 +5615,15 @@
   color: var(--sidebar-active-text);
 }
 
+.student-shell__nav-dot {
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 2px;
+  background: currentColor;
+  opacity: 0.85;
+  flex-shrink: 0;
+}
+
 .student-shell__rail-foot {
   margin-top: auto;
   display: flex;
@@ -5735,6 +5744,11 @@
   font-weight: 600;
 }
 
+.trilha-home__history {
+  margin-top: 0.75rem;
+  min-height: 44px;
+}
+
 .trilha-progress {
   margin-bottom: 1.5rem;
 }
@@ -5776,10 +5790,15 @@
 
 .trilha-player__chrome {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 1rem;
+  gap: 0.75rem 1rem;
   margin-bottom: 1.25rem;
+}
+
+.trilha-player__history {
+  margin-left: auto;
 }
 
 .trilha-player__pos {
@@ -5839,6 +5858,102 @@
 
 .trilha-content__body p:last-child {
   margin-bottom: 0;
+}
+
+.trilha-md__code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.92em;
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+  background: var(--surface-muted);
+}
+
+.trilha-content__body strong {
+  font-weight: 700;
+  color: var(--text-h);
+}
+
+.trilha-content__body em {
+  font-style: italic;
+}
+
+.trilha-history__chrome {
+  margin-bottom: 0.75rem;
+}
+
+.trilha-history__heading {
+  margin: 0 0 0.35rem;
+  color: var(--text-h);
+  font-size: clamp(1.5rem, 3vw, 1.9rem);
+  letter-spacing: -0.02em;
+}
+
+.trilha-history__lead {
+  margin: 0 0 1.25rem;
+}
+
+.trilha-history__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.trilha-history__item {
+  padding-bottom: 1.25rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.trilha-history__item:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.trilha-history__item-head {
+  margin-bottom: 0.65rem;
+}
+
+.trilha-history__pos {
+  margin: 0 0 0.25rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.trilha-history__item-title {
+  margin: 0;
+  font-size: 1.05rem;
+  color: var(--text-h);
+}
+
+.trilha-history__body {
+  margin-bottom: 0.65rem;
+}
+
+.trilha-history__answer {
+  margin: 0;
+  padding: 0.65rem 0.75rem;
+  border-radius: 8px;
+  background: var(--surface-muted);
+  color: var(--text-h);
+  font-size: 0.95rem;
+}
+
+.trilha-history__answer-label {
+  font-weight: 700;
+}
+
+.trilha-history__badge {
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  opacity: 0.85;
+}
+
+.trilha-history__badge--ok {
+  color: var(--sidebar-bg, #1b5e3b);
 }
 
 .trilha-exercise {

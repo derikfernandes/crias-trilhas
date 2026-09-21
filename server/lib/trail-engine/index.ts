@@ -42,6 +42,9 @@ export type { TrailEngineErrorCode } from './errors'
 
 export { decideNextAction, getNextContent } from './getNextContent'
 
+export { getTrailHistory } from './getHistory'
+export type { HistoryItem, TrailHistoryResult } from './getHistory'
+
 export { getStatus } from './getStatus'
 
 export { buildStableIdempotencyKey } from './idempotencyKey'
