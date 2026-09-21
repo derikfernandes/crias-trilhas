@@ -83,10 +83,10 @@ export async function resolveStudentByPhone(
   }
 
   if (options?.requireActive && !picked.active) {
+    // Sem student_id em details — evita oráculo de enumeração (RT-H3).
     throw new TrailEngineError(
       'inactive_student',
-      `Aluno "${picked.id}" está inativo.`,
-      { student_id: picked.id },
+      'Aluno inactivo ou indisponível para este telefone.',
     )
   }
 

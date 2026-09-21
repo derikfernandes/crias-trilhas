@@ -349,6 +349,33 @@ export async function advance(
           ),
         }
       }
+      // RT-M4: teto vs totais da trilha (evita estados impossíveis 999999).
+      let bounds: { total_stages: number; total_questions: number }
+      try {
+        bounds = await loadTrailTotals(db, trailId, collections, tx)
+      } catch (e) {
+        if (e instanceof TrailEngineError) {
+          return { kind: 'error', error: e }
+        }
+        throw e
+      }
+      const maxStage = Math.max(1, bounds.total_stages)
+      const maxQuestion = Math.max(1, bounds.total_questions)
+      if (nextStage > maxStage || nextQuestion > maxQuestion) {
+        return {
+          kind: 'error',
+          error: new TrailEngineError(
+            'invalid_payload',
+            `Posição fora dos bounds da trilha (stage 1..${maxStage}, question 1..${maxQuestion}).`,
+            {
+              max_stage: maxStage,
+              max_question: maxQuestion,
+              requested_stage: nextStage,
+              requested_question: nextQuestion,
+            },
+          ),
+        }
+      }
       computed = {
         next_stage_number: nextStage,
         next_question_number: nextQuestion,

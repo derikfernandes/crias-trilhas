@@ -4,6 +4,9 @@ import { FieldValue, getFirestore } from 'firebase-admin/firestore'
 import {
   resolveStudentByPhoneSoft,
   toCanonicalPhone,
+  assertServiceBearer,
+  isTrailEngineError,
+  trailEngineErrorToJson,
 } from '../server/lib/trail-engine'
 
 type Json = Record<string, unknown>
@@ -199,6 +202,16 @@ async function handleRequest(request: Request): Promise<Response> {
           ...corsHeaders(),
         },
       })
+    }
+
+    // RT-H2/H3: API student exige service Bearer (lista/PII/phone).
+    try {
+      assertServiceBearer(request.headers)
+    } catch (e) {
+      if (isTrailEngineError(e)) {
+        return respond(e.httpStatus, trailEngineErrorToJson(e) as Json)
+      }
+      throw e
     }
 
     const q = url.searchParams

@@ -1,4 +1,8 @@
 // Arquivo: firestore.rules
+// Wave B / Ciclo 3 Red Team (I8 / ADR-008):
+// - Progresso do aluno NÃO é writable no Client SDK (só Admin SDK / API).
+// - Logs/attempts: write só via API.
+// - Leituras sensíveis exigem Firebase Auth (painel admin).
 
 rules_version = '2';
 service cloud.firestore {
@@ -9,61 +13,66 @@ service cloud.firestore {
     }
 
     match /institutions/{institutionId} {
-      allow read, write: if true;
+      allow read: if signedIn();
+      allow write: if signedIn();
     }
 
-    // RT-C2 / H2: sem write anónimo. Admin Auth continua a poder ler/escrever
-    // cadastro; progresso curricular NÃO passa por aqui.
     match /students/{studentId} {
-      allow read, write: if signedIn();
+      allow read: if signedIn();
+      allow write: if signedIn();
     }
 
     match /trails/{trailId} {
-      allow read: if true;
-      allow create: if true;
-      // Não permite re-vincular trilha para outra instituição via client SDK.
-      allow update: if request.resource.data.institution_id == resource.data.institution_id;
-      // Exclusão de trilhas deve ocorrer no backend com cascade seguro.
+      allow read: if signedIn();
+      allow create: if signedIn();
+      allow update: if signedIn()
+        && request.resource.data.institution_id == resource.data.institution_id;
       allow delete: if false;
     }
 
     match /trail_stages/{trailStageId} {
-      allow read, write: if signedIn();
+      allow read: if signedIn();
+      allow write: if signedIn();
     }
 
     match /trail_stage_questions/{questionId} {
-      allow read, write: if signedIn();
+      allow read: if signedIn();
+      allow write: if signedIn();
     }
 
     // RT-C2 / ADR-008: progresso só via Admin SDK (API/motor).
-    // Client SDK: leitura admin (signedIn); writes de progresso proibidos.
     match /student_trails/{studentTrailId} {
       allow read: if signedIn();
       allow write: if false;
     }
 
     match /conversation_logs/{logId} {
-      allow read, write: if signedIn();
+      allow read: if signedIn();
+      allow write: if false;
     }
 
     match /exercise_attempts/{attemptId} {
+      allow read: if signedIn();
+      allow write: if false;
+    }
+
+    match /admin_users/{userId} {
+      allow read: if signedIn();
+      allow write: if signedIn();
+    }
+
+    match /counters/institutions {
+      allow read, write: if signedIn();
+    }
+    match /counters/students {
+      allow read, write: if signedIn();
+    }
+    match /counters/trails {
       allow read, write: if signedIn();
     }
 
-    // Permissões por login (painel /admin)
-    match /admin_users/{userId} {
-      allow read, write: if true;
-    }
-
-    // Contadores para IDs sequenciais
-    match /counters/institutions {
-      allow read, write: if true;
-    }
-    match /counters/students {
-      allow read, write: if true;
-    }
-    match /counters/trails {
-      allow read, write: if true;
+    match /idempotency_keys/{keyId} {
+      allow read, write: if false;
     }
 
     match /{document=**} {

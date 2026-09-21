@@ -15,7 +15,7 @@ export type TrailEngineErrorCode = (typeof TRAIL_ENGINE_ERROR_CODES)[number]
 
 const STATUS_BY_CODE: Record<TrailEngineErrorCode, number> = {
   not_found: 404,
-  inactive_student: 409,
+  inactive_student: 404,
   inactive_trail: 409,
   blocked: 409,
   completed: 409,

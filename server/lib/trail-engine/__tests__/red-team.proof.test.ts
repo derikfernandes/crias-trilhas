@@ -1,11 +1,8 @@
 /**
  * Ciclo 3 Red Team — provas pós-fix (PASS = seguro / fix presente).
  *
- * Invertido face a PR #49 (onde PASS = bug). Se alguém reverter o harden
- * de d73b4e3, estes testes FALHAM.
- *
- * Resíduos High/Med ainda abertos estão em describe `RESIDUAL OPEN`
- * (PASS enquanto o buraco existir — documentam dívida conhecida).
+ * Invertido face a PR #49 (onde PASS = bug). Criticals + High H1–H3 + Med M2–M4
+ * fechados; H4/U1 e M5 (Wave C) + M1 residual service/WA documentados.
  *
  * Ver: internal/cycle3-red-team.md · internal/cycle3-red-team-reqa.md
  */
@@ -180,60 +177,53 @@ describe('RT-H3 PARTIAL FIX: login trilha_auth uniforme (sem oráculo 404/409)',
 })
 
 /* -------------------------------------------------------------------------- */
-/* RESIDUAL OPEN — documentam buracos ainda presentes (PASS = buraco existe)  */
+/* FIX High/Med — PASS = seguro                                               */
 /* -------------------------------------------------------------------------- */
 
-describe('RESIDUAL OPEN RT-H2: APIs satélite sem auth (exercise/logs/student list)', () => {
-  it('exercise_attempts e conversation_logs ainda sem gate Bearer/AuthZ', () => {
+describe('RT-H2 HIGH FIX: APIs satélite com Bearer', () => {
+  it('exercise_attempts e conversation_logs exigem assertServiceBearer', () => {
     for (const file of [
       'api/exercise_attempts.ts',
       'api/conversation_logs.ts',
     ]) {
       const src = readFileSync(join(ROOT, file), 'utf8')
-      expect(src).not.toMatch(
-        /assertServiceBearer|requireFacadeAuth|authorizeStudentResource/,
-      )
+      expect(src).toMatch(/assertServiceBearer/)
     }
   })
 
-  it('GET /api/student lista todos sem Authorization', () => {
+  it('GET /api/student exige Authorization Bearer', () => {
     const src = readFileSync(join(ROOT, 'api/student.ts'), 'utf8')
     expect(src).toContain('db.collection(collection).get()')
-    expect(src).not.toMatch(/assertServiceBearer|authorizeStudentResource/)
+    expect(src).toMatch(/assertServiceBearer/)
   })
 })
 
-describe('RESIDUAL OPEN RT-H3 engine: resolveStudent ainda embute student_id em inactive', () => {
-  it('inactive_student inclui student_id em details (oráculo residual no motor)', () => {
+describe('RT-H3 HIGH FIX: resolveStudent sem leak student_id / enum 409', () => {
+  it('inactive_student NÃO inclui student_id em details', () => {
     const src = readFileSync(
       join(ROOT, 'server/lib/trail-engine/resolveStudent.ts'),
       'utf8',
     )
+    // Throw inactive: só code + message (sem 3º arg details).
     expect(src).toMatch(
-      /inactive_student[\s\S]{0,200}student_id:\s*picked\.id/,
+      /TrailEngineError\(\s*['"]inactive_student['"],\s*['"][^'"]+['"],\s*\)/,
+    )
+    expect(src).not.toMatch(
+      /TrailEngineError\(\s*['"]inactive_student['"],\s*[^,]+,\s*\{[\s\S]*?student_id/,
     )
   })
 
-  it('códigos de erro do motor ainda distintos (404 vs 409) — callers não-trilha_auth', () => {
+  it('not_found e inactive partilham 404 (sem oráculo 409)', () => {
     const nf = new TrailEngineError('not_found', 'miss')
-    const ina = new TrailEngineError('inactive_student', 'off', {
-      student_id: 's99',
-    })
+    const ina = new TrailEngineError('inactive_student', 'off')
     expect(nf.httpStatus).toBe(404)
-    expect(ina.httpStatus).toBe(409)
-    expect(ina.details?.student_id).toBe('s99')
+    expect(ina.httpStatus).toBe(404)
+    expect(ina.details?.student_id).toBeUndefined()
   })
 })
 
-describe('RESIDUAL OPEN RT-H4 U1: login telefone sem OTP', () => {
-  it('trilha_auth documenta ausência de OTP (risco aceite v1)', () => {
-    const src = readFileSync(join(ROOT, 'api/trilha_auth.ts'), 'utf8')
-    expect(src).toMatch(/sem OTP|RT-H4|U1/)
-  })
-})
-
-describe('RESIDUAL OPEN RT-C2 satellite: logs/attempts write se signedIn (não dono)', () => {
-  it('conversation_logs / exercise_attempts ainda allow write se signedIn()', () => {
+describe('RT-C2 satellite FIX: logs/attempts write: if false', () => {
+  it('conversation_logs / exercise_attempts negam write no Client SDK', () => {
     const rules = readFileSync(join(ROOT, 'firestore.rules'), 'utf8')
     for (const re of [
       /match \/conversation_logs\/\{logId\} \{[\s\S]*?\n    \}/,
@@ -241,16 +231,34 @@ describe('RESIDUAL OPEN RT-C2 satellite: logs/attempts write se signedIn (não d
     ]) {
       const block = rules.match(re)?.[0]
       expect(block).toBeTruthy()
-      expect(block!).toMatch(/allow read, write: if signedIn\(\);/)
+      expect(block!).toMatch(/allow write: if false;/)
+      expect(block!).not.toMatch(/allow read, write: if signedIn\(\);/)
     }
   })
 })
 
-describe('RESIDUAL OPEN RT-M1: duas Idempotency-Keys → double advance (I7)', () => {
-  let mem: ReturnType<typeof createMemoryFirestore>
+describe('RT-M4 MED FIX: update_position com bounds vs totais', () => {
+  it('motor valida max_stage / max_question em legacy_update_position', () => {
+    const src = readFileSync(
+      join(ROOT, 'server/lib/trail-engine/advance.ts'),
+      'utf8',
+    )
+    expect(src).toMatch(
+      /legacy_update_position[\s\S]*?loadTrailTotals[\s\S]*?(max_stage|maxStage)/,
+    )
+  })
 
-  beforeEach(() => {
-    mem = createMemoryFirestore()
+  it('API update_position documenta bounds no motor', () => {
+    const src = readFileSync(join(ROOT, 'api/student_trails.ts'), 'utf8')
+    const idx = src.indexOf("if (action === 'update_position')")
+    expect(idx).toBeGreaterThan(-1)
+    const slice = src.slice(idx, idx + 1600)
+    expect(slice).toMatch(/parsedStage|current_stage_number/)
+    expect(slice).toMatch(/bounds|max_stage|loadTrailTotals/)
+  })
+
+  it('advance rejeita stage/question acima do teto da trilha', async () => {
+    const mem = createMemoryFirestore()
     mem.seed('trails', 't1', {
       institution_id: 'i1',
       default_total_steps_per_stage: 8,
@@ -270,41 +278,56 @@ describe('RESIDUAL OPEN RT-M1: duas Idempotency-Keys → double advance (I7)', (
       progress_version: 0,
       last_idempotency_key: null,
     })
+    await expect(
+      advance(
+        mem.db,
+        {
+          student_id: 's1',
+          trail_id: 't1',
+          idempotency_key: 'admin:s1:t1:update_position:overflow',
+          channel: 'admin',
+          reason: 'legacy_update_position',
+          set_stage: 999999,
+          set_question: 999999,
+        },
+        COLLECTIONS,
+      ),
+    ).rejects.toMatchObject({ code: 'invalid_payload' })
   })
+})
 
-  it('double-tap com UUIDs diferentes (sem expected_version) avança 2×', async () => {
-    const a = await advance(
-      mem.db,
-      {
-        student_id: 's1',
-        trail_id: 't1',
-        idempotency_key: 'app:s1:t1:advance:2:1:uuid-A',
-        channel: 'app',
-        reason: 'delivered',
-      },
-      COLLECTIONS,
+describe('RT-M1 MED FIX parcial: sessão aluno exige expected_version', () => {
+  it('fachada advance/submit exige expected_version para principal student', () => {
+    const src = readFileSync(join(ROOT, 'api/student_trails.ts'), 'utf8')
+    expect(src).toMatch(
+      /principal\.kind === ['"]student['"][\s\S]{0,120}expected_version|expectedVersion === undefined/,
     )
-    const b = await advance(
-      mem.db,
-      {
-        student_id: 's1',
-        trail_id: 't1',
-        idempotency_key: 'app:s1:t1:advance:2:1:uuid-B',
-        channel: 'app',
-        reason: 'delivered',
-      },
-      COLLECTIONS,
-    )
-    expect(a.status).toBe('ok')
-    expect(b.status).toBe('ok')
-    expect(a.next_stage_number).toBe(3)
-    expect(b.next_stage_number).toBe(4)
-    expect(mem.getData('student_trails', 's1_trail_t1')?.progress_version).toBe(
-      2,
+    expect(src).toMatch(
+      /expected_version é obrigatório para sessão aluno/,
     )
   })
 
-  it('expected_version no 2º pedido bloqueia o double-tap (mitigação FE)', async () => {
+  it('expected_version no 2º pedido bloqueia o double-tap (mitigação FE/API)', async () => {
+    const mem = createMemoryFirestore()
+    mem.seed('trails', 't1', {
+      institution_id: 'i1',
+      default_total_steps_per_stage: 8,
+    })
+    mem.seed('trail_stage_questions', 't1_stage_1_q_10', {
+      trail_id: 't1',
+      stage_number: 1,
+      question_number: 10,
+    })
+    mem.seed('student_trails', 's1_trail_t1', {
+      student_id: 's1',
+      institution_id: 'i1',
+      trail_id: 't1',
+      current_stage_number: 2,
+      current_question_number: 1,
+      status: 'in_progress',
+      progress_version: 0,
+      last_idempotency_key: null,
+    })
     await advance(
       mem.db,
       {
@@ -334,14 +357,66 @@ describe('RESIDUAL OPEN RT-M1: duas Idempotency-Keys → double advance (I7)', (
   })
 })
 
-describe('RESIDUAL OPEN RT-M4: update_position sem bounds vs totais da trilha', () => {
-  it('PUT update_position aceita stage/question sem validar teto da trilha', () => {
-    const src = readFileSync(join(ROOT, 'api/student_trails.ts'), 'utf8')
-    const idx = src.indexOf("if (action === 'update_position')")
-    expect(idx).toBeGreaterThan(-1)
-    const slice = src.slice(idx, idx + 1200)
-    expect(slice).toMatch(/parsedStage|current_stage_number/)
-    expect(slice).not.toMatch(/total_stages|max_stage|bounds|ceil/)
+/* -------------------------------------------------------------------------- */
+/* RESIDUAL OPEN — dívida conhecida (PASS = residual documentado)             */
+/* -------------------------------------------------------------------------- */
+
+describe('RESIDUAL OPEN RT-H4 U1: login telefone sem OTP', () => {
+  it('trilha_auth documenta ausência de OTP (risco aceite v1)', () => {
+    const src = readFileSync(join(ROOT, 'api/trilha_auth.ts'), 'utf8')
+    expect(src).toMatch(/sem OTP|RT-H4|U1/)
+  })
+})
+
+describe('RESIDUAL OPEN RT-M1 service: sem expected_version ainda double-advance', () => {
+  it('motor sem expected_version (path service/WA) ainda permite 2 keys → +2', async () => {
+    const mem = createMemoryFirestore()
+    mem.seed('trails', 't1', {
+      institution_id: 'i1',
+      default_total_steps_per_stage: 8,
+    })
+    mem.seed('trail_stage_questions', 't1_stage_1_q_10', {
+      trail_id: 't1',
+      stage_number: 1,
+      question_number: 10,
+    })
+    mem.seed('student_trails', 's1_trail_t1', {
+      student_id: 's1',
+      institution_id: 'i1',
+      trail_id: 't1',
+      current_stage_number: 2,
+      current_question_number: 1,
+      status: 'in_progress',
+      progress_version: 0,
+      last_idempotency_key: null,
+    })
+    const a = await advance(
+      mem.db,
+      {
+        student_id: 's1',
+        trail_id: 't1',
+        idempotency_key: 'wa:s1:t1:advance:2:1:uuid-A',
+        channel: 'whatsapp',
+        reason: 'delivered',
+      },
+      COLLECTIONS,
+    )
+    const b = await advance(
+      mem.db,
+      {
+        student_id: 's1',
+        trail_id: 't1',
+        idempotency_key: 'wa:s1:t1:advance:2:1:uuid-B',
+        channel: 'whatsapp',
+        reason: 'delivered',
+      },
+      COLLECTIONS,
+    )
+    expect(a.status).toBe('ok')
+    expect(b.status).toBe('ok')
+    expect(mem.getData('student_trails', 's1_trail_t1')?.progress_version).toBe(
+      2,
+    )
   })
 })
 

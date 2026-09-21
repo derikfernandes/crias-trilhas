@@ -518,7 +518,10 @@ async function handleRequest(request: Request): Promise<Response> {
         const content = await getNextContent(db, {
           student_id: qStudentId,
           trail_id: qTrailId,
-          channel: parseChannel(url.searchParams.get('channel')) ?? undefined,
+          channel: resolveMutationChannel(
+            request,
+            parseChannel(url.searchParams.get('channel')),
+          ),
         })
         return jsonResponse(content as Json, {
           status: 200,
@@ -623,6 +626,18 @@ async function handleRequest(request: Request): Promise<Response> {
           error: 'Header Idempotency-Key (ou body.idempotency_key) é obrigatório.',
         })
       }
+      // RT-M1: sessão aluno exige expected_version (mitiga double-key / double-tap).
+      if (
+        authz.principal.kind === 'student' &&
+        expectedVersion === undefined
+      ) {
+        return respond(400, {
+          status: 'error',
+          code: 'invalid_payload',
+          error:
+            'expected_version é obrigatório para sessão aluno (optimistic lock).',
+        })
+      }
 
       try {
         const result = await engineAdvance(db, {
@@ -698,6 +713,18 @@ async function handleRequest(request: Request): Promise<Response> {
           code: 'invalid_payload',
           error:
             'Idempotency-Key, student_answer, stage_number e question_number são obrigatórios.',
+        })
+      }
+      // RT-M1: sessão aluno exige expected_version.
+      if (
+        authz.principal.kind === 'student' &&
+        expectedVersion === undefined
+      ) {
+        return respond(400, {
+          status: 'error',
+          code: 'invalid_payload',
+          error:
+            'expected_version é obrigatório para sessão aluno (optimistic lock).',
         })
       }
 
@@ -1076,6 +1103,8 @@ async function handleRequest(request: Request): Promise<Response> {
           })
         }
 
+        // RT-M4: bounds vs totais da trilha aplicados no motor (loadTrailTotals /
+        // max_stage / max_question). API só valida mínimos; teto no advance().
         try {
           const pos = await updateStudentTrailPosition(
             db,
