@@ -19,4 +19,12 @@ describe('SafeMarkdown', () => {
     expect(screen.getByText('ok').tagName).toBe('STRONG')
     expect(document.querySelector('img')).toBeNull()
   })
+
+  it('modo inline não envolve em <p>', () => {
+    const { container } = render(
+      <SafeMarkdown text="**formas geométricas**" inline />,
+    )
+    expect(screen.getByText('formas geométricas').tagName).toBe('STRONG')
+    expect(container.querySelector('p')).toBeNull()
+  })
 })

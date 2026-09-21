@@ -62,6 +62,18 @@ function renderParagraph(para: string, key: string): ReactNode {
   return createElement('p', { key }, children)
 }
 
+export function renderSafeMarkdownInline(source: string): ReactNode {
+  const text = source.replace(/\r\n/g, '\n').trim()
+  if (!text) return null
+  const lines = text.split(/\n/)
+  const children: ReactNode[] = []
+  lines.forEach((line, i) => {
+    if (i > 0) children.push(createElement('br', { key: `ibr-${i}` }))
+    children.push(...renderSegs(parseInline(line), `iL${i}`))
+  })
+  return createElement(Fragment, null, children)
+}
+
 export function renderSafeMarkdown(source: string): ReactNode {
   const text = source.replace(/\r\n/g, '\n').trim()
   if (!text) return null
@@ -73,6 +85,13 @@ export function renderSafeMarkdown(source: string): ReactNode {
   )
 }
 
-export function SafeMarkdown({ text }: { text: string }) {
-  return <>{renderSafeMarkdown(text)}</>
+export function SafeMarkdown({
+  text,
+  inline = false,
+}: {
+  text: string
+  /** Sem `<p>` — para título / resposta dentro de heading ou parágrafo. */
+  inline?: boolean
+}) {
+  return <>{inline ? renderSafeMarkdownInline(text) : renderSafeMarkdown(text)}</>
 }

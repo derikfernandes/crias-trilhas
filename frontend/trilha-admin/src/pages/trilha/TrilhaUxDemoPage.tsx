@@ -23,7 +23,7 @@ export function TrilhaUxDemoPage() {
               stageNumber: 1,
               questionNumber: 76,
               stageType: 'fixed',
-              title: 'Contextualização',
+              title: '**Contextualização**',
               body: '🗣️ *Contextualização*\n\nVamos falar de **formas geométricas** e o que já vimos.',
               studentAnswer: null,
               isCorrect: null,
@@ -34,7 +34,7 @@ export function TrilhaUxDemoPage() {
               stageType: 'exercise',
               title: 'Exercício',
               body: 'Qual elemento?',
-              studentAnswer: 'A',
+              studentAnswer: '**A**',
               isCorrect: true,
             },
           ]}

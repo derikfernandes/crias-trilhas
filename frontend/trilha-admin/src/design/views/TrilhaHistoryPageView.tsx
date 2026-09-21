@@ -103,7 +103,9 @@ export function TrilhaHistoryPageView({
                     ) : null}
                   </p>
                   {item.title ? (
-                    <h2 className="trilha-history__item-title">{item.title}</h2>
+                    <h2 className="trilha-history__item-title">
+                      <SafeMarkdown text={item.title} inline />
+                    </h2>
                   ) : null}
                 </header>
                 <div className="trilha-content__body trilha-history__body">
@@ -114,7 +116,7 @@ export function TrilhaHistoryPageView({
                     <span className="trilha-history__answer-label">
                       Sua resposta:
                     </span>{' '}
-                    {item.studentAnswer}
+                    <SafeMarkdown text={item.studentAnswer} inline />
                     {item.isCorrect === true ? (
                       <span className="trilha-history__badge trilha-history__badge--ok">
                         {' '}

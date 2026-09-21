@@ -5927,6 +5927,11 @@
   color: var(--text-h);
 }
 
+.trilha-history__item-title p {
+  margin: 0;
+  display: inline;
+}
+
 .trilha-history__body {
   margin-bottom: 0.65rem;
 }
@@ -5938,6 +5943,17 @@
   background: var(--surface-muted);
   color: var(--text-h);
   font-size: 0.95rem;
+}
+
+.trilha-history__answer strong,
+.trilha-history__item-title strong {
+  font-weight: 700;
+  color: var(--text-h);
+}
+
+.trilha-history__answer em,
+.trilha-history__item-title em {
+  font-style: italic;
 }
 
 .trilha-history__answer-label {
