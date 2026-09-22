@@ -16,14 +16,17 @@ function parseInline(text: string): Seg[] {
   const segs: Seg[] = []
   let last = 0
   let m: RegExpExecArray | null
-  const re = /(\*\*([^*]+)\*\*|\*([^*\n]+)\*|`([^`\n]+)`)/g
+  // WhatsApp: *negrito*; GitHub: **negrito**; _itálico_; `código`
+  const re =
+    /(\*\*([^*]+)\*\*|\*([^*\n]+)\*|_([^_\n]+)_|`([^`\n]+)`)/g
   while ((m = re.exec(text)) !== null) {
     if (m.index > last) {
       segs.push({ kind: 'text', value: text.slice(last, m.index) })
     }
     if (m[2] != null) segs.push({ kind: 'bold', value: m[2] })
-    else if (m[3] != null) segs.push({ kind: 'italic', value: m[3] })
-    else if (m[4] != null) segs.push({ kind: 'code', value: m[4] })
+    else if (m[3] != null) segs.push({ kind: 'bold', value: m[3] })
+    else if (m[4] != null) segs.push({ kind: 'italic', value: m[4] })
+    else if (m[5] != null) segs.push({ kind: 'code', value: m[5] })
     last = m.index + m[0].length
   }
   if (last < text.length) {

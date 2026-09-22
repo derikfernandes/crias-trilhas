@@ -59,6 +59,8 @@ export type ResolvedStudent = {
   matched_variant: string
 }
 
+export type NextContentSource = 'persisted_delivery' | 'curriculum' | 'none'
+
 export type NextContentResult = {
   status: 'ok' | 'blocked' | 'completed' | 'await_release'
   student_id: string
@@ -68,6 +70,8 @@ export type NextContentResult = {
   stage_type: StageType | null
   prompt: string | null
   content: string | null
+  /** De onde veio `content` (paridade WA: preferir `persisted_delivery`). */
+  content_source: NextContentSource
   options: unknown
   explanation: string | null
   is_released: boolean

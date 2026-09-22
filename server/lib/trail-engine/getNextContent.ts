@@ -2,6 +2,10 @@ import type { Firestore } from 'firebase-admin/firestore'
 
 import { questionDocId, requireEnrollment, stageDocId } from './enrollment'
 import { TrailEngineError } from './errors'
+import {
+  resolvePersistedDeliveryText,
+  resolveStepDisplayBody,
+} from './resolvePersistedDelivery'
 import type {
   CollectionNames,
   NextContentResult,
@@ -64,6 +68,7 @@ export async function getNextContent(
       stage_type: null,
       prompt: null,
       content: null,
+      content_source: 'none',
       options: null,
       explanation: null,
       is_released: false,
@@ -83,6 +88,7 @@ export async function getNextContent(
       stage_type: null,
       prompt: null,
       content: null,
+      content_source: 'none',
       options: null,
       explanation: null,
       is_released: false,
@@ -125,8 +131,24 @@ export async function getNextContent(
         ? questionData.title
         : null
 
-  const content =
+  const curriculumContent =
     typeof questionData?.content === 'string' ? questionData.content : null
+  const persistedDelivery = await resolvePersistedDeliveryText(
+    db,
+    {
+      student_id: studentId,
+      trail_id: trailId,
+      stage_number: stageNumber,
+      question_number: questionNumber,
+    },
+    collections,
+  )
+  const resolvedBody = resolveStepDisplayBody({
+    stage_type,
+    curriculum_content: curriculumContent,
+    persisted_delivery: persistedDelivery,
+  })
+  const content = resolvedBody.body
   const options = questionData?.options ?? null
   const explanation =
     typeof questionData?.explanation === 'string'
@@ -165,6 +187,7 @@ export async function getNextContent(
     stage_type,
     prompt,
     content,
+    content_source: resolvedBody.source,
     options,
     explanation,
     is_released,

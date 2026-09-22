@@ -42,6 +42,12 @@ export type { TrailEngineErrorCode } from './errors'
 
 export { decideNextAction, getNextContent } from './getNextContent'
 
+export {
+  resolvePersistedDeliveryText,
+  resolveStepDisplayBody,
+} from './resolvePersistedDelivery'
+export type { ResolvedStepBody } from './resolvePersistedDelivery'
+
 export { getTrailHistory } from './getHistory'
 export type { HistoryItem, TrailHistoryResult } from './getHistory'
 

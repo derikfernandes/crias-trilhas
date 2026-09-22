@@ -149,6 +149,7 @@ export type TrilhaNextContent = {
   stage_type: 'fixed' | 'exercise' | 'ai' | null
   prompt: string | null
   content: string | null
+  content_source?: 'persisted_delivery' | 'curriculum' | 'none'
   options: unknown
   explanation: string | null
   is_released: boolean

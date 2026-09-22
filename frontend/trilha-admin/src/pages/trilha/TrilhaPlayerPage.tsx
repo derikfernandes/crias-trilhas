@@ -277,10 +277,18 @@ export function TrilhaPlayerPage() {
   }
 
   const stageType = mapStageType(content?.stage_type ?? 'fixed')
-  const rawBody =
-    content?.content?.trim() ||
-    content?.prompt?.trim() ||
-    'Conteúdo indisponível neste passo.'
+  const rawBody = (() => {
+    const delivered = content?.content?.trim()
+    if (delivered) return delivered
+    if (
+      stageType === 'ai' &&
+      content?.content_source !== 'curriculum' &&
+      content?.next_action === 'deliver_content'
+    ) {
+      return 'Esta atividade com IA ainda não foi entregue neste canal. Se já a viu no WhatsApp, atualize a página; caso contrário, use o WhatsApp ou aguarde a geração ao continuar.'
+    }
+    return content?.prompt?.trim() || 'Conteúdo indisponível neste passo.'
+  })()
   const resolved =
     content?.next_action === 'await_answer'
       ? resolveExerciseOptions(content?.content ?? content?.prompt, content?.options)

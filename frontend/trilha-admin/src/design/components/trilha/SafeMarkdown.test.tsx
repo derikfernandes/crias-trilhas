@@ -4,13 +4,18 @@ import { render, screen } from '@testing-library/react'
 import { SafeMarkdown } from './SafeMarkdown'
 
 describe('SafeMarkdown', () => {
-  it('renderiza negrito e itálico sem HTML cru', () => {
+  it('renderiza negrito estilo WA e GitHub sem HTML cru', () => {
     render(
       <SafeMarkdown text="Veja *formas geométricas* e **destaque**." />,
     )
-    expect(screen.getByText('formas geométricas').tagName).toBe('EM')
+    expect(screen.getByText('formas geométricas').tagName).toBe('STRONG')
     expect(screen.getByText('destaque').tagName).toBe('STRONG')
     expect(document.body.innerHTML).not.toMatch(/<script/i)
+  })
+
+  it('renderiza _itálico_ estilo WA', () => {
+    render(<SafeMarkdown text="Palavra _enfatizada_ aqui." />)
+    expect(screen.getByText('enfatizada').tagName).toBe('EM')
   })
 
   it('não interpreta tags HTML como markup', () => {
