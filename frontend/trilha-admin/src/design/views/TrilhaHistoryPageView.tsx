@@ -1,7 +1,10 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { ListPager } from '../components/trilha/ListPager'
 import { SafeMarkdown } from '../components/trilha/SafeMarkdown'
 import { TrilhaEmptyState } from '../components/trilha/TrilhaEmptyState'
 import { TrilhaErrorBanner } from '../components/trilha/TrilhaErrorBanner'
+import { WaSyncBadge } from '../components/trilha/WaSyncBadge'
+import { paginateList } from '../../lib/trilha/listPagination'
 
 export type HistoryListItem = {
   stageNumber: number
@@ -63,6 +66,17 @@ export function TrilhaHistoryPageView({
 }: TrilhaHistoryPageViewProps) {
   const groups = groupByStage(items)
   const lastKey = items.length > 0 ? itemKey(items[items.length - 1]) : null
+  const HISTORY_PAGE_SIZE = 4
+  const [page, setPage] = useState(1)
+  const groupSlice = useMemo(
+    () => paginateList(groups, page, HISTORY_PAGE_SIZE),
+    [groups, page],
+  )
+
+  useEffect(() => {
+    if (groups.length === 0) return
+    setPage(groupSlice.pageForIndex(groups.length - 1))
+  }, [groups.length, groupSlice.pageForIndex])
 
   const [openStages, setOpenStages] = useState<Record<number, boolean>>({})
   const [openItems, setOpenItems] = useState<Record<string, boolean>>({})
@@ -106,7 +120,8 @@ export function TrilhaHistoryPageView({
   const reviewCount = items.filter((i) => i.isCorrect === false).length
 
   return (
-    <div className="trilha-history">
+    <div className="trilha-history trilha-history--v2">
+      <WaSyncBadge />
       <header className="trilha-history__chrome">
         <button type="button" className="btn btn--ghost" onClick={onBack}>
           <span aria-hidden="true">← </span>
@@ -149,8 +164,16 @@ export function TrilhaHistoryPageView({
             </p>
           ) : null}
 
+          <ListPager
+            page={groupSlice.page}
+            totalPages={groupSlice.totalPages}
+            totalItems={groupSlice.totalItems}
+            onPageChange={setPage}
+            label="Etapas na revisão"
+          />
+
           <div className="trilha-history__groups">
-            {groups.map((group) => {
+            {groupSlice.items.map((group) => {
               const stageOpen = isStageOpen(group.stageNumber)
               const panelId = `rev-stage-${group.stageNumber}`
               return (
@@ -184,7 +207,7 @@ export function TrilhaHistoryPageView({
                   </button>
 
                   {stageOpen ? (
-                    <ol id={panelId} className="trilha-history__list">
+                    <ol id={panelId} className="trilha-history__list trilha-history__timeline">
                       {group.items.map((item) => {
                         const key = itemKey(item)
                         const expanded = isItemOpen(key)

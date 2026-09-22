@@ -38,6 +38,25 @@ describe('buildUnitSections', () => {
     expect(sections[2].steps).toHaveLength(0)
   })
 
+  it('etapa feita inclui aula do cursor quando s < stage', () => {
+    const sections = buildUnitSections({
+      currentStage: 2,
+      currentQuestion: 2,
+      totalStages: 3,
+      totalQuestions: 3,
+      currentStageType: 'fixed',
+      history: [
+        {
+          stageNumber: 1,
+          questionNumber: 1,
+          stageType: 'fixed',
+          title: 'Intro',
+        },
+      ],
+    })
+    expect(sections[0].steps.map((s) => s.questionNumber)).toContain(2)
+  })
+
   it('paused marca o passo atual', () => {
     const sections = buildUnitSections({
       currentStage: 1,

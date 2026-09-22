@@ -74,12 +74,14 @@ describe('Trilha a11y — login / home / player', () => {
     expect(
       screen.getByRole('navigation', { name: /navegação do aluno/i }),
     ).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: /^trilha$/i })).toHaveAttribute(
-      'aria-current',
-      'page',
-    )
+    const progressLinks = screen.getAllByRole('link', { name: /meu progresso/i })
+    expect(
+      progressLinks.some((el) => el.getAttribute('aria-current') === 'page'),
+    ).toBe(true)
     expect(screen.getByRole('link', { name: /revisão/i })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { level: 1, name: /trilha crias/i }))
+    expect(
+      screen.getByRole('heading', { level: 1, name: /meu progresso/i }),
+    ).toBeInTheDocument()
     expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '40')
     expect(
       screen.getByRole('link', {
@@ -119,7 +121,7 @@ describe('Trilha a11y — login / home / player', () => {
     expect(
       screen.queryByRole('button', { name: /continuar/i }),
     ).not.toBeInTheDocument()
-    expect(screen.getByText(/pausa — aguardando liberação/i)).toBeInTheDocument()
+    expect(screen.getByText(/pausa esperada/i)).toBeInTheDocument()
   })
 
   it('home loading: anuncia estado busy com texto para leitores de ecrã', () => {
@@ -202,7 +204,9 @@ describe('Trilha a11y — login / home / player', () => {
       />,
     )
 
-    expect(screen.getByRole('status')).toHaveTextContent(/noutro dispositivo/i)
+    expect(
+      screen.getByText(/noutro dispositivo/i).closest('[role="status"]'),
+    ).toHaveTextContent(/noutro dispositivo/i)
 
     rerender(
       <TrilhaPlayerPageView

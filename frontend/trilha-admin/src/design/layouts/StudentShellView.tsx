@@ -42,7 +42,7 @@ export function StudentShellView({
               aria-current={onHome ? 'page' : undefined}
             >
               <TrilhaPathIcon size={20} aria-hidden />
-              <span>Trilha</span>
+              <span>Meu progresso</span>
             </Link>
             <Link
               to="/trilha/historico"
@@ -79,7 +79,7 @@ export function StudentShellView({
           <header className="student-shell__top">
             <Link to="/trilha" className="student-shell__top-brand">
               <TrilhaPathIcon size={24} title="Trilha" />
-              <span>Trilha</span>
+              <span>Meu progresso</span>
             </Link>
             {onLogout ? (
               <button

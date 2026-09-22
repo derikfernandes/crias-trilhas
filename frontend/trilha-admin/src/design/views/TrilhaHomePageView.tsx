@@ -1,9 +1,13 @@
 import { useEffect } from 'react'
+import { ActivityHistoryPreview } from '../components/trilha/ActivityHistoryPreview'
+import { ContinueCard } from '../components/trilha/ContinueCard'
+import { ProgressStatsGrid } from '../components/trilha/ProgressStatsGrid'
 import { ProgressSummary } from '../components/trilha/ProgressSummary'
 import { TrailPathMap } from '../components/trilha/TrailPathMap'
 import { UnitMap } from '../components/trilha/UnitMap'
 import { TrilhaEmptyState } from '../components/trilha/TrilhaEmptyState'
 import { TrilhaErrorBanner } from '../components/trilha/TrilhaErrorBanner'
+import { WaSyncBadge } from '../components/trilha/WaSyncBadge'
 import {
   buildTrailPathNodes,
   nowFocusCopy,
@@ -157,14 +161,30 @@ export function TrilhaHomePageView({
     completed: isCompleted,
   })
 
+  const stagesDone = isCompleted
+    ? typeof totalStages === 'number' && totalStages > 0
+      ? Math.floor(totalStages)
+      : Math.max(0, stageNumber)
+    : Math.max(0, stageNumber - 1)
+
   return (
-    <div className="trilha-home">
+    <div className="trilha-home trilha-home--v2">
+      <WaSyncBadge />
+
       <p className="trilha-home__hello">Olá, {studentName}</p>
-      <p className="trilha-home__brand-label">Trilha</p>
-      <h1 className="trilha-home__heading">{trailTitle || 'Sua trilha'}</h1>
-      <p className="trilha-home__sync muted">
-        O progresso é o mesmo do WhatsApp.
-      </p>
+      <h1 className="trilha-home__dashboard-title">Meu progresso</h1>
+      <p className="trilha-home__heading">{trailTitle || 'Sua trilha'}</p>
+
+      <ProgressStatsGrid
+        progressPct={progressRatio}
+        stagesDone={stagesDone}
+        totalStages={totalStages ?? null}
+        totalQuestions={totalQuestions ?? null}
+        stageNumber={stageNumber}
+        questionNumber={questionNumber}
+        habitLine={habitLine}
+        completed={isCompleted}
+      />
 
       <ProgressSummary
         trailTitle={trailTitle}
@@ -179,52 +199,16 @@ export function TrilhaHomePageView({
         nowStatus={glanceNow.status}
       />
 
-      <TrailPathMap nodes={pathNodes} hasFullTrail={hasFullTrail} />
-
-      <section className="trilha-home__now" aria-labelledby="trilha-now-title">
-        <h2 id="trilha-now-title" className="trilha-home__section-title">
-          {focus.title}
-        </h2>
-        <p className="trilha-home__now-detail">{focus.detail}</p>
-        {effort ? (
-          <p className="trilha-home__effort muted">{effort}</p>
-        ) : null}
-
-        {homeHint === 'completed' ? (
-          <p className="banner banner--success" role="status">
-            Parabéns — concluiu esta trilha.
-          </p>
-        ) : null}
-
-        {homeHint === 'await_release' ? (
-          <TrilhaEmptyState
-            title="Pausa esperada"
-            message="O próximo conteúdo ainda não foi liberado. O seu progresso está seguro — volte mais tarde ou fale com a escola."
-          />
-        ) : null}
-
-        {homeHint === 'blocked' ? (
-          <TrilhaEmptyState
-            title="Trilha pausada"
-            message="Não é possível continuar neste momento. Fale com a escola."
-          />
-        ) : null}
-
-        {canContinue && focus.cta ? (
-          <button
-            type="button"
-            className="btn btn--primary trilha-cta"
-            onClick={onContinue}
-          >
-            {focus.cta}
-          </button>
-        ) : null}
-
-        {homeHint === 'completed' && onOpenHistory ? (
-          <div className="trilha-home__celebrate">
-            <p className="trilha-home__celebrate-lead">
-              Você percorreu todos os passos desta trilha.
-            </p>
+      <ContinueCard
+        title={focus.title}
+        detail={focus.detail}
+        effort={effort}
+        ctaLabel={focus.cta}
+        canContinue={canContinue}
+        onContinue={onContinue}
+        homeHint={homeHint}
+        celebrateAction={
+          homeHint === 'completed' && onOpenHistory ? (
             <button
               type="button"
               className="btn btn--primary trilha-cta"
@@ -232,17 +216,18 @@ export function TrilhaHomePageView({
             >
               Revisar a trilha
             </button>
-          </div>
-        ) : null}
+          ) : null
+        }
+      />
 
-        {habitLine ? (
-          <p className="trilha-home__habit muted" role="status">
-            {habitLine}
-          </p>
-        ) : null}
-      </section>
+      <TrailPathMap nodes={pathNodes} hasFullTrail={hasFullTrail} />
 
       <UnitMap sections={unitSections} />
+
+      <ActivityHistoryPreview
+        items={historyHints}
+        onOpenHistory={onOpenHistory}
+      />
 
       {onOpenHistory && homeHint !== 'completed' ? (
         <section

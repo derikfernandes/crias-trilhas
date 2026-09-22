@@ -43,6 +43,12 @@ export function stepTypeLabel(t: UnitStepType): string | null {
   return null
 }
 
+/** Secções = fases (`stage_number`); paginação mockup v2 — ver `trilha-data-model-student-view.md` §8. */
+export const UNIT_MAP_STAGE_PAGE_SIZE = 3
+
+/** Passos = aulas (`question_number`) dentro da etapa corrente. */
+export const UNIT_MAP_QUESTION_PAGE_SIZE = 5
+
 /**
  * Constrói secções por etapa.
  * - Etapas &lt; current: done, colapsadas, passos do histórico
@@ -89,6 +95,21 @@ export function buildUnitSections(input: {
           stepType: h.stageType,
           title: h.title,
         }))
+
+      if (!input.completed && s < stage) {
+        const hasCell = steps.some((st) => st.questionNumber === question)
+        if (!hasCell) {
+          const hint = histByKey.get(`${s}:${question}`)
+          steps.push({
+            stageNumber: s,
+            questionNumber: question,
+            state: 'done',
+            stepType: hint?.stageType ?? null,
+            title: hint?.title ?? null,
+          })
+          steps.sort((a, b) => a.questionNumber - b.questionNumber)
+        }
+      }
       sections.push({
         stageNumber: s,
         status: 'done',
