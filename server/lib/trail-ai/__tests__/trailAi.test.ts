@@ -89,6 +89,6 @@ describe('generateContentWithGemini', () => {
         {},
         vi.fn() as unknown as typeof fetch,
       ),
-    ).rejects.toThrow(/Gemini não configurado/)
+    ).rejects.toThrow(/GEMINI_API_KEY/)
   })
 })

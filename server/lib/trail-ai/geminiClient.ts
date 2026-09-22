@@ -109,7 +109,7 @@ export async function generateContentWithGemini(
     url.searchParams.set('key', apiKey)
   } else {
     throw new Error(
-      'Gemini não configurado. Defina GOOGLE_OAUTH_* ou GEMINI_API_KEY na Vercel.',
+      'Gemini não configurado. No projeto Vercel (crias-trilhas): Settings → Environment Variables → defina GEMINI_API_KEY (caminho mais simples) em Preview e Production — ou o trio GOOGLE_OAUTH_CLIENT_ID + GOOGLE_OAUTH_CLIENT_SECRET + GOOGLE_OAUTH_REFRESH_TOKEN. Redeploy o Preview depois de salvar.',
     )
   }
 
