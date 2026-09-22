@@ -164,13 +164,17 @@ export function TrilhaHistoryPageView({
             </p>
           ) : null}
 
-          <ListPager
-            page={groupSlice.page}
-            totalPages={groupSlice.totalPages}
-            totalItems={groupSlice.totalItems}
-            onPageChange={setPage}
-            label="Etapas na revisão"
-          />
+          {groups.length > HISTORY_PAGE_SIZE ? (
+            <ListPager
+              page={groupSlice.page}
+              totalPages={groupSlice.totalPages}
+              totalItems={groupSlice.totalItems}
+              onPageChange={setPage}
+              label="Etapas na revisão"
+            />
+          ) : null}
+
+          <h2 className="trilha-history__timeline-title">Linha do tempo</h2>
 
           <div className="trilha-history__groups">
             {groupSlice.items.map((group) => {

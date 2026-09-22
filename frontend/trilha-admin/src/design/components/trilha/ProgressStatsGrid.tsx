@@ -7,6 +7,9 @@ export type ProgressStatsGridProps = {
   questionNumber: number
   habitLine?: string | null
   completed?: boolean
+  doneSummary?: string | null
+  nowPrimary?: string | null
+  nowStatus?: string | null
 }
 
 export function ProgressStatsGrid({
@@ -18,9 +21,15 @@ export function ProgressStatsGrid({
   questionNumber,
   habitLine = null,
   completed = false,
+  doneSummary = null,
+  nowPrimary = null,
+  nowStatus = null,
 }: ProgressStatsGridProps) {
-  const pctLabel =
-    progressPct === null ? '—' : `${Math.round(progressPct * 100)}%`
+  const pct =
+    progressPct === null
+      ? null
+      : Math.max(0, Math.min(100, Math.round(progressPct * 100)))
+  const pctLabel = pct === null ? '—' : `${pct}%`
   /** I-MAP-3: etapas = fases (`total_stages`), não aulas. */
   const stagesLabel =
     totalStages != null && totalStages > 0
@@ -30,14 +39,18 @@ export function ProgressStatsGrid({
     totalQuestions != null && totalQuestions > 0
       ? `${questionNumber}/${totalQuestions}`
       : `${questionNumber}`
-  /** I-MAP-1: par do cursor Firebase. */
-  const nowLabel = completed
-    ? 'Concluída'
-    : `Etapa ${stageNumber} · Q${questionNumber}`
+  const ritmoLabel = habitLine ? '●' : '—'
+
+  const agoraPrimary =
+    nowPrimary ??
+    (completed
+      ? 'Trilha concluída'
+      : `Etapa ${stageNumber} · Questão ${questionNumber}`)
+  const agoraStatus = completed ? null : (nowStatus ?? null)
 
   return (
     <div className="trilha-stats" aria-label="Resumo do progresso">
-      <div className="trilha-stats__grid">
+      <div className="trilha-stats__grid trilha-stats__grid--four">
         <div className="trilha-stats__cell">
           <span className="trilha-stats__value">{pctLabel}</span>
           <span className="trilha-stats__label">Progresso</span>
@@ -50,15 +63,9 @@ export function ProgressStatsGrid({
           <span className="trilha-stats__value">{aulaLabel}</span>
           <span className="trilha-stats__label">Aula</span>
         </div>
-        <div className="trilha-stats__cell trilha-stats__cell--wide">
-          <span className="trilha-stats__value trilha-stats__value--now">
-            {nowLabel}
-          </span>
-          <span className="trilha-stats__label">Cursor</span>
-        </div>
         <div className="trilha-stats__cell">
           <span className="trilha-stats__value trilha-stats__value--habit">
-            {habitLine ? '●' : '—'}
+            {ritmoLabel}
           </span>
           <span className="trilha-stats__label">Ritmo</span>
         </div>
@@ -66,6 +73,36 @@ export function ProgressStatsGrid({
       {habitLine ? (
         <p className="trilha-stats__habit muted">{habitLine}</p>
       ) : null}
+
+      {pct !== null ? (
+        <div
+          className="trilha-progress__bar trilha-stats__bar"
+          role="progressbar"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={pct}
+          aria-label="Progresso estimado na trilha"
+        >
+          <div
+            className="trilha-progress__bar-fill"
+            style={{ width: `${pct}%` }}
+          />
+          <span className="trilha-progress__pct" aria-hidden="true">
+            {pct}%
+          </span>
+        </div>
+      ) : null}
+
+      <p className="trilha-stats__glance muted">
+        {doneSummary ? <span>{doneSummary}</span> : null}
+        {doneSummary && agoraPrimary ? ' · ' : null}
+        {agoraPrimary ? (
+          <span>
+            Agora: {agoraPrimary}
+            {agoraStatus ? ` · ${agoraStatus}` : null}
+          </span>
+        ) : null}
+      </p>
     </div>
   )
 }

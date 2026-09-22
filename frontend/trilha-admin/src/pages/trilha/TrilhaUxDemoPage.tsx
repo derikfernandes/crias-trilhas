@@ -95,6 +95,30 @@ export function TrilhaUxDemoPage() {
     )
   }
 
+  if (scene === 'history-paged') {
+    const items = [1, 2, 3, 4, 5, 6].flatMap((stageNumber) => [
+      {
+        stageNumber,
+        questionNumber: 1,
+        stageType: 'fixed' as const,
+        title: `Etapa ${stageNumber} — leitura`,
+        body: `Conteúdo da fase ${stageNumber}.`,
+        studentAnswer: null,
+        isCorrect: null,
+      },
+    ])
+    return (
+      <StudentShellView studentName="Ana" onLogout={noop}>
+        <TrilhaHistoryPageView
+          loadState="ready"
+          onBack={noop}
+          onContinueCurrent={noop}
+          items={items}
+        />
+      </StudentShellView>
+    )
+  }
+
   if (scene === 'history') {
     return (
       <StudentShellView studentName="Dérik" onLogout={noop}>

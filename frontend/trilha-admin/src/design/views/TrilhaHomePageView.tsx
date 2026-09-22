@@ -2,7 +2,6 @@ import { useEffect } from 'react'
 import { ActivityHistoryPreview } from '../components/trilha/ActivityHistoryPreview'
 import { ContinueCard } from '../components/trilha/ContinueCard'
 import { ProgressStatsGrid } from '../components/trilha/ProgressStatsGrid'
-import { ProgressSummary } from '../components/trilha/ProgressSummary'
 import { TrailPathMap } from '../components/trilha/TrailPathMap'
 import { UnitMap } from '../components/trilha/UnitMap'
 import { TrilhaEmptyState } from '../components/trilha/TrilhaEmptyState'
@@ -183,16 +182,6 @@ export function TrilhaHomePageView({
         stageNumber={stageNumber}
         questionNumber={questionNumber}
         habitLine={habitLine}
-        completed={isCompleted}
-      />
-
-      <ProgressSummary
-        trailTitle={trailTitle}
-        stageNumber={stageNumber}
-        questionNumber={questionNumber}
-        progressRatio={progressRatio}
-        statusLabel={statusLabel}
-        totalStages={totalStages}
         completed={isCompleted}
         doneSummary={glanceDone}
         nowPrimary={glanceNow.primary}
