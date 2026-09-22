@@ -7,6 +7,7 @@ import {
   resolveStepDisplayBody,
 } from './resolvePersistedDelivery'
 import type {
+  AiContentStatus,
   CollectionNames,
   NextContentResult,
   StageType,
@@ -22,6 +23,7 @@ function parseStageType(raw: unknown): StageType | null {
 /**
  * Compõe posição + stage + question + release numa única resposta (I4).
  * Pure decision helper exportado para testes.
+ * GET nunca chama LLM — stage `ai` sem log → ai_status=pending.
  */
 export function decideNextAction(input: {
   status: string
@@ -36,6 +38,18 @@ export function decideNextAction(input: {
   if (!input.is_released) return 'await_release'
   if (input.stage_type === 'exercise') return 'await_answer'
   return 'deliver_content'
+}
+
+function resolveAiStatus(input: {
+  stage_type: StageType | null
+  next_action: NextContentResult['next_action']
+  content_source: NextContentResult['content_source']
+}): AiContentStatus {
+  if (input.stage_type !== 'ai' || input.next_action !== 'deliver_content') {
+    return 'not_applicable'
+  }
+  if (input.content_source === 'persisted_delivery') return 'ready'
+  return 'pending'
 }
 
 export async function getNextContent(
@@ -75,6 +89,7 @@ export async function getNextContent(
       next_action: 'completed',
       progress_version: progress.progress_version,
       title: null,
+      ai_status: 'not_applicable',
     }
   }
 
@@ -95,6 +110,7 @@ export async function getNextContent(
       next_action: 'blocked',
       progress_version: progress.progress_version,
       title: null,
+      ai_status: 'not_applicable',
     }
   }
 
@@ -178,6 +194,12 @@ export async function getNextContent(
           ? 'completed'
           : 'ok'
 
+  const ai_status = resolveAiStatus({
+    stage_type,
+    next_action,
+    content_source: resolvedBody.source,
+  })
+
   return {
     status,
     student_id: studentId,
@@ -194,5 +216,6 @@ export async function getNextContent(
     next_action,
     progress_version: progress.progress_version,
     title,
+    ai_status,
   }
 }

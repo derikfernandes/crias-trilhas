@@ -4,6 +4,7 @@ import { StudentShellView } from '../../design/layouts/StudentShellView'
 import { TrilhaPlayerPageView } from '../../design/views/TrilhaPlayerPageView'
 import {
   advanceWithConflictHandling,
+  ensureTrailAi,
   fetchNextContent,
   fetchTrilhaHome,
   submitExercise,
@@ -31,6 +32,19 @@ function normalizeNextAction(
     return 'await_release'
   }
   return content.next_action
+}
+
+/** GET não gera; se AI pending, POST ensure-ai (idempotente / logs WA). */
+async function resolveWithAiDelivery(
+  next: TrilhaNextContent,
+  studentId: string,
+  trailId: string,
+  token: string,
+): Promise<TrilhaNextContent> {
+  if (next.stage_type !== 'ai' || next.ai_status !== 'pending') {
+    return next
+  }
+  return ensureTrailAi(studentId, trailId, token)
 }
 
 export function TrilhaPlayerPage() {
@@ -96,7 +110,13 @@ export function TrilhaPlayerPage() {
         home.enrollment.trail_id,
         session.token,
       )
-      applyContent(next)
+      const resolved = await resolveWithAiDelivery(
+        next,
+        session.student.student_id,
+        home.enrollment.trail_id,
+        session.token,
+      )
+      applyContent(resolved)
     } catch (e) {
       if (e instanceof TrilhaApiError && (e.status === 401 || e.status === 403)) {
         clearTrilhaSession()
@@ -154,11 +174,23 @@ export function TrilhaPlayerPage() {
           'Atualizámos o passo (também avançou no WhatsApp). Aqui está onde ficou.',
         )
         const next = await outcome.resync()
-        applyContent(next)
+        const resolved = await resolveWithAiDelivery(
+          next,
+          session.student.student_id,
+          trailId,
+          session.token,
+        )
+        applyContent(resolved)
         return
       }
 
       const next = await fetchNextContent(
+        session.student.student_id,
+        trailId,
+        session.token,
+      )
+      const resolved = await resolveWithAiDelivery(
+        next,
         session.student.student_id,
         trailId,
         session.token,
@@ -168,7 +200,7 @@ export function TrilhaPlayerPage() {
       )
       window.setTimeout(() => {
         setVictoryMessage(null)
-        applyContent(next)
+        applyContent(resolved)
       }, 180)
     } catch (e) {
       setErrorMessage(
@@ -219,7 +251,13 @@ export function TrilhaPlayerPage() {
             trailId,
             session.token,
           )
-          applyContent(next)
+          const resolved = await resolveWithAiDelivery(
+            next,
+            session.student.student_id,
+            trailId,
+            session.token,
+          )
+          applyContent(resolved)
           return
         }
         // C3.5: sem feedback do motor, NÃO avançar às cegas
@@ -240,7 +278,13 @@ export function TrilhaPlayerPage() {
         trailId,
         session.token,
       )
-      setPendingNext(next)
+      const resolved = await resolveWithAiDelivery(
+        next,
+        session.student.student_id,
+        trailId,
+        session.token,
+      )
+      setPendingNext(resolved)
       if (submitResult.is_correct === true) {
         setFeedbackState('correct')
       } else if (submitResult.is_correct === false) {
@@ -277,18 +321,15 @@ export function TrilhaPlayerPage() {
   }
 
   const stageType = mapStageType(content?.stage_type ?? 'fixed')
-  const rawBody = (() => {
-    const delivered = content?.content?.trim()
-    if (delivered) return delivered
-    if (
-      stageType === 'ai' &&
-      content?.content_source !== 'curriculum' &&
-      content?.next_action === 'deliver_content'
-    ) {
-      return 'Esta atividade com IA ainda não foi entregue neste canal. Se já a viu no WhatsApp, atualize a página; caso contrário, use o WhatsApp ou aguarde a geração ao continuar.'
-    }
-    return content?.prompt?.trim() || 'Conteúdo indisponível neste passo.'
-  })()
+  const rawBody =
+    stageType === 'ai'
+      ? content?.content?.trim() ||
+        (content?.ai_status === 'pending'
+          ? 'A preparar a aula com a mesma IA do WhatsApp…'
+          : 'Conteúdo da aula ainda não disponível.')
+      : content?.content?.trim() ||
+        content?.prompt?.trim() ||
+        'Conteúdo indisponível neste passo.'
   const resolved =
     content?.next_action === 'await_answer'
       ? resolveExerciseOptions(content?.content ?? content?.prompt, content?.options)

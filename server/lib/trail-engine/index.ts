@@ -80,11 +80,13 @@ export type { SubmitExerciseInput, SubmitExerciseResult } from './submitExercise
 export type {
   AdvanceReason,
   AdvanceResult,
+  AiContentStatus,
   CollectionNames,
   ComputedAdvance,
   LegacyPrimitive,
   NextAction,
   NextContentResult,
+  NextContentSource,
   ResolvedStudent,
   StageType,
   StudentTrailProgress,

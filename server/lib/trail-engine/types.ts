@@ -61,6 +61,8 @@ export type ResolvedStudent = {
 
 export type NextContentSource = 'persisted_delivery' | 'curriculum' | 'none'
 
+export type AiContentStatus = 'ready' | 'pending' | 'not_applicable'
+
 export type NextContentResult = {
   status: 'ok' | 'blocked' | 'completed' | 'await_release'
   student_id: string
@@ -78,6 +80,11 @@ export type NextContentResult = {
   next_action: NextAction
   progress_version: number
   title: string | null
+  /**
+   * Para stage `ai`: `ready` = texto de conversation_logs (WA/app);
+   * `pending` = falta gerar (GET nunca chama LLM — usar facade ensure-ai).
+   */
+  ai_status: AiContentStatus
 }
 
 export type AdvanceResult = {

@@ -29,6 +29,7 @@ export const TRILHA_KNOWN_FACADES = [
   'advance',
   'submit-exercise',
   'history',
+  'ensure-ai',
 ] as const
 
 export type TrilhaKnownFacade = (typeof TRILHA_KNOWN_FACADES)[number]
@@ -161,6 +162,8 @@ export type TrilhaNextContent = {
     | 'completed'
   progress_version: number
   title: string | null
+  /** Stage ai: ready = log WA/app; pending = chamar ensureTrailAi. */
+  ai_status?: 'ready' | 'pending' | 'not_applicable'
 }
 
 export type TrilhaAdvanceResult = {
@@ -263,6 +266,53 @@ export async function fetchNextContent(
   }
   if (!res.ok) throw await parseError(res)
   return (await res.json()) as TrilhaNextContent
+}
+
+/** Gera (ou reusa) conteúdo IA da célula atual — POST, nunca no GET. */
+export async function ensureTrailAi(
+  studentId: string,
+  trailId: string,
+  token?: string,
+): Promise<TrilhaNextContent & { generated?: boolean }> {
+  const url = new URL('/api/student_trails', resolveApiBaseUrl())
+  url.search = facadeQuery('ensure-ai').toString()
+  const res = await fetch(url.toString(), {
+    method: 'POST',
+    headers: {
+      ...authHeaders(token),
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      student_id: studentId,
+      trail_id: trailId,
+      channel: 'app',
+    }),
+  })
+  if (res.status === 401 || res.status === 403) {
+    clearTrilhaSession()
+    throw await parseError(res)
+  }
+  if (!res.ok) throw await parseError(res)
+  const body = (await res.json()) as {
+    content?: string
+    ai_status?: string
+    generated?: boolean
+    progress_version?: number
+    stage_number?: number
+    question_number?: number
+    title?: string | null
+  }
+  // Re-fetch next-content para payload completo (options, next_action, etc.).
+  const next = await fetchNextContent(studentId, trailId, token)
+  if (typeof body.content === 'string' && body.content.trim()) {
+    return {
+      ...next,
+      content: body.content,
+      ai_status: 'ready',
+      generated: body.generated === true,
+    }
+  }
+  return { ...next, generated: body.generated === true }
 }
 
 export async function fetchTrailHistory(
