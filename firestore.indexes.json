@@ -30,6 +30,31 @@
       "queryScope": "COLLECTION",
       "fields": [
         { "fieldPath": "student_id", "order": "ASCENDING" },
+        { "fieldPath": "created_at", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "conversation_logs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "student_id", "order": "ASCENDING" },
+        { "fieldPath": "created_at", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "conversation_logs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "student_id", "order": "ASCENDING" },
+        { "fieldPath": "trail_id", "order": "ASCENDING" },
+        { "fieldPath": "created_at", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "conversation_logs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "student_id", "order": "ASCENDING" },
         { "fieldPath": "trail_id", "order": "ASCENDING" },
         { "fieldPath": "created_at", "order": "DESCENDING" }
       ]
@@ -42,6 +67,17 @@
         { "fieldPath": "trail_id", "order": "ASCENDING" },
         { "fieldPath": "stage_number", "order": "ASCENDING" },
         { "fieldPath": "created_at", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "conversation_logs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "student_id", "order": "ASCENDING" },
+        { "fieldPath": "trail_id", "order": "ASCENDING" },
+        { "fieldPath": "stage_number", "order": "ASCENDING" },
+        { "fieldPath": "question_number", "order": "ASCENDING" },
+        { "fieldPath": "sender", "order": "ASCENDING" }
       ]
     }
   ],
