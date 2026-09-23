@@ -5,7 +5,11 @@ import {
   formatContextFromLogs,
 } from '../buildTrailAiPrompt'
 import { formatAiAnswer, TRAIL_AI_SPACING_RULES } from '../formatAiAnswer'
-import { generateContentWithGemini } from '../geminiClient'
+import {
+  buildVertexGenerateContentUrl,
+  generateContentWithGemini,
+  resolveVertexTarget,
+} from '../geminiClient'
 
 describe('formatAiAnswer (Chatis script 37)', () => {
   it('converte ||| em parágrafo sem espaços adjacentes', () => {
@@ -90,5 +94,107 @@ describe('generateContentWithGemini', () => {
         vi.fn() as unknown as typeof fetch,
       ),
     ).rejects.toThrow(/GEMINI_API_KEY/)
+  })
+
+  it('com VERTEX_* + OAuth chama Vertex AI, não generativelanguage', async () => {
+    const fetchImpl = vi.fn(async (url: string | URL, init?: RequestInit) => {
+      const href = String(url)
+      if (href.includes('oauth2.googleapis.com/token')) {
+        return new Response(JSON.stringify({ access_token: 'ya29.test' }), {
+          status: 200,
+        })
+      }
+      expect(href).toContain('us-central1-aiplatform.googleapis.com')
+      expect(href).toContain('/projects/my-proj/locations/us-central1/')
+      expect(href).toContain('/publishers/google/models/gemini-2.0-flash:generateContent')
+      expect(href).not.toContain('generativelanguage')
+      expect((init?.headers as Record<string, string>).Authorization).toBe(
+        'Bearer ya29.test',
+      )
+      return new Response(
+        JSON.stringify({
+          candidates: [{ content: { parts: [{ text: 'Vertex ok|||Fim.' }] } }],
+        }),
+        { status: 200 },
+      )
+    }) as unknown as typeof fetch
+
+    const result = await generateContentWithGemini(
+      { systemInstruction: 'sys', userText: 'user' },
+      {
+        GOOGLE_OAUTH_CLIENT_ID: 'cid',
+        GOOGLE_OAUTH_CLIENT_SECRET: 'sec',
+        GOOGLE_OAUTH_REFRESH_TOKEN: 'rt',
+        VERTEX_PROJECT_ID: 'my-proj',
+        VERTEX_LOCATION: 'us-central1',
+        VERTEX_MODEL: 'gemini-2.0-flash',
+        VERTEX_PROXY_PORT: '8080',
+      },
+      fetchImpl,
+    )
+    expect(result.text).toContain('Vertex ok')
+    expect(result.model).toBe('gemini-2.0-flash')
+  })
+
+  it('403 ACCESS_TOKEN_SCOPE_INSUFFICIENT orienta renovar OAuth ou GEMINI_API_KEY', async () => {
+    const fetchImpl = vi.fn(async (url: string | URL) => {
+      const href = String(url)
+      if (href.includes('oauth2.googleapis.com/token')) {
+        return new Response(JSON.stringify({ access_token: 'ya29.bad' }), {
+          status: 200,
+        })
+      }
+      return new Response(
+        JSON.stringify({
+          error: {
+            code: 403,
+            message: 'Request had insufficient authentication scopes.',
+            status: 'PERMISSION_DENIED',
+            details: [{ reason: 'ACCESS_TOKEN_SCOPE_INSUFFICIENT' }],
+          },
+        }),
+        { status: 403 },
+      )
+    }) as unknown as typeof fetch
+
+    await expect(
+      generateContentWithGemini(
+        { systemInstruction: 's', userText: 'u' },
+        {
+          GOOGLE_OAUTH_CLIENT_ID: 'cid',
+          GOOGLE_OAUTH_CLIENT_SECRET: 'sec',
+          GOOGLE_OAUTH_REFRESH_TOKEN: 'rt',
+        },
+        fetchImpl,
+      ),
+    ).rejects.toThrow(/cloud-platform|generative-language|GEMINI_API_KEY/)
+  })
+})
+
+describe('resolveVertexTarget / buildVertexGenerateContentUrl', () => {
+  it('exige project + location; PROXY_PORT sozinho não ativa', () => {
+    expect(resolveVertexTarget({ VERTEX_PROXY_PORT: '8080' })).toBeNull()
+    expect(
+      resolveVertexTarget({
+        VERTEX_PROJECT_ID: 'p',
+        VERTEX_LOCATION: 'southamerica-east1',
+      }),
+    ).toEqual({ projectId: 'p', location: 'southamerica-east1' })
+  })
+
+  it('monta host regional e global', () => {
+    expect(
+      buildVertexGenerateContentUrl(
+        { projectId: 'p', location: 'us-central1' },
+        'm',
+      ),
+    ).toBe(
+      'https://us-central1-aiplatform.googleapis.com/v1/projects/p/locations/us-central1/publishers/google/models/m:generateContent',
+    )
+    expect(
+      buildVertexGenerateContentUrl({ projectId: 'p', location: 'global' }, 'm'),
+    ).toBe(
+      'https://aiplatform.googleapis.com/v1/projects/p/locations/global/publishers/google/models/m:generateContent',
+    )
   })
 })

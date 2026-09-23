@@ -1,6 +1,11 @@
 /**
- * Cliente Gemini via Google AI Platform / Generative Language `generateContent`.
+ * Cliente Gemini via Generative Language API ou Vertex AI `generateContent`.
  * Credenciais só via env Vercel — nunca hardcoded.
+ *
+ * Rotas:
+ * - VERTEX_PROJECT_ID + VERTEX_LOCATION + OAuth → Vertex AI (scope cloud-platform)
+ * - OAuth sem VERTEX_* → Generative Language (scope generative-language ou cloud-platform)
+ * - GEMINI_API_KEY → Generative Language `?key=` (sem OAuth)
  */
 
 export type GeminiGenerateInput = {
@@ -13,6 +18,14 @@ export type GeminiGenerateResult = {
   model: string
 }
 
+/** Scopes mínimos documentados para o refresh token OAuth. */
+export const GOOGLE_OAUTH_SCOPES = {
+  /** Vertex AI / AI Platform generateContent */
+  cloudPlatform: 'https://www.googleapis.com/auth/cloud-platform',
+  /** Generative Language API (AI Studio / generativelanguage.googleapis.com) */
+  generativeLanguage: 'https://www.googleapis.com/auth/generative-language',
+} as const
+
 function readEnv(name: string, env: NodeJS.ProcessEnv = process.env): string {
   const v = env[name]
   return typeof v === 'string' ? v.trim() : ''
@@ -22,19 +35,70 @@ export function resolveGeminiModel(env: NodeJS.ProcessEnv = process.env): string
   return readEnv('GEMINI_MODEL', env) || 'gemini-2.0-flash'
 }
 
+/** Modelo efetivo: VERTEX_MODEL quando no caminho Vertex; senão GEMINI_MODEL. */
+export function resolveTrailAiModel(
+  env: NodeJS.ProcessEnv = process.env,
+  opts: { useVertex: boolean } = { useVertex: false },
+): string {
+  if (opts.useVertex) {
+    return (
+      readEnv('VERTEX_MODEL', env) ||
+      readEnv('GEMINI_MODEL', env) ||
+      'gemini-2.0-flash'
+    )
+  }
+  return resolveGeminiModel(env)
+}
+
 export function isTrailAiDisabled(env: NodeJS.ProcessEnv = process.env): boolean {
   return readEnv('TRAIL_AI_DISABLED', env) === '1'
 }
 
-function apiBase(env: NodeJS.ProcessEnv): string {
+export type VertexTarget = {
+  projectId: string
+  location: string
+}
+
+/** VERTEX_* ativos quando project + location estão setados (proxy port é só local — ignorado). */
+export function resolveVertexTarget(
+  env: NodeJS.ProcessEnv = process.env,
+): VertexTarget | null {
+  const projectId = readEnv('VERTEX_PROJECT_ID', env)
+  const location = readEnv('VERTEX_LOCATION', env)
+  if (!projectId || !location) return null
+  return { projectId, location }
+}
+
+function generativeLanguageBase(env: NodeJS.ProcessEnv): string {
   return (
     readEnv('GOOGLE_AI_API_BASE', env) ||
     'https://generativelanguage.googleapis.com/v1beta'
   )
 }
 
+/**
+ * URL Vertex AI generateContent.
+ * location=global → host aiplatform.googleapis.com; senão {location}-aiplatform.googleapis.com
+ */
+export function buildVertexGenerateContentUrl(
+  target: VertexTarget,
+  model: string,
+): string {
+  const { projectId, location } = target
+  const host =
+    location === 'global'
+      ? 'https://aiplatform.googleapis.com'
+      : `https://${location}-aiplatform.googleapis.com`
+  return (
+    `${host}/v1/projects/${encodeURIComponent(projectId)}` +
+    `/locations/${encodeURIComponent(location)}` +
+    `/publishers/google/models/${encodeURIComponent(model)}:generateContent`
+  )
+}
+
 async function fetchAccessToken(
   env: NodeJS.ProcessEnv,
+  fetchImpl: typeof fetch,
 ): Promise<string | null> {
   const clientId = readEnv('GOOGLE_OAUTH_CLIENT_ID', env)
   const clientSecret = readEnv('GOOGLE_OAUTH_CLIENT_SECRET', env)
@@ -48,7 +112,7 @@ async function fetchAccessToken(
     grant_type: 'refresh_token',
   })
 
-  const res = await fetch('https://oauth2.googleapis.com/token', {
+  const res = await fetchImpl('https://oauth2.googleapis.com/token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body,
@@ -80,9 +144,36 @@ function extractText(payload: unknown): string {
     .trim()
 }
 
+function isInsufficientScopeError(status: number, errText: string): boolean {
+  if (status !== 403) return false
+  const lower = errText.toLowerCase()
+  return (
+    lower.includes('access_token_scope_insufficient') ||
+    lower.includes('insufficient authentication scopes') ||
+    lower.includes('insufficientpermissions')
+  )
+}
+
+function scopeGuidance(useVertex: boolean): string {
+  const cloud = GOOGLE_OAUTH_SCOPES.cloudPlatform
+  const gen = GOOGLE_OAUTH_SCOPES.generativeLanguage
+  if (useVertex) {
+    return (
+      `OAuth sem scope suficiente para Vertex AI. Renove o refresh token com ` +
+      `${cloud} — ou use GEMINI_API_KEY (Generative Language, sem OAuth) em Preview+Production e remova o trio GOOGLE_OAUTH_* se não precisar de Vertex.`
+    )
+  }
+  return (
+    `OAuth sem scope suficiente para Generative Language. Renove o refresh token com ` +
+    `${gen} e/ou ${cloud}; ou sete VERTEX_PROJECT_ID + VERTEX_LOCATION (com OAuth ${cloud}) para usar Vertex; ` +
+    `ou use GEMINI_API_KEY (caminho mais simples, sem OAuth scopes).`
+  )
+}
+
 /**
- * Chama `models/{model}:generateContent`.
- * Preferência: OAuth refresh; fallback: `GEMINI_API_KEY`.
+ * Chama `models/{model}:generateContent` (Generative Language) ou
+ * Vertex `publishers/google/models/{model}:generateContent` quando VERTEX_* + OAuth.
+ * Preferência auth: OAuth refresh; fallback: `GEMINI_API_KEY` (só Generative Language).
  */
 export async function generateContentWithGemini(
   input: GeminiGenerateInput,
@@ -93,24 +184,36 @@ export async function generateContentWithGemini(
     throw new Error('TRAIL_AI_DISABLED=1 — geração desligada.')
   }
 
-  const model = resolveGeminiModel(env)
-  const base = apiBase(env).replace(/\/+$/, '')
-  const url = new URL(`${base}/models/${encodeURIComponent(model)}:generateContent`)
+  const vertex = resolveVertexTarget(env)
+  const accessToken = await fetchAccessToken(env, fetchImpl)
+  const apiKey = readEnv('GEMINI_API_KEY', env)
 
+  const useVertex = Boolean(vertex && accessToken)
+  const model = resolveTrailAiModel(env, { useVertex })
+
+  let url: URL
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   }
 
-  const apiKey = readEnv('GEMINI_API_KEY', env)
-  const accessToken = await fetchAccessToken(env)
-  if (accessToken) {
+  if (useVertex && vertex) {
+    url = new URL(buildVertexGenerateContentUrl(vertex, model))
     headers.Authorization = `Bearer ${accessToken}`
-  } else if (apiKey) {
-    url.searchParams.set('key', apiKey)
   } else {
-    throw new Error(
-      'Gemini não configurado. No projeto Vercel (crias-trilhas): Settings → Environment Variables → defina GEMINI_API_KEY (caminho mais simples) em Preview e Production — ou o trio GOOGLE_OAUTH_CLIENT_ID + GOOGLE_OAUTH_CLIENT_SECRET + GOOGLE_OAUTH_REFRESH_TOKEN. Redeploy o Preview depois de salvar.',
-    )
+    const base = generativeLanguageBase(env).replace(/\/+$/, '')
+    url = new URL(`${base}/models/${encodeURIComponent(model)}:generateContent`)
+    if (accessToken) {
+      headers.Authorization = `Bearer ${accessToken}`
+    } else if (apiKey) {
+      url.searchParams.set('key', apiKey)
+    } else {
+      throw new Error(
+        'Gemini/Vertex não configurado. No projeto Vercel (crias-trilhas): Settings → Environment Variables → ' +
+          'defina GEMINI_API_KEY (caminho mais simples) em Preview e Production; ' +
+          'ou GOOGLE_OAUTH_* + VERTEX_PROJECT_ID + VERTEX_LOCATION (OAuth com scope cloud-platform); ' +
+          'ou só GOOGLE_OAUTH_* com scope generative-language. Redeploy o Preview depois de salvar.',
+      )
+    }
   }
 
   const body = {
@@ -133,6 +236,11 @@ export async function generateContentWithGemini(
 
   if (!res.ok) {
     const errText = await res.text().catch(() => '')
+    if (isInsufficientScopeError(res.status, errText)) {
+      throw new Error(
+        `generateContent falhou (403): ${scopeGuidance(useVertex)} Detalhe: ${errText.slice(0, 180)}`,
+      )
+    }
     throw new Error(
       `generateContent falhou (${res.status}): ${errText.slice(0, 300)}`,
     )

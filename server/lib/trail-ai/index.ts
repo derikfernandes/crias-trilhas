@@ -7,9 +7,13 @@ export {
   TRAIL_AI_SPACING_RULES,
 } from './formatAiAnswer'
 export {
+  buildVertexGenerateContentUrl,
   generateContentWithGemini,
+  GOOGLE_OAUTH_SCOPES,
   isTrailAiDisabled,
   resolveGeminiModel,
+  resolveTrailAiModel,
+  resolveVertexTarget,
 } from './geminiClient'
 export {
   listRecentContextLogs,
