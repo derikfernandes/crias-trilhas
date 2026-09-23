@@ -21,10 +21,16 @@ export function StudentShellView({
   const location = useLocation()
   const onHistory = location.pathname.includes('/historico')
   const path = location.pathname.replace(/\/$/, '') || '/'
-  const onHome = path === '/trilha' || path.startsWith('/trilha/play')
+  const onPlay = path.startsWith('/trilha/play')
+  const onHome = path === '/trilha' || onPlay
 
   return (
-    <div className="student-shell" data-shell="student">
+    <div
+      className={
+        onPlay ? 'student-shell student-shell--chat' : 'student-shell'
+      }
+      data-shell="student"
+    >
       {showNav ? (
         <aside className="student-shell__rail">
           <Link to="/trilha" className="student-shell__brand">

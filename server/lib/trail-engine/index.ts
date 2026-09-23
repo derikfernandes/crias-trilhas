@@ -51,6 +51,15 @@ export type { ResolvedStepBody } from './resolvePersistedDelivery'
 export { getTrailHistory } from './getHistory'
 export type { HistoryItem, TrailHistoryResult } from './getHistory'
 
+export { getTrailConversation } from './getConversation'
+export type {
+  TrailConversationMessage,
+  TrailConversationResult,
+} from './getConversation'
+
+export { ensureStepDelivery } from './ensureStepDelivery'
+export type { EnsureStepDeliveryResult } from './ensureStepDelivery'
+
 export { getStatus } from './getStatus'
 
 export { buildStableIdempotencyKey } from './idempotencyKey'

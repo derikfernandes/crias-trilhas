@@ -181,6 +181,24 @@ export function TrilhaUxDemoPage() {
           answerValue="B"
           feedbackState="correct"
           loadState="ready"
+          chatMessages={[
+            {
+              id: '1',
+              sender: 'system',
+              message_text: 'Qual atitude demonstra cidadania?',
+              stage_number: 2,
+              question_number: 2,
+              created_at_brasilia: '2026-09-23T10:00:00',
+            },
+            {
+              id: '2',
+              sender: 'student',
+              message_text: 'B',
+              stage_number: 2,
+              question_number: 2,
+              created_at_brasilia: '2026-09-23T10:01:00',
+            },
+          ]}
           onAnswerChange={noop}
           onContinue={noop}
           onSubmitAnswer={noop}
@@ -212,6 +230,81 @@ export function TrilhaUxDemoPage() {
           submitting={false}
           answerValue="B"
           loadState="ready"
+          chatMessages={[
+            {
+              id: '1',
+              sender: 'system',
+              message_text:
+                '🗣️ *Contextualização*\n\nVamos praticar **polígonos**.',
+              stage_number: 2,
+              question_number: 1,
+              created_at_brasilia: '2026-09-23T09:58:00',
+            },
+            {
+              id: '2',
+              sender: 'system',
+              message_text:
+                'O segmento que une dois vértices não consecutivos de um polígono é chamado de:',
+              stage_number: 2,
+              question_number: 2,
+              created_at_brasilia: '2026-09-23T10:00:00',
+            },
+          ]}
+          onAnswerChange={noop}
+          onContinue={noop}
+          onSubmitAnswer={noop}
+          onBack={noop}
+          onOpenHistory={noop}
+        />
+      </StudentShellView>
+    )
+  }
+
+  if (scene === 'chat') {
+    return (
+      <StudentShellView studentName="Dérik" onLogout={noop}>
+        <TrilhaPlayerPageView
+          stageNumber={2}
+          questionNumber={1}
+          totalQuestions={5}
+          totalStages={4}
+          stageType="ai"
+          title="Questão 76 IA"
+          body={
+            '🗣️ *Contextualização*\n\nHoje vamos revisar **formas geométricas** e *polígonos*.\n\nObserve o desenho e continue.'
+          }
+          options={null}
+          nextAction="deliver_content"
+          submitting={false}
+          answerValue=""
+          loadState="ready"
+          chatMessages={[
+            {
+              id: '1',
+              sender: 'system',
+              message_text: 'Bem-vindo à trilha. Vamos começar *juntos*.',
+              stage_number: 1,
+              question_number: 1,
+              created_at_brasilia: '2026-09-22T18:10:00',
+            },
+            {
+              id: '2',
+              sender: 'student',
+              message_text: 'B',
+              stage_number: 1,
+              question_number: 2,
+              created_at_brasilia: '2026-09-22T18:12:00',
+            },
+            {
+              id: '3',
+              sender: 'system',
+              message_text:
+                '🗣️ *Contextualização*\n\nHoje vamos revisar **formas geométricas** e *polígonos*.\n\nObserve o desenho e continue.',
+              stage_number: 2,
+              question_number: 1,
+              created_at_brasilia: '2026-09-23T10:05:00',
+            },
+          ]}
           onAnswerChange={noop}
           onContinue={noop}
           onSubmitAnswer={noop}
@@ -239,6 +332,17 @@ export function TrilhaUxDemoPage() {
         submitting={false}
         answerValue=""
         loadState="ready"
+        chatMessages={[
+          {
+            id: '1',
+            sender: 'system',
+            message_text:
+              '🗣️ *Contextualização*\n\nHoje vamos revisar **formas geométricas** e *polígonos*.\n\nObserve o desenho e continue.',
+            stage_number: 2,
+            question_number: 1,
+            created_at_brasilia: '2026-09-23T10:05:00',
+          },
+        ]}
         onAnswerChange={noop}
         onContinue={noop}
         onSubmitAnswer={noop}

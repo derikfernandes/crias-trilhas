@@ -24,7 +24,9 @@ const KNOWN = new Set([
   'advance',
   'submit-exercise',
   'history',
+  'conversation',
   'ensure-ai',
+  'ensure-delivery',
 ])
 
 function mutationRequiresServiceBearer(

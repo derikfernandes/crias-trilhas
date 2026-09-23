@@ -29,7 +29,9 @@ export const TRILHA_KNOWN_FACADES = [
   'advance',
   'submit-exercise',
   'history',
+  'conversation',
   'ensure-ai',
+  'ensure-delivery',
 ] as const
 
 export type TrilhaKnownFacade = (typeof TRILHA_KNOWN_FACADES)[number]
@@ -201,6 +203,32 @@ export type TrilhaHistoryResponse = {
   items: TrilhaHistoryItem[]
 }
 
+/** Mensagem de conversation_logs (SoT do chat aluno). */
+export type TrilhaConversationMessage = {
+  id: string
+  student_id: string
+  trail_id: string
+  stage_number: number
+  question_number: number
+  sender: 'system' | 'student'
+  message_text: string
+  message_type: 'text' | 'instruction' | 'exercise' | 'feedback' | null
+  institution_id: string | null
+  created_at: string | null
+  created_at_brasilia: string | null
+  metadata: Record<string, unknown> | null
+}
+
+export type TrilhaConversationResponse = {
+  status: 'ok'
+  student_id: string
+  trail_id: string
+  current_stage_number: number
+  current_question_number: number
+  progress_status: string
+  messages: TrilhaConversationMessage[]
+}
+
 /** Resultado tipado para o player: ok/replay vs conflict (resync). */
 export type AdvanceOutcome =
   | { kind: 'ok'; result: TrilhaAdvanceResult }
@@ -338,6 +366,67 @@ export async function fetchTrailHistory(
   }
   if (!res.ok) throw await parseError(res)
   return (await res.json()) as TrilhaHistoryResponse
+}
+
+/** conversation_logs da matrícula — ordem cronológica (chat-first). */
+export async function fetchTrailConversation(
+  studentId: string,
+  trailId: string,
+  token?: string,
+): Promise<TrilhaConversationResponse> {
+  const url = new URL('/api/student_trails', resolveApiBaseUrl())
+  const params = facadeQuery('conversation')
+  params.set('student_id', studentId)
+  params.set('trail_id', trailId)
+  url.search = params.toString()
+  const res = await fetch(url.toString(), {
+    method: 'GET',
+    headers: authHeaders(token),
+  })
+  if (res.status === 401 || res.status === 403) {
+    clearTrilhaSession()
+    throw await parseError(res)
+  }
+  if (!res.ok) throw await parseError(res)
+  return (await res.json()) as TrilhaConversationResponse
+}
+
+/**
+ * Persiste delivery fixed/exercise em conversation_logs (idempotente).
+ * Stage ai → no-op aqui; usar ensureTrailAi no Continuar.
+ */
+export async function ensureStepDelivery(
+  studentId: string,
+  trailId: string,
+  token?: string,
+): Promise<{ content: string | null; persisted: boolean }> {
+  const url = new URL('/api/student_trails', resolveApiBaseUrl())
+  url.search = facadeQuery('ensure-delivery').toString()
+  const res = await fetch(url.toString(), {
+    method: 'POST',
+    headers: {
+      ...authHeaders(token),
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      student_id: studentId,
+      trail_id: trailId,
+      channel: 'app',
+    }),
+  })
+  if (res.status === 401 || res.status === 403) {
+    clearTrilhaSession()
+    throw await parseError(res)
+  }
+  if (!res.ok) throw await parseError(res)
+  const body = (await res.json()) as {
+    content?: string | null
+    persisted?: boolean
+  }
+  return {
+    content: typeof body.content === 'string' ? body.content : null,
+    persisted: body.persisted === true,
+  }
 }
 
 export async function advanceProgress(input: {

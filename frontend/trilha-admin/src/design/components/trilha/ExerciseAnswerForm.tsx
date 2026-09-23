@@ -12,6 +12,8 @@ export type ExerciseAnswerFormProps = {
   onChange: (value: string) => void
   onSubmit: () => void
   disabled?: boolean
+  /** Label do CTA (chat-first: «Responder»). */
+  submitLabel?: string
 }
 
 export function ExerciseAnswerForm({
@@ -21,6 +23,7 @@ export function ExerciseAnswerForm({
   onChange,
   onSubmit,
   disabled = false,
+  submitLabel = 'Enviar resposta',
 }: ExerciseAnswerFormProps) {
   function handleSubmit(e: FormEvent) {
     e.preventDefault()
@@ -75,7 +78,7 @@ export function ExerciseAnswerForm({
         disabled={disabled || submitting || !value.trim()}
         aria-busy={submitting || undefined}
       >
-        {submitting ? 'A enviar…' : 'Enviar resposta'}
+        {submitting ? 'A enviar…' : submitLabel}
       </button>
     </form>
   )

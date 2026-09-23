@@ -3,6 +3,7 @@ import type { Firestore } from 'firebase-admin/firestore'
 import { createExerciseAttemptWithQuestionLookup } from '../exerciseAttemptService'
 import { advance } from './advance'
 import { TrailEngineError } from './errors'
+import { recordStudentMessage } from './recordMessage'
 import type { CollectionNames, TrailChannel } from './types'
 import { defaultCollectionNames } from './types'
 
@@ -88,6 +89,27 @@ export async function submitExerciseAnswer(
     }
     throw new TrailEngineError('invalid_payload', msg)
   }
+
+  // Chat-first: resposta do aluno entra em conversation_logs (paridade WA).
+  await recordStudentMessage(
+    db,
+    {
+      student_id: input.student_id,
+      trail_id: input.trail_id,
+      stage_number: input.stage_number,
+      question_number: input.question_number,
+      message_text: answer,
+      channel: input.channel,
+      institution_id: input.institution_id,
+      message_type: 'exercise',
+      idempotency_key: `${key}:student_msg`,
+      metadata: {
+        is_correct: attempt.is_correct,
+        attempt_id: attempt.id,
+      },
+    },
+    collections,
+  )
 
   const shouldAdvance = input.advance_on_submit !== false
   if (!shouldAdvance) {

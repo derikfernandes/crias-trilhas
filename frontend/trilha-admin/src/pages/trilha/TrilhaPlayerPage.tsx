@@ -2,17 +2,21 @@ import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { StudentShellView } from '../../design/layouts/StudentShellView'
 import { TrilhaPlayerPageView } from '../../design/views/TrilhaPlayerPageView'
+import type { StudentChatBubble } from '../../design/components/trilha/StudentConversationChat'
 import {
   resolveAiDeliveryForTrigger,
   shouldEnsureAiOnTrigger,
 } from '../../lib/trilha/aiDeliveryGate'
 import {
   advanceWithConflictHandling,
+  ensureStepDelivery,
   ensureTrailAi,
   fetchNextContent,
+  fetchTrailConversation,
   fetchTrilhaHome,
   submitExercise,
   TrilhaApiError,
+  type TrilhaConversationMessage,
   type TrilhaNextContent,
 } from '../../lib/trilha/trilhaApi'
 import { resolveExerciseOptions } from '../../lib/trilha/exerciseOptions'
@@ -38,6 +42,22 @@ function normalizeNextAction(
   return content.next_action
 }
 
+function mapChatMessages(
+  rows: TrilhaConversationMessage[],
+): StudentChatBubble[] {
+  return rows
+    .filter((m) => Boolean(m.message_text?.trim()))
+    .map((m) => ({
+      id: m.id,
+      sender: m.sender,
+      message_text: m.message_text,
+      stage_number: m.stage_number,
+      question_number: m.question_number,
+      created_at: m.created_at,
+      created_at_brasilia: m.created_at_brasilia,
+    }))
+}
+
 /** POST ensure-ai — só via trigger `continue` (CTA no player). */
 async function ensureIfContinue(
   next: TrilhaNextContent,
@@ -48,6 +68,20 @@ async function ensureIfContinue(
   return resolveAiDeliveryForTrigger(next, 'continue', () =>
     ensureTrailAi(studentId, trailId, token),
   )
+}
+
+/** Persiste delivery fixed/exercise no Continuar (não no resume). */
+async function persistDeliveryOnContinue(
+  next: TrilhaNextContent,
+  studentId: string,
+  trailId: string,
+  token: string,
+): Promise<void> {
+  if (next.stage_type === 'ai') return
+  if (next.next_action !== 'deliver_content' && next.next_action !== 'await_answer') {
+    return
+  }
+  await ensureStepDelivery(studentId, trailId, token)
 }
 
 export function TrilhaPlayerPage() {
@@ -68,11 +102,24 @@ export function TrilhaPlayerPage() {
   const [totalQuestions, setTotalQuestions] = useState<number | null>(null)
   const [totalStages, setTotalStages] = useState<number | null>(null)
   const [content, setContent] = useState<TrilhaNextContent | null>(null)
+  const [chatMessages, setChatMessages] = useState<StudentChatBubble[]>([])
   const [feedbackState, setFeedbackState] = useState<'correct' | 'incorrect' | 'recorded' | null>(
     null,
   )
   const [victoryMessage, setVictoryMessage] = useState<string | null>(null)
   const [pendingNext, setPendingNext] = useState<TrilhaNextContent | null>(null)
+
+  const refreshConversation = useCallback(
+    async (tid: string) => {
+      const conversation = await fetchTrailConversation(
+        session.student.student_id,
+        tid,
+        session.token,
+      )
+      setChatMessages(mapChatMessages(conversation.messages))
+    },
+    [session.student.student_id, session.token],
+  )
 
   const applyContent = useCallback((next: TrilhaNextContent) => {
     setContent({ ...next, next_action: normalizeNextAction(next) })
@@ -109,11 +156,14 @@ export function TrilhaPlayerPage() {
           ? home.total_stages
           : null,
       )
-      const next = await fetchNextContent(
-        session.student.student_id,
-        home.enrollment.trail_id,
-        session.token,
-      )
+      const [next] = await Promise.all([
+        fetchNextContent(
+          session.student.student_id,
+          home.enrollment.trail_id,
+          session.token,
+        ),
+        refreshConversation(home.enrollment.trail_id),
+      ])
       applyContent(next)
     } catch (e) {
       if (e instanceof TrilhaApiError && (e.status === 401 || e.status === 403)) {
@@ -129,7 +179,14 @@ export function TrilhaPlayerPage() {
       )
       setLoadState('error')
     }
-  }, [applyContent, navigate, session.student.institution_id, session.student.student_id, session.token])
+  }, [
+    applyContent,
+    navigate,
+    refreshConversation,
+    session.student.institution_id,
+    session.student.student_id,
+    session.token,
+  ])
 
   useEffect(() => {
     const id = window.setTimeout(() => {
@@ -162,7 +219,15 @@ export function TrilhaPlayerPage() {
           session.token,
         )
         applyContent(working)
+      } else {
+        await persistDeliveryOnContinue(
+          working,
+          session.student.student_id,
+          trailId,
+          session.token,
+        )
       }
+      await refreshConversation(trailId)
 
       const key = newIdempotencyKey(
         session.student.student_id,
@@ -185,13 +250,21 @@ export function TrilhaPlayerPage() {
           'Atualizámos o passo (também avançou no WhatsApp). Aqui está onde ficou.',
         )
         const next = await outcome.resync()
-        // Continuar (conflito): pode ensure o passo em que ficou, se pending.
         const resolved = await ensureIfContinue(
           next,
           session.student.student_id,
           trailId,
           session.token,
         )
+        if (!shouldEnsureAiOnTrigger(next, 'continue')) {
+          await persistDeliveryOnContinue(
+            resolved,
+            session.student.student_id,
+            trailId,
+            session.token,
+          )
+        }
+        await refreshConversation(trailId)
         applyContent(resolved)
         return
       }
@@ -208,6 +281,15 @@ export function TrilhaPlayerPage() {
         trailId,
         session.token,
       )
+      if (!shouldEnsureAiOnTrigger(next, 'continue')) {
+        await persistDeliveryOnContinue(
+          resolved,
+          session.student.student_id,
+          trailId,
+          session.token,
+        )
+      }
+      await refreshConversation(trailId)
       setVictoryMessage(
         `Etapa ${working.stage_number} · Q${working.question_number} concluída`,
       )
@@ -259,16 +341,15 @@ export function TrilhaPlayerPage() {
           setConflictMessage(
             'Atualizámos o passo (também avançou no WhatsApp). Aqui está onde ficou.',
           )
-          // Conflito no submit: só GET — sem ensure-ai.
           const next = await fetchNextContent(
             session.student.student_id,
             trailId,
             session.token,
           )
+          await refreshConversation(trailId)
           applyContent(next)
           return
         }
-        // C3.5: sem feedback do motor, NÃO avançar às cegas
         if (
           e instanceof TrilhaApiError &&
           (e.status === 404 || e.status === 501 || e.status === 405)
@@ -281,7 +362,7 @@ export function TrilhaPlayerPage() {
         throw e
       }
 
-      // Pós-submit: só GET. ensure-ai fica para o CTA Continuar / Próximo passo.
+      await refreshConversation(trailId)
       const next = await fetchNextContent(
         session.student.student_id,
         trailId,
@@ -313,13 +394,21 @@ export function TrilhaPlayerPage() {
           ? `Etapa ${content?.stage_number ?? ''} · Q${content?.question_number ?? ''} concluída`
           : null,
       )
-      // "Próximo passo" = Continuar no player → pode ensure se pending.
       const resolved = await ensureIfContinue(
         pendingNext,
         session.student.student_id,
         trailId,
         session.token,
       )
+      if (!shouldEnsureAiOnTrigger(pendingNext, 'continue')) {
+        await persistDeliveryOnContinue(
+          resolved,
+          session.student.student_id,
+          trailId,
+          session.token,
+        )
+      }
+      await refreshConversation(trailId)
       window.setTimeout(() => {
         setVictoryMessage(null)
         applyContent(resolved)
@@ -370,6 +459,7 @@ export function TrilhaPlayerPage() {
         conflictMessage={conflictMessage}
         feedbackState={feedbackState}
         victoryMessage={victoryMessage}
+        chatMessages={chatMessages}
         onAnswerChange={setAnswerValue}
         onContinue={() => void handleContinue()}
         onSubmitAnswer={() => void handleSubmitAnswer()}

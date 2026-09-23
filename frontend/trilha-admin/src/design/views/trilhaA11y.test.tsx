@@ -165,6 +165,7 @@ describe('Trilha a11y — login / home / player', () => {
         submitting={false}
         answerValue=""
         loadState="ready"
+        chatMessages={[]}
         onAnswerChange={noop}
         onContinue={noop}
         onSubmitAnswer={onSubmitAnswer}
@@ -176,6 +177,7 @@ describe('Trilha a11y — login / home / player', () => {
       screen.getByRole('heading', { level: 1, name: /questão de leitura/i }),
     ).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /voltar ao mapa/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /responder/i })).toBeInTheDocument()
 
     const group = screen.getByRole('group', { name: /escolha uma opção/i })
     expect(within(group).getByLabelText(/opção a/i)).toBeInTheDocument()
@@ -197,6 +199,7 @@ describe('Trilha a11y — login / home / player', () => {
         answerValue=""
         loadState="ready"
         conflictMessage="O progresso foi atualizado noutro dispositivo."
+        chatMessages={[]}
         onAnswerChange={noop}
         onContinue={noop}
         onSubmitAnswer={noop}
@@ -207,6 +210,8 @@ describe('Trilha a11y — login / home / player', () => {
     expect(
       screen.getByText(/noutro dispositivo/i).closest('[role="status"]'),
     ).toHaveTextContent(/noutro dispositivo/i)
+    expect(screen.getByRole('button', { name: /^continuar$/i })).toBeInTheDocument()
+    expect(screen.getByRole('log', { name: /histórico da trilha/i })).toBeInTheDocument()
 
     rerender(
       <TrilhaPlayerPageView
@@ -219,6 +224,7 @@ describe('Trilha a11y — login / home / player', () => {
         submitting={false}
         answerValue=""
         loadState="loading"
+        chatMessages={[]}
         onAnswerChange={noop}
         onContinue={noop}
         onSubmitAnswer={noop}
@@ -226,7 +232,7 @@ describe('Trilha a11y — login / home / player', () => {
       />,
     )
 
-    expect(screen.getByText(/a carregar o passo da trilha/i)).toBeInTheDocument()
+    expect(screen.getByText(/a carregar a conversa da trilha/i)).toBeInTheDocument()
   })
 
   it('player erro: banner alert + h1 landmark', () => {
@@ -242,6 +248,7 @@ describe('Trilha a11y — login / home / player', () => {
         answerValue=""
         loadState="error"
         errorMessage="Falha de rede"
+        chatMessages={[]}
         onAnswerChange={noop}
         onContinue={noop}
         onSubmitAnswer={noop}
