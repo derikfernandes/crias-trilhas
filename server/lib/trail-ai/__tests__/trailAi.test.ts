@@ -7,7 +7,12 @@ import {
 import { formatAiAnswer, TRAIL_AI_SPACING_RULES } from '../formatAiAnswer'
 import {
   buildVertexGenerateContentUrl,
+  DEFAULT_VERTEX_LOCATION,
+  DEFAULT_VERTEX_MODEL,
   generateContentWithGemini,
+  normalizeVertexModelId,
+  resolveEffectiveVertexLocation,
+  resolveTrailAiModel,
   resolveVertexTarget,
 } from '../geminiClient'
 
@@ -106,7 +111,9 @@ describe('generateContentWithGemini', () => {
       }
       expect(href).toContain('us-central1-aiplatform.googleapis.com')
       expect(href).toContain('/projects/my-proj/locations/us-central1/')
-      expect(href).toContain('/publishers/google/models/gemini-2.0-flash:generateContent')
+      expect(href).toContain(
+        `/publishers/google/models/${DEFAULT_VERTEX_MODEL}:generateContent`,
+      )
       expect(href).not.toContain('generativelanguage')
       expect((init?.headers as Record<string, string>).Authorization).toBe(
         'Bearer ya29.test',
@@ -127,13 +134,91 @@ describe('generateContentWithGemini', () => {
         GOOGLE_OAUTH_REFRESH_TOKEN: 'rt',
         VERTEX_PROJECT_ID: 'my-proj',
         VERTEX_LOCATION: 'us-central1',
-        VERTEX_MODEL: 'gemini-2.0-flash',
         VERTEX_PROXY_PORT: '8080',
       },
       fetchImpl,
     )
     expect(result.text).toContain('Vertex ok')
-    expect(result.model).toBe('gemini-2.0-flash')
+    expect(result.model).toBe(DEFAULT_VERTEX_MODEL)
+  })
+
+  it('VERTEX_LOCATION=global + Flash remapeia para us-central1', async () => {
+    const fetchImpl = vi.fn(async (url: string | URL) => {
+      const href = String(url)
+      if (href.includes('oauth2.googleapis.com/token')) {
+        return new Response(JSON.stringify({ access_token: 'ya29.test' }), {
+          status: 200,
+        })
+      }
+      expect(href).toContain('us-central1-aiplatform.googleapis.com')
+      expect(href).toContain('/locations/us-central1/')
+      expect(href).not.toContain('/locations/global/')
+      expect(href).toContain(
+        `/publishers/google/models/${DEFAULT_VERTEX_MODEL}:generateContent`,
+      )
+      return new Response(
+        JSON.stringify({
+          candidates: [{ content: { parts: [{ text: 'Remap ok' }] } }],
+        }),
+        { status: 200 },
+      )
+    }) as unknown as typeof fetch
+
+    const result = await generateContentWithGemini(
+      { systemInstruction: 'sys', userText: 'user' },
+      {
+        GOOGLE_OAUTH_CLIENT_ID: 'cid',
+        GOOGLE_OAUTH_CLIENT_SECRET: 'sec',
+        GOOGLE_OAUTH_REFRESH_TOKEN: 'rt',
+        VERTEX_PROJECT_ID: 'crias-mvp',
+        VERTEX_LOCATION: 'global',
+        VERTEX_MODEL: 'gemini-2.0-flash',
+      },
+      fetchImpl,
+    )
+    expect(result.model).toBe(DEFAULT_VERTEX_MODEL)
+    expect(result.text).toBe('Remap ok')
+  })
+
+  it('404 publisher model orienta VERTEX_LOCATION e VERTEX_MODEL', async () => {
+    const fetchImpl = vi.fn(async (url: string | URL) => {
+      const href = String(url)
+      if (href.includes('oauth2.googleapis.com/token')) {
+        return new Response(JSON.stringify({ access_token: 'ya29.test' }), {
+          status: 200,
+        })
+      }
+      return new Response(
+        JSON.stringify({
+          error: {
+            code: 404,
+            message:
+              'Publisher model `projects/p/locations/us-central1/publishers/google/models/x` was not found or your project does not have access to it.',
+            status: 'NOT_FOUND',
+          },
+        }),
+        { status: 404 },
+      )
+    }) as unknown as typeof fetch
+
+    await expect(
+      generateContentWithGemini(
+        { systemInstruction: 's', userText: 'u' },
+        {
+          GOOGLE_OAUTH_CLIENT_ID: 'cid',
+          GOOGLE_OAUTH_CLIENT_SECRET: 'sec',
+          GOOGLE_OAUTH_REFRESH_TOKEN: 'rt',
+          VERTEX_PROJECT_ID: 'p',
+          VERTEX_LOCATION: 'us-central1',
+          VERTEX_MODEL: 'modelo-inexistente',
+        },
+        fetchImpl,
+      ),
+    ).rejects.toThrow(
+      new RegExp(
+        `VERTEX_LOCATION=${DEFAULT_VERTEX_LOCATION}.*VERTEX_MODEL=${DEFAULT_VERTEX_MODEL}`,
+      ),
+    )
   })
 
   it('403 ACCESS_TOKEN_SCOPE_INSUFFICIENT orienta renovar OAuth ou GEMINI_API_KEY', async () => {
@@ -172,14 +257,55 @@ describe('generateContentWithGemini', () => {
 })
 
 describe('resolveVertexTarget / buildVertexGenerateContentUrl', () => {
-  it('exige project + location; PROXY_PORT sozinho não ativa', () => {
+  it('exige project; location default us-central1; PROXY_PORT sozinho não ativa', () => {
     expect(resolveVertexTarget({ VERTEX_PROXY_PORT: '8080' })).toBeNull()
+    expect(resolveVertexTarget({ VERTEX_PROJECT_ID: 'p' })).toEqual({
+      projectId: 'p',
+      location: DEFAULT_VERTEX_LOCATION,
+      remappedFromGlobal: false,
+    })
     expect(
       resolveVertexTarget({
         VERTEX_PROJECT_ID: 'p',
         VERTEX_LOCATION: 'southamerica-east1',
       }),
-    ).toEqual({ projectId: 'p', location: 'southamerica-east1' })
+    ).toEqual({
+      projectId: 'p',
+      location: 'southamerica-east1',
+      remappedFromGlobal: false,
+    })
+  })
+
+  it('global + Flash remapeia para us-central1', () => {
+    expect(
+      resolveEffectiveVertexLocation('global', 'gemini-2.0-flash-001'),
+    ).toEqual({
+      location: DEFAULT_VERTEX_LOCATION,
+      remappedFromGlobal: true,
+    })
+    expect(
+      resolveVertexTarget({
+        VERTEX_PROJECT_ID: 'p',
+        VERTEX_LOCATION: 'global',
+        VERTEX_MODEL: 'gemini-2.0-flash',
+      }),
+    ).toEqual({
+      projectId: 'p',
+      location: DEFAULT_VERTEX_LOCATION,
+      remappedFromGlobal: true,
+    })
+  })
+
+  it('normaliza alias AI Studio para ID Vertex', () => {
+    expect(normalizeVertexModelId('gemini-2.0-flash')).toBe(
+      DEFAULT_VERTEX_MODEL,
+    )
+    expect(
+      resolveTrailAiModel({ GEMINI_MODEL: 'gemini-2.0-flash' }, { useVertex: true }),
+    ).toBe(DEFAULT_VERTEX_MODEL)
+    expect(resolveTrailAiModel({}, { useVertex: true })).toBe(
+      DEFAULT_VERTEX_MODEL,
+    )
   })
 
   it('monta host regional e global', () => {

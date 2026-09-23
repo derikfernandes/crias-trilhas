@@ -3,9 +3,12 @@
  * Credenciais só via env Vercel — nunca hardcoded.
  *
  * Rotas:
- * - VERTEX_PROJECT_ID + VERTEX_LOCATION + OAuth → Vertex AI (scope cloud-platform)
+ * - VERTEX_PROJECT_ID (+ VERTEX_LOCATION opcional) + OAuth → Vertex AI (scope cloud-platform)
  * - OAuth sem VERTEX_* → Generative Language (scope generative-language ou cloud-platform)
  * - GEMINI_API_KEY → Generative Language `?key=` (sem OAuth)
+ *
+ * Vertex: location default `us-central1` (não `global` para Gemini Flash).
+ * Modelo Vertex default: `gemini-2.0-flash-001` (ID publisher versionado).
  */
 
 export type GeminiGenerateInput = {
@@ -26,13 +29,37 @@ export const GOOGLE_OAUTH_SCOPES = {
   generativeLanguage: 'https://www.googleapis.com/auth/generative-language',
 } as const
 
+/** Região Vertex sensata para Gemini Flash (evita `global` + alias AI Studio → 404). */
+export const DEFAULT_VERTEX_LOCATION = 'us-central1'
+
+/** ID publisher versionado esperado pela API Vertex (não o alias AI Studio). */
+export const DEFAULT_VERTEX_MODEL = 'gemini-2.0-flash-001'
+
+/** Default Generative Language / AI Studio. */
+export const DEFAULT_GEMINI_MODEL = 'gemini-2.0-flash'
+
 function readEnv(name: string, env: NodeJS.ProcessEnv = process.env): string {
   const v = env[name]
   return typeof v === 'string' ? v.trim() : ''
 }
 
+/** Aliases AI Studio → IDs publisher Vertex. */
+export function normalizeVertexModelId(model: string): string {
+  const m = model.trim()
+  if (m === 'gemini-2.0-flash') return 'gemini-2.0-flash-001'
+  if (m === 'gemini-2.0-flash-lite') return 'gemini-2.0-flash-lite-001'
+  if (m === 'gemini-1.5-flash') return 'gemini-1.5-flash-002'
+  if (m === 'gemini-1.5-pro') return 'gemini-1.5-pro-002'
+  return m
+}
+
+/** Família Flash (inclui -001 / -lite) — `global` costuma falhar com aliases curtos. */
+export function isGeminiFlashFamilyModel(model: string): boolean {
+  return /gemini-[\w.-]*flash/i.test(model.trim())
+}
+
 export function resolveGeminiModel(env: NodeJS.ProcessEnv = process.env): string {
-  return readEnv('GEMINI_MODEL', env) || 'gemini-2.0-flash'
+  return readEnv('GEMINI_MODEL', env) || DEFAULT_GEMINI_MODEL
 }
 
 /** Modelo efetivo: VERTEX_MODEL quando no caminho Vertex; senão GEMINI_MODEL. */
@@ -41,11 +68,11 @@ export function resolveTrailAiModel(
   opts: { useVertex: boolean } = { useVertex: false },
 ): string {
   if (opts.useVertex) {
-    return (
+    const raw =
       readEnv('VERTEX_MODEL', env) ||
       readEnv('GEMINI_MODEL', env) ||
-      'gemini-2.0-flash'
-    )
+      DEFAULT_VERTEX_MODEL
+    return normalizeVertexModelId(raw)
   }
   return resolveGeminiModel(env)
 }
@@ -57,16 +84,45 @@ export function isTrailAiDisabled(env: NodeJS.ProcessEnv = process.env): boolean
 export type VertexTarget = {
   projectId: string
   location: string
+  /** true se VERTEX_LOCATION=global foi mapeado para região por modelo Flash. */
+  remappedFromGlobal?: boolean
 }
 
-/** VERTEX_* ativos quando project + location estão setados (proxy port é só local — ignorado). */
+/**
+ * Resolve location efetiva.
+ * `global` + modelo Flash → `us-central1` (evita 404 de publisher model).
+ */
+export function resolveEffectiveVertexLocation(
+  rawLocation: string,
+  model: string,
+): { location: string; remappedFromGlobal: boolean } {
+  const location = rawLocation.trim() || DEFAULT_VERTEX_LOCATION
+  if (location === 'global' && isGeminiFlashFamilyModel(model)) {
+    return { location: DEFAULT_VERTEX_LOCATION, remappedFromGlobal: true }
+  }
+  return { location, remappedFromGlobal: false }
+}
+
+/**
+ * VERTEX_* ativos quando project está setado.
+ * Location: VERTEX_LOCATION ou default `us-central1` (nunca `global` implícito).
+ * `global` + Flash é remapeado para `us-central1`.
+ */
 export function resolveVertexTarget(
   env: NodeJS.ProcessEnv = process.env,
+  modelForLocation?: string,
 ): VertexTarget | null {
   const projectId = readEnv('VERTEX_PROJECT_ID', env)
-  const location = readEnv('VERTEX_LOCATION', env)
-  if (!projectId || !location) return null
-  return { projectId, location }
+  if (!projectId) return null
+
+  const rawLocation = readEnv('VERTEX_LOCATION', env) || DEFAULT_VERTEX_LOCATION
+  const model =
+    modelForLocation || resolveTrailAiModel(env, { useVertex: true })
+  const { location, remappedFromGlobal } = resolveEffectiveVertexLocation(
+    rawLocation,
+    model,
+  )
+  return { projectId, location, remappedFromGlobal }
 }
 
 function generativeLanguageBase(env: NodeJS.ProcessEnv): string {
@@ -154,6 +210,16 @@ function isInsufficientScopeError(status: number, errText: string): boolean {
   )
 }
 
+function isPublisherModelNotFound(status: number, errText: string): boolean {
+  if (status !== 404) return false
+  const lower = errText.toLowerCase()
+  return (
+    lower.includes('publisher model') ||
+    lower.includes('was not found') ||
+    lower.includes('does not have access')
+  )
+}
+
 function scopeGuidance(useVertex: boolean): string {
   const cloud = GOOGLE_OAUTH_SCOPES.cloudPlatform
   const gen = GOOGLE_OAUTH_SCOPES.generativeLanguage
@@ -167,6 +233,15 @@ function scopeGuidance(useVertex: boolean): string {
     `OAuth sem scope suficiente para Generative Language. Renove o refresh token com ` +
     `${gen} e/ou ${cloud}; ou sete VERTEX_PROJECT_ID + VERTEX_LOCATION (com OAuth ${cloud}) para usar Vertex; ` +
     `ou use GEMINI_API_KEY (caminho mais simples, sem OAuth scopes).`
+  )
+}
+
+function vertex404Guidance(location: string, model: string): string {
+  return (
+    `Modelo/região Vertex não encontrados (location=${location}, model=${model}). ` +
+    `No Vercel (crias-trilhas) defina VERTEX_LOCATION=${DEFAULT_VERTEX_LOCATION} e ` +
+    `VERTEX_MODEL=${DEFAULT_VERTEX_MODEL} (ID publisher versionado — não use o alias AI Studio ` +
+    `gemini-2.0-flash nem location=global para Flash). Preview+Production → Redeploy.`
   )
 }
 
@@ -184,12 +259,15 @@ export async function generateContentWithGemini(
     throw new Error('TRAIL_AI_DISABLED=1 — geração desligada.')
   }
 
-  const vertex = resolveVertexTarget(env)
   const accessToken = await fetchAccessToken(env, fetchImpl)
   const apiKey = readEnv('GEMINI_API_KEY', env)
 
+  const modelForVertex = resolveTrailAiModel(env, { useVertex: true })
+  const vertex = resolveVertexTarget(env, modelForVertex)
   const useVertex = Boolean(vertex && accessToken)
-  const model = resolveTrailAiModel(env, { useVertex })
+  const model = useVertex
+    ? modelForVertex
+    : resolveTrailAiModel(env, { useVertex: false })
 
   let url: URL
   const headers: Record<string, string> = {
@@ -197,6 +275,13 @@ export async function generateContentWithGemini(
   }
 
   if (useVertex && vertex) {
+    if (vertex.remappedFromGlobal) {
+      console.warn(
+        `[trail-ai] VERTEX_LOCATION=global incompatível com modelo Flash (${model}); ` +
+          `usando ${vertex.location}. Prefira VERTEX_LOCATION=${DEFAULT_VERTEX_LOCATION} ` +
+          `e VERTEX_MODEL=${DEFAULT_VERTEX_MODEL}.`,
+      )
+    }
     url = new URL(buildVertexGenerateContentUrl(vertex, model))
     headers.Authorization = `Bearer ${accessToken}`
   } else {
@@ -239,6 +324,11 @@ export async function generateContentWithGemini(
     if (isInsufficientScopeError(res.status, errText)) {
       throw new Error(
         `generateContent falhou (403): ${scopeGuidance(useVertex)} Detalhe: ${errText.slice(0, 180)}`,
+      )
+    }
+    if (useVertex && vertex && isPublisherModelNotFound(res.status, errText)) {
+      throw new Error(
+        `generateContent falhou (404): ${vertex404Guidance(vertex.location, model)} Detalhe: ${errText.slice(0, 180)}`,
       )
     }
     throw new Error(
