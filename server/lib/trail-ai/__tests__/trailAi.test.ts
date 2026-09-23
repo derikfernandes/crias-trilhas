@@ -109,10 +109,8 @@ describe('generateContentWithGemini', () => {
           status: 200,
         })
       }
-      expect(href).toContain('us-central1-aiplatform.googleapis.com')
-      expect(href).toContain('/projects/my-proj/locations/us-central1/')
-      expect(href).toContain(
-        `/publishers/google/models/${DEFAULT_VERTEX_MODEL}:generateContent`,
+      expect(href).toBe(
+        'https://us-central1-aiplatform.googleapis.com/v1/projects/my-proj/locations/us-central1/publishers/google/models/gemini-2.0-flash-001:generateContent',
       )
       expect(href).not.toContain('generativelanguage')
       expect((init?.headers as Record<string, string>).Authorization).toBe(
@@ -134,15 +132,18 @@ describe('generateContentWithGemini', () => {
         GOOGLE_OAUTH_REFRESH_TOKEN: 'rt',
         VERTEX_PROJECT_ID: 'my-proj',
         VERTEX_LOCATION: 'us-central1',
+        VERTEX_MODEL: 'gemini-2.0-flash-001',
         VERTEX_PROXY_PORT: '8080',
       },
       fetchImpl,
     )
     expect(result.text).toContain('Vertex ok')
-    expect(result.model).toBe(DEFAULT_VERTEX_MODEL)
+    expect(result.model).toBe('gemini-2.0-flash-001')
   })
 
-  it('VERTEX_LOCATION=global + Flash remapeia para us-central1', async () => {
+  it('VERTEX_LOCATION=global + gemini-3.7-flash usa endpoint global exato', async () => {
+    const expectedUrl =
+      'https://aiplatform.googleapis.com/v1/projects/crias-mvp/locations/global/publishers/google/models/gemini-3.7-flash:generateContent'
     const fetchImpl = vi.fn(async (url: string | URL) => {
       const href = String(url)
       if (href.includes('oauth2.googleapis.com/token')) {
@@ -150,15 +151,10 @@ describe('generateContentWithGemini', () => {
           status: 200,
         })
       }
-      expect(href).toContain('us-central1-aiplatform.googleapis.com')
-      expect(href).toContain('/locations/us-central1/')
-      expect(href).not.toContain('/locations/global/')
-      expect(href).toContain(
-        `/publishers/google/models/${DEFAULT_VERTEX_MODEL}:generateContent`,
-      )
+      expect(href).toBe(expectedUrl)
       return new Response(
         JSON.stringify({
-          candidates: [{ content: { parts: [{ text: 'Remap ok' }] } }],
+          candidates: [{ content: { parts: [{ text: 'Global 3.7 ok' }] } }],
         }),
         { status: 200 },
       )
@@ -172,12 +168,12 @@ describe('generateContentWithGemini', () => {
         GOOGLE_OAUTH_REFRESH_TOKEN: 'rt',
         VERTEX_PROJECT_ID: 'crias-mvp',
         VERTEX_LOCATION: 'global',
-        VERTEX_MODEL: 'gemini-2.0-flash',
+        VERTEX_MODEL: 'gemini-3.7-flash',
       },
       fetchImpl,
     )
-    expect(result.model).toBe(DEFAULT_VERTEX_MODEL)
-    expect(result.text).toBe('Remap ok')
+    expect(result.model).toBe('gemini-3.7-flash')
+    expect(result.text).toBe('Global 3.7 ok')
   })
 
   it('404 publisher model orienta VERTEX_LOCATION e VERTEX_MODEL', async () => {
@@ -257,13 +253,13 @@ describe('generateContentWithGemini', () => {
 })
 
 describe('resolveVertexTarget / buildVertexGenerateContentUrl', () => {
-  it('exige project; location default us-central1; PROXY_PORT sozinho não ativa', () => {
+  it('exige project; location default global; PROXY_PORT sozinho não ativa', () => {
     expect(resolveVertexTarget({ VERTEX_PROXY_PORT: '8080' })).toBeNull()
     expect(resolveVertexTarget({ VERTEX_PROJECT_ID: 'p' })).toEqual({
       projectId: 'p',
       location: DEFAULT_VERTEX_LOCATION,
-      remappedFromGlobal: false,
     })
+    expect(DEFAULT_VERTEX_LOCATION).toBe('global')
     expect(
       resolveVertexTarget({
         VERTEX_PROJECT_ID: 'p',
@@ -272,43 +268,52 @@ describe('resolveVertexTarget / buildVertexGenerateContentUrl', () => {
     ).toEqual({
       projectId: 'p',
       location: 'southamerica-east1',
-      remappedFromGlobal: false,
     })
   })
 
-  it('global + Flash remapeia para us-central1', () => {
+  it('global + Flash (incl. 3.7) NÃO remapeia — respeita env', () => {
+    expect(
+      resolveEffectiveVertexLocation('global', 'gemini-3.7-flash'),
+    ).toEqual({
+      location: 'global',
+      remappedFromGlobal: false,
+    })
     expect(
       resolveEffectiveVertexLocation('global', 'gemini-2.0-flash-001'),
     ).toEqual({
-      location: DEFAULT_VERTEX_LOCATION,
-      remappedFromGlobal: true,
+      location: 'global',
+      remappedFromGlobal: false,
     })
     expect(
       resolveVertexTarget({
-        VERTEX_PROJECT_ID: 'p',
+        VERTEX_PROJECT_ID: 'crias-mvp',
         VERTEX_LOCATION: 'global',
-        VERTEX_MODEL: 'gemini-2.0-flash',
+        VERTEX_MODEL: 'gemini-3.7-flash',
       }),
     ).toEqual({
-      projectId: 'p',
-      location: DEFAULT_VERTEX_LOCATION,
-      remappedFromGlobal: true,
+      projectId: 'crias-mvp',
+      location: 'global',
     })
   })
 
-  it('normaliza alias AI Studio para ID Vertex', () => {
+  it('normaliza alias AI Studio 2.0; deixa gemini-3.7-flash intacto', () => {
     expect(normalizeVertexModelId('gemini-2.0-flash')).toBe(
-      DEFAULT_VERTEX_MODEL,
+      'gemini-2.0-flash-001',
     )
+    expect(normalizeVertexModelId('gemini-3.7-flash')).toBe('gemini-3.7-flash')
     expect(
-      resolveTrailAiModel({ GEMINI_MODEL: 'gemini-2.0-flash' }, { useVertex: true }),
-    ).toBe(DEFAULT_VERTEX_MODEL)
+      resolveTrailAiModel(
+        { VERTEX_MODEL: 'gemini-3.7-flash' },
+        { useVertex: true },
+      ),
+    ).toBe('gemini-3.7-flash')
     expect(resolveTrailAiModel({}, { useVertex: true })).toBe(
       DEFAULT_VERTEX_MODEL,
     )
+    expect(DEFAULT_VERTEX_MODEL).toBe('gemini-3.7-flash')
   })
 
-  it('monta host regional e global', () => {
+  it('monta host regional e o endpoint global exato do dérik', () => {
     expect(
       buildVertexGenerateContentUrl(
         { projectId: 'p', location: 'us-central1' },
@@ -318,9 +323,12 @@ describe('resolveVertexTarget / buildVertexGenerateContentUrl', () => {
       'https://us-central1-aiplatform.googleapis.com/v1/projects/p/locations/us-central1/publishers/google/models/m:generateContent',
     )
     expect(
-      buildVertexGenerateContentUrl({ projectId: 'p', location: 'global' }, 'm'),
+      buildVertexGenerateContentUrl(
+        { projectId: 'crias-mvp', location: 'global' },
+        'gemini-3.7-flash',
+      ),
     ).toBe(
-      'https://aiplatform.googleapis.com/v1/projects/p/locations/global/publishers/google/models/m:generateContent',
+      'https://aiplatform.googleapis.com/v1/projects/crias-mvp/locations/global/publishers/google/models/gemini-3.7-flash:generateContent',
     )
   })
 })
