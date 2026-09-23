@@ -162,7 +162,10 @@ export type TrilhaNextContent = {
     | 'completed'
   progress_version: number
   title: string | null
-  /** Stage ai: ready = log WA/app; pending = chamar ensureTrailAi. */
+  /**
+   * Stage ai: ready = log WA/app; pending = falta delivery.
+   * POST ensure-ai só no CTA Continuar do player — nunca no GET/open/resume.
+   */
   ai_status?: 'ready' | 'pending' | 'not_applicable'
 }
 

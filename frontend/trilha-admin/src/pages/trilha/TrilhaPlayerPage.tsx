@@ -3,6 +3,10 @@ import { useNavigate } from 'react-router-dom'
 import { StudentShellView } from '../../design/layouts/StudentShellView'
 import { TrilhaPlayerPageView } from '../../design/views/TrilhaPlayerPageView'
 import {
+  resolveAiDeliveryForTrigger,
+  shouldEnsureAiOnTrigger,
+} from '../../lib/trilha/aiDeliveryGate'
+import {
   advanceWithConflictHandling,
   ensureTrailAi,
   fetchNextContent,
@@ -34,17 +38,16 @@ function normalizeNextAction(
   return content.next_action
 }
 
-/** GET não gera; se AI pending, POST ensure-ai (idempotente / logs WA). */
-async function resolveWithAiDelivery(
+/** POST ensure-ai — só via trigger `continue` (CTA no player). */
+async function ensureIfContinue(
   next: TrilhaNextContent,
   studentId: string,
   trailId: string,
   token: string,
 ): Promise<TrilhaNextContent> {
-  if (next.stage_type !== 'ai' || next.ai_status !== 'pending') {
-    return next
-  }
-  return ensureTrailAi(studentId, trailId, token)
+  return resolveAiDeliveryForTrigger(next, 'continue', () =>
+    ensureTrailAi(studentId, trailId, token),
+  )
 }
 
 export function TrilhaPlayerPage() {
@@ -79,6 +82,7 @@ export function TrilhaPlayerPage() {
     setLoadState('ready')
   }, [])
 
+  /** Resume / open / retry: só GET — nunca ensure-ai (P0 + A2). */
   const load = useCallback(async () => {
     setLoadState('loading')
     setErrorMessage(undefined)
@@ -110,13 +114,7 @@ export function TrilhaPlayerPage() {
         home.enrollment.trail_id,
         session.token,
       )
-      const resolved = await resolveWithAiDelivery(
-        next,
-        session.student.student_id,
-        home.enrollment.trail_id,
-        session.token,
-      )
-      applyContent(resolved)
+      applyContent(next)
     } catch (e) {
       if (e instanceof TrilhaApiError && (e.status === 401 || e.status === 403)) {
         clearTrilhaSession()
@@ -152,19 +150,32 @@ export function TrilhaPlayerPage() {
     setSubmitting(true)
     setErrorMessage(undefined)
     setConflictMessage(null)
-    const key = newIdempotencyKey(
-      session.student.student_id,
-      trailId,
-      content.stage_number,
-      content.question_number,
-    )
 
     try {
+      // P0: ensure-ai só no Continuar — se a célula atual é ai pending, gera antes de avançar.
+      let working = content
+      if (shouldEnsureAiOnTrigger(working, 'continue')) {
+        working = await ensureIfContinue(
+          working,
+          session.student.student_id,
+          trailId,
+          session.token,
+        )
+        applyContent(working)
+      }
+
+      const key = newIdempotencyKey(
+        session.student.student_id,
+        trailId,
+        working.stage_number,
+        working.question_number,
+      )
+
       const outcome = await advanceWithConflictHandling({
         studentId: session.student.student_id,
         trailId,
         idempotencyKey: key,
-        expectedVersion: content.progress_version,
+        expectedVersion: working.progress_version,
         reason: 'delivered',
         token: session.token,
       })
@@ -174,7 +185,8 @@ export function TrilhaPlayerPage() {
           'Atualizámos o passo (também avançou no WhatsApp). Aqui está onde ficou.',
         )
         const next = await outcome.resync()
-        const resolved = await resolveWithAiDelivery(
+        // Continuar (conflito): pode ensure o passo em que ficou, se pending.
+        const resolved = await ensureIfContinue(
           next,
           session.student.student_id,
           trailId,
@@ -189,14 +201,15 @@ export function TrilhaPlayerPage() {
         trailId,
         session.token,
       )
-      const resolved = await resolveWithAiDelivery(
+      // Pós-advance no Continuar: se o próximo é ai pending, gera agora (não no open).
+      const resolved = await ensureIfContinue(
         next,
         session.student.student_id,
         trailId,
         session.token,
       )
       setVictoryMessage(
-        `Etapa ${content.stage_number} · Q${content.question_number} concluída`,
+        `Etapa ${working.stage_number} · Q${working.question_number} concluída`,
       )
       window.setTimeout(() => {
         setVictoryMessage(null)
@@ -246,18 +259,13 @@ export function TrilhaPlayerPage() {
           setConflictMessage(
             'Atualizámos o passo (também avançou no WhatsApp). Aqui está onde ficou.',
           )
+          // Conflito no submit: só GET — sem ensure-ai.
           const next = await fetchNextContent(
             session.student.student_id,
             trailId,
             session.token,
           )
-          const resolved = await resolveWithAiDelivery(
-            next,
-            session.student.student_id,
-            trailId,
-            session.token,
-          )
-          applyContent(resolved)
+          applyContent(next)
           return
         }
         // C3.5: sem feedback do motor, NÃO avançar às cegas
@@ -273,18 +281,13 @@ export function TrilhaPlayerPage() {
         throw e
       }
 
+      // Pós-submit: só GET. ensure-ai fica para o CTA Continuar / Próximo passo.
       const next = await fetchNextContent(
         session.student.student_id,
         trailId,
         session.token,
       )
-      const resolved = await resolveWithAiDelivery(
-        next,
-        session.student.student_id,
-        trailId,
-        session.token,
-      )
-      setPendingNext(resolved)
+      setPendingNext(next)
       if (submitResult.is_correct === true) {
         setFeedbackState('correct')
       } else if (submitResult.is_correct === false) {
@@ -303,17 +306,23 @@ export function TrilhaPlayerPage() {
     }
   }
 
-  function handleContinueAfterFeedback() {
-    if (pendingNext) {
+  async function handleContinueAfterFeedback() {
+    if (pendingNext && trailId) {
       setVictoryMessage(
         feedbackState === 'correct'
           ? `Etapa ${content?.stage_number ?? ''} · Q${content?.question_number ?? ''} concluída`
           : null,
       )
-      const next = pendingNext
+      // "Próximo passo" = Continuar no player → pode ensure se pending.
+      const resolved = await ensureIfContinue(
+        pendingNext,
+        session.student.student_id,
+        trailId,
+        session.token,
+      )
       window.setTimeout(() => {
         setVictoryMessage(null)
-        applyContent(next)
+        applyContent(resolved)
       }, feedbackState === 'correct' ? 160 : 0)
       return
     }
@@ -325,7 +334,7 @@ export function TrilhaPlayerPage() {
     stageType === 'ai'
       ? content?.content?.trim() ||
         (content?.ai_status === 'pending'
-          ? 'A preparar a aula com a mesma IA do WhatsApp…'
+          ? 'Ainda não gerado — toque Continuar para preparar a aula com a IA.'
           : 'Conteúdo da aula ainda não disponível.')
       : content?.content?.trim() ||
         content?.prompt?.trim() ||
@@ -364,7 +373,7 @@ export function TrilhaPlayerPage() {
         onAnswerChange={setAnswerValue}
         onContinue={() => void handleContinue()}
         onSubmitAnswer={() => void handleSubmitAnswer()}
-        onContinueAfterFeedback={handleContinueAfterFeedback}
+        onContinueAfterFeedback={() => void handleContinueAfterFeedback()}
         onBack={() => navigate('/trilha')}
         onRetry={() => void load()}
         onOpenHistory={() => navigate('/trilha/historico')}
