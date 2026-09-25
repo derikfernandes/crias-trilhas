@@ -19,27 +19,20 @@ export function TrilhaUxDemoPage() {
       <StudentShellView studentName="Ana" onLogout={noop}>
         <TrilhaHomePageView
           studentName="Ana"
-          trailTitle="Introdução à cidadania"
-          stageNumber={4}
-          questionNumber={4}
-          progressRatio={1}
-          totalStages={4}
-          totalQuestions={4}
-          stageType={null}
-          statusLabel="Concluída"
-          homeHint="completed"
-          nextAction="completed"
-          canContinue={false}
-          habitLine="Hoje: 2 passos registados."
-          historyHints={[
+          trails={[
             {
-              stageNumber: 1,
-              questionNumber: 1,
-              stageType: 'fixed',
-              title: 'O que é cidadania',
-              attemptedAt: '2026-09-21T10:00:00Z',
+              trailId: 't1',
+              title: 'Introdução à cidadania',
+              status: 'completed',
+              nextAction: 'completed',
+              stageNumber: 4,
+              questionNumber: 4,
+              progressRatio: 1,
+              totalStages: 4,
+              totalQuestions: 4,
             },
           ]}
+          totals={{ inProgress: 0, completed: 1, active: 1 }}
           loadState="ready"
           onContinue={noop}
           onOpenHistory={noop}
@@ -54,38 +47,31 @@ export function TrilhaUxDemoPage() {
       <StudentShellView studentName="Ana" onLogout={noop}>
         <TrilhaHomePageView
           studentName="Ana"
-          trailTitle="Introdução à cidadania"
-          stageNumber={2}
-          questionNumber={2}
-          progressRatio={paused ? 0.35 : 0.4}
-          totalStages={4}
-          totalQuestions={4}
-          stageType={paused ? 'fixed' : 'exercise'}
-          statusLabel={paused ? 'Aguardando liberação' : 'Em progresso'}
-          homeHint={paused ? 'await_release' : null}
-          nextAction={paused ? 'await_release' : 'await_answer'}
-          canContinue={!paused}
-          habitLine={paused ? 'Ainda sem passo hoje — ~3–5 min quando puder.' : 'Hoje: 1 passo registado.'}
-          historyHints={[
+          trails={[
             {
-              stageNumber: 1,
-              questionNumber: 1,
-              stageType: 'fixed',
-              title: 'O que é cidadania',
-            },
-            {
-              stageNumber: 1,
-              questionNumber: 2,
-              stageType: 'exercise',
-              title: 'Direitos básicos',
-            },
-            {
+              trailId: 't1',
+              title: 'Introdução à cidadania',
+              status: 'in_progress',
+              nextAction: paused ? 'await_release' : 'await_answer',
               stageNumber: 2,
+              questionNumber: 2,
+              progressRatio: paused ? 0.35 : 0.4,
+              totalStages: 4,
+              totalQuestions: 4,
+            },
+            {
+              trailId: 't2',
+              title: 'Matemática — Demo',
+              status: 'in_progress',
+              nextAction: 'deliver_content',
+              stageNumber: 1,
               questionNumber: 1,
-              stageType: 'fixed',
-              title: 'Leitura · Situações',
+              progressRatio: 0.1,
+              totalStages: 3,
+              totalQuestions: 5,
             },
           ]}
+          totals={{ inProgress: 2, completed: 0, active: 2 }}
           whatsappHelpHref="https://wa.me/5512974085258"
           loadState="ready"
           onContinue={noop}

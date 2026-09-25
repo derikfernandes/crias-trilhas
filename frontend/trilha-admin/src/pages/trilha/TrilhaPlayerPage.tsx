@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { StudentShellView } from '../../design/layouts/StudentShellView'
 import { TrilhaPlayerPageView } from '../../design/views/TrilhaPlayerPageView'
 import type { StudentChatBubble } from '../../design/components/trilha/StudentConversationChat'
@@ -86,6 +86,8 @@ async function persistDeliveryOnContinue(
 
 export function TrilhaPlayerPage() {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const preferredTrailId = searchParams.get('trail_id')?.trim() || null
   const session = loadTrilhaSession()!
 
   const [loadState, setLoadState] = useState<'loading' | 'ready' | 'error'>(
@@ -135,34 +137,33 @@ export function TrilhaPlayerPage() {
     setErrorMessage(undefined)
     try {
       const home = await fetchTrilhaHome(session.token)
-      if (!home.enrollment?.trail_id) {
+      const cards = Array.isArray(home.enrollments) ? home.enrollments : []
+      const preferred = preferredTrailId
+        ? cards.find((c) => c.enrollment.trail_id === preferredTrailId)
+        : undefined
+      const active = preferred ?? cards[0] ?? null
+      const enrollment = active?.enrollment ?? home.enrollment
+      if (!enrollment?.trail_id) {
         setErrorMessage('Ainda não há trilha para si.')
         setLoadState('error')
         return
       }
-      setTrailId(home.enrollment.trail_id)
+      const tid = enrollment.trail_id
+      setTrailId(tid)
       setInstitutionId(
-        home.enrollment.institution_id || session.student.institution_id,
+        enrollment.institution_id || session.student.institution_id,
       )
+      const totalQ = active?.total_questions ?? home.total_questions
+      const totalS = active?.total_stages ?? home.total_stages
       setTotalQuestions(
-        typeof home.total_questions === 'number' &&
-          Number.isFinite(home.total_questions)
-          ? home.total_questions
-          : null,
+        typeof totalQ === 'number' && Number.isFinite(totalQ) ? totalQ : null,
       )
       setTotalStages(
-        typeof home.total_stages === 'number' &&
-          Number.isFinite(home.total_stages)
-          ? home.total_stages
-          : null,
+        typeof totalS === 'number' && Number.isFinite(totalS) ? totalS : null,
       )
       const [next] = await Promise.all([
-        fetchNextContent(
-          session.student.student_id,
-          home.enrollment.trail_id,
-          session.token,
-        ),
-        refreshConversation(home.enrollment.trail_id),
+        fetchNextContent(session.student.student_id, tid, session.token),
+        refreshConversation(tid),
       ])
       applyContent(next)
     } catch (e) {
@@ -182,6 +183,7 @@ export function TrilhaPlayerPage() {
   }, [
     applyContent,
     navigate,
+    preferredTrailId,
     refreshConversation,
     session.student.institution_id,
     session.student.student_id,

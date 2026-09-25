@@ -116,6 +116,31 @@ function authHeaders(token?: string | null): HeadersInit {
   return headers
 }
 
+export type TrilhaHomeEnrollmentCard = {
+  enrollment: {
+    student_id: string
+    trail_id: string
+    institution_id: string
+    current_stage_number: number
+    current_question_number: number
+    progress_status: string
+    progress_version: number
+    last_channel: string | null
+  }
+  trail: { id: string; title: string }
+  next_action?:
+    | 'deliver_content'
+    | 'await_answer'
+    | 'await_release'
+    | 'blocked'
+    | 'completed'
+  is_released?: boolean
+  stage_type?: 'fixed' | 'exercise' | 'ai' | null
+  progress_ratio?: number | null
+  total_stages?: number | null
+  total_questions?: number | null
+}
+
 export type TrilhaHomeResponse = {
   status: 'ok'
   student_id: string
@@ -141,6 +166,8 @@ export type TrilhaHomeResponse = {
   progress_ratio?: number | null
   total_stages?: number | null
   total_questions?: number | null
+  /** Todas as matrículas do aluno (student_trails). */
+  enrollments?: TrilhaHomeEnrollmentCard[]
 }
 
 export type TrilhaNextContent = {

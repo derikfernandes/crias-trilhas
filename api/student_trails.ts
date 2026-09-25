@@ -28,17 +28,18 @@ import {
   assertServiceBearer,
   defaultCollectionNames,
   ensureStepDelivery,
-  getActiveEnrollment,
   getNextContent,
   getTrailConversation,
   getTrailHistory,
   getStatus as engineGetStatus,
   isTrailEngineError,
   isMutationMethod,
+  listEnrollmentsForStudent,
   loadTrailTotals,
   submitExerciseAnswer,
   trailEngineErrorToJson,
   type TrailChannel,
+  type StudentTrailProgress,
 } from '../server/lib/trail-engine'
 import { ensureTrailAiContent } from '../server/lib/trail-ai/ensureTrailAiContent'
 
@@ -119,6 +120,82 @@ function resolveMutationChannel(
 function parseChannel(v: unknown): TrailChannel | null {
   if (v === 'whatsapp' || v === 'app' || v === 'admin') return v
   return null
+}
+
+/** Payload por matrícula na fachada `home` (cards “Minhas trilhas”). */
+async function buildHomeEnrollmentCard(
+  db: ReturnType<typeof getFirestore>,
+  enrollment: StudentTrailProgress,
+): Promise<Json> {
+  const trailsCollection = process.env.TRAILS_COLLECTION ?? 'trails'
+  const trailSnap = await db
+    .collection(trailsCollection)
+    .doc(enrollment.trail_id)
+    .get()
+  const trailData = (trailSnap.data() ?? {}) as Record<string, unknown>
+  const trailTitle =
+    typeof trailData.name === 'string'
+      ? trailData.name
+      : typeof trailData.title === 'string'
+        ? trailData.title
+        : enrollment.trail_id
+
+  const next = await getNextContent(db, {
+    student_id: enrollment.student_id,
+    trail_id: enrollment.trail_id,
+    channel: 'app',
+  })
+
+  let progress_ratio: number | null = null
+  let total_stages: number | null = null
+  let total_questions: number | null = null
+  try {
+    const totals = await loadTrailTotals(
+      db,
+      enrollment.trail_id,
+      defaultCollectionNames(),
+    )
+    total_stages = totals.total_stages
+    total_questions = totals.total_questions
+    const denom = Math.max(1, totals.total_stages * totals.total_questions)
+    if (enrollment.status === 'completed' || next.next_action === 'completed') {
+      progress_ratio = 1
+    } else {
+      const idx =
+        (Math.max(1, enrollment.current_stage_number) - 1) *
+          totals.total_questions +
+        Math.max(1, enrollment.current_question_number) -
+        1
+      progress_ratio = Math.max(0, Math.min(1, idx / denom))
+    }
+  } catch {
+    progress_ratio = null
+    total_stages = null
+    total_questions = null
+  }
+
+  return {
+    enrollment: {
+      student_id: enrollment.student_id,
+      trail_id: enrollment.trail_id,
+      institution_id: enrollment.institution_id,
+      current_stage_number: enrollment.current_stage_number,
+      current_question_number: enrollment.current_question_number,
+      progress_status: enrollment.status,
+      progress_version: enrollment.progress_version,
+      last_channel: enrollment.last_channel,
+    },
+    trail: {
+      id: enrollment.trail_id,
+      title: trailTitle,
+    },
+    next_action: next.next_action,
+    is_released: next.is_released,
+    stage_type: next.stage_type ?? null,
+    progress_ratio,
+    total_stages,
+    total_questions,
+  }
 }
 
 function serializeLastDelivered(value: unknown): Json | null {
@@ -423,93 +500,41 @@ async function handleRequest(request: Request): Promise<Response> {
       if (!authz.ok) return respond(authz.status, authz.body)
 
       try {
-        const enrollment = await getActiveEnrollment(db, homeStudentId)
-        if (!enrollment) {
+        const rows = await listEnrollmentsForStudent(db, homeStudentId)
+        if (rows.length === 0) {
           return jsonResponse(
             {
               status: 'ok',
               student_id: homeStudentId,
               enrollment: null,
               trail: null,
+              enrollments: [],
             },
             { status: 200, headers: corsHeaders() },
           )
         }
 
-        const trailsCollection = process.env.TRAILS_COLLECTION ?? 'trails'
-        const trailSnap = await db
-          .collection(trailsCollection)
-          .doc(enrollment.trail_id)
-          .get()
-        const trailData = (trailSnap.data() ?? {}) as Record<string, unknown>
-        const trailTitle =
-          typeof trailData.name === 'string'
-            ? trailData.name
-            : typeof trailData.title === 'string'
-              ? trailData.title
-              : enrollment.trail_id
-
-        const next = await getNextContent(db, {
-          student_id: homeStudentId,
-          trail_id: enrollment.trail_id,
-          channel: 'app',
-        })
-
-        let progress_ratio: number | null = null
-        let total_stages: number | null = null
-        let total_questions: number | null = null
-        try {
-          const totals = await loadTrailTotals(
-            db,
-            enrollment.trail_id,
-            defaultCollectionNames(),
-          )
-          total_stages = totals.total_stages
-          total_questions = totals.total_questions
-          const denom = Math.max(
-            1,
-            totals.total_stages * totals.total_questions,
-          )
-          if (enrollment.status === 'completed' || next.next_action === 'completed') {
-            progress_ratio = 1
-          } else {
-            const idx =
-              (Math.max(1, enrollment.current_stage_number) - 1) *
-                totals.total_questions +
-              Math.max(1, enrollment.current_question_number) -
-              1
-            progress_ratio = Math.max(0, Math.min(1, idx / denom))
-          }
-        } catch {
-          progress_ratio = null
-          total_stages = null
-          total_questions = null
-        }
+        const enrollments = await Promise.all(
+          rows.map((row) => buildHomeEnrollmentCard(db, row)),
+        )
+        const primary = enrollments[0] as Json
+        const primaryEnrollment = primary.enrollment as Json
+        const primaryTrail = primary.trail as Json
 
         return jsonResponse(
           {
             status: 'ok',
             student_id: homeStudentId,
-            enrollment: {
-              student_id: enrollment.student_id,
-              trail_id: enrollment.trail_id,
-              institution_id: enrollment.institution_id,
-              current_stage_number: enrollment.current_stage_number,
-              current_question_number: enrollment.current_question_number,
-              progress_status: enrollment.status,
-              progress_version: enrollment.progress_version,
-              last_channel: enrollment.last_channel,
-            },
-            trail: {
-              id: enrollment.trail_id,
-              title: trailTitle,
-            },
-            next_action: next.next_action,
-            is_released: next.is_released,
-            stage_type: next.stage_type ?? null,
-            progress_ratio,
-            total_stages,
-            total_questions,
+            // Compat: primeiro vínculo = trilha ativa (U3 / getActiveEnrollment).
+            enrollment: primaryEnrollment,
+            trail: primaryTrail,
+            next_action: primary.next_action,
+            is_released: primary.is_released,
+            stage_type: primary.stage_type,
+            progress_ratio: primary.progress_ratio,
+            total_stages: primary.total_stages,
+            total_questions: primary.total_questions,
+            enrollments,
           },
           { status: 200, headers: corsHeaders() },
         )

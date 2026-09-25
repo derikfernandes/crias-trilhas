@@ -9,6 +9,18 @@ import { TrilhaPlayerPageView } from './TrilhaPlayerPageView'
 
 const noop = () => {}
 
+const sampleTrail = {
+  trailId: 't1',
+  title: 'Trilha Crias',
+  status: 'in_progress' as const,
+  nextAction: 'deliver_content' as const,
+  stageNumber: 2,
+  questionNumber: 1,
+  progressRatio: 0.4,
+  totalStages: 4,
+  totalQuestions: 4,
+}
+
 describe('Trilha a11y — login / home / player', () => {
   it('login: telefone rotulado, erro em alert, aria-invalid', async () => {
     const user = userEvent.setup()
@@ -46,21 +58,14 @@ describe('Trilha a11y — login / home / player', () => {
     expect(onSubmit).toHaveBeenCalled()
   })
 
-  it('home: landmarks, CTA, link WhatsApp anuncia nova janela', () => {
+  it('home: landmarks, CTA Continuar, link WhatsApp anuncia nova janela', () => {
     render(
       <MemoryRouter initialEntries={['/trilha']}>
         <StudentShellView studentName="Ana" onLogout={noop}>
           <TrilhaHomePageView
             studentName="Ana"
-            trailTitle="Trilha Crias"
-            stageNumber={2}
-            questionNumber={1}
-            progressRatio={0.4}
-            totalStages={4}
-            stageType="fixed"
-            statusLabel="Em progresso"
-            nextAction="deliver_content"
-            canContinue
+            trails={[sampleTrail]}
+            totals={{ inProgress: 1, completed: 0, active: 1 }}
             whatsappHelpHref="https://wa.me/5512974085258"
             loadState="ready"
             onContinue={noop}
@@ -80,22 +85,25 @@ describe('Trilha a11y — login / home / player', () => {
     ).toBe(true)
     expect(screen.getByRole('link', { name: /revisão/i })).toBeInTheDocument()
     expect(
-      screen.getByRole('heading', { level: 1, name: /meu progresso/i }),
+      screen.getByRole('heading', { level: 1, name: /minhas trilhas/i }),
     ).toBeInTheDocument()
-    expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '40')
+    expect(
+      screen.getByRole('region', { name: /resumo das trilhas/i }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('region', { name: /minhas trilhas/i }),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 3, name: /trilha crias/i })).toBeInTheDocument()
     expect(
       screen.getByRole('link', {
         name: /tirar dúvida no whatsapp \(abre numa nova janela\)/i,
       }),
     ).toHaveAttribute('target', '_blank')
-    expect(
-      screen.getByRole('button', { name: /continuar de onde parou/i }),
-    ).toBeEnabled()
+    const continueBtns = screen.getAllByRole('button', { name: /^continuar$/i })
+    expect(continueBtns.length).toBeGreaterThanOrEqual(1)
+    expect(continueBtns[0]).toBeEnabled()
     expect(
       screen.getByRole('button', { name: /abrir revisão/i }),
-    ).toBeInTheDocument()
-    expect(
-      screen.getByRole('list', { name: /mapa de etapas/i }),
     ).toBeInTheDocument()
   })
 
@@ -103,15 +111,14 @@ describe('Trilha a11y — login / home / player', () => {
     render(
       <TrilhaHomePageView
         studentName="Ana"
-        trailTitle="Trilha Crias"
-        stageNumber={2}
-        questionNumber={1}
-        progressRatio={0.4}
-        totalStages={4}
-        statusLabel="Aguardando liberação"
-        homeHint="await_release"
-        nextAction="await_release"
-        canContinue={false}
+        trails={[
+          {
+            ...sampleTrail,
+            nextAction: 'await_release',
+            status: 'in_progress',
+          },
+        ]}
+        totals={{ inProgress: 1, completed: 0, active: 1 }}
         loadState="ready"
         onContinue={noop}
         onOpenHistory={noop}
@@ -119,31 +126,44 @@ describe('Trilha a11y — login / home / player', () => {
     )
 
     expect(
-      screen.queryByRole('button', { name: /continuar/i }),
+      screen.queryByRole('button', { name: /^continuar$/i }),
     ).not.toBeInTheDocument()
-    expect(screen.getByText(/pausa esperada/i)).toBeInTheDocument()
+    expect(screen.getAllByText(/aguardando liberação/i).length).toBeGreaterThan(
+      0,
+    )
   })
 
   it('home loading: anuncia estado busy com texto para leitores de ecrã', () => {
     render(
       <TrilhaHomePageView
         studentName="Ana"
-        trailTitle=""
-        stageNumber={1}
-        questionNumber={1}
-        progressRatio={null}
-        statusLabel="—"
-        canContinue={false}
+        trails={[]}
+        totals={{ inProgress: 0, completed: 0, active: 0 }}
         loadState="loading"
         onContinue={noop}
       />,
     )
 
-    expect(screen.getByText(/a carregar a sua trilha/i)).toBeInTheDocument()
-    expect(screen.getByText(/a carregar a sua trilha/i).parentElement).toHaveAttribute(
-      'aria-busy',
-      'true',
+    expect(screen.getByText(/a carregar as suas trilhas/i)).toBeInTheDocument()
+    expect(
+      screen.getByText(/a carregar as suas trilhas/i).parentElement,
+    ).toHaveAttribute('aria-busy', 'true')
+  })
+
+  it('home empty: empty state sem cards', () => {
+    render(
+      <TrilhaHomePageView
+        studentName="Ana"
+        trails={[]}
+        totals={{ inProgress: 0, completed: 0, active: 0 }}
+        loadState="empty"
+        onContinue={noop}
+      />,
     )
+    expect(
+      screen.getByRole('heading', { level: 1, name: /minhas trilhas/i }),
+    ).toBeInTheDocument()
+    expect(screen.getByText(/nenhuma trilha vinculada/i)).toBeInTheDocument()
   })
 
   it('player: h1, alerta de erro, formulário de exercício com fieldset', async () => {

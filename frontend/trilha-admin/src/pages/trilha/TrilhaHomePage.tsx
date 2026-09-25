@@ -1,19 +1,19 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { StudentShellView } from '../../design/layouts/StudentShellView'
-import { TrilhaHomePageView } from '../../design/views/TrilhaHomePageView'
+import {
+  TrilhaHomePageView,
+  type TrilhaHomeTrailCard,
+} from '../../design/views/TrilhaHomePageView'
 import {
   homeCanContinue,
-  homeStatusLabel,
   type HomeNextAction,
 } from '../../lib/trilha/homeCta'
 import {
-  fetchTrailHistory,
   fetchTrilhaHome,
   TrilhaApiError,
+  type TrilhaHomeEnrollmentCard,
 } from '../../lib/trilha/trilhaApi'
-import type { HistoryStepHint } from '../../lib/trilha/unitMap'
-import { habitLineFromAttempts } from '../../lib/trilha/habitLine'
 import {
   clearTrilhaSession,
   loadTrilhaSession,
@@ -23,14 +23,75 @@ const WA_HELP =
   'https://wa.me/5512974085258?text=' +
   encodeURIComponent('Olá! Preciso de ajuda com a Trilha Crias.')
 
-function deriveHomeHint(
-  nextAction: HomeNextAction | null,
-  status: 'in_progress' | 'completed' | 'blocked' | 'not_started',
-): 'await_release' | 'blocked' | 'completed' | null {
-  if (nextAction === 'await_release') return 'await_release'
-  if (nextAction === 'blocked' || status === 'blocked') return 'blocked'
-  if (nextAction === 'completed' || status === 'completed') return 'completed'
+function parseStatus(
+  raw: string | undefined,
+): TrilhaHomeTrailCard['status'] {
+  if (
+    raw === 'in_progress' ||
+    raw === 'completed' ||
+    raw === 'blocked' ||
+    raw === 'not_started'
+  ) {
+    return raw
+  }
+  return 'in_progress'
+}
+
+function parseNextAction(raw: unknown): HomeNextAction | null {
+  if (
+    raw === 'deliver_content' ||
+    raw === 'await_answer' ||
+    raw === 'await_release' ||
+    raw === 'blocked' ||
+    raw === 'completed'
+  ) {
+    return raw
+  }
   return null
+}
+
+function mapEnrollmentCard(row: TrilhaHomeEnrollmentCard): TrilhaHomeTrailCard {
+  return {
+    trailId: row.enrollment.trail_id,
+    title: row.trail?.title ?? row.enrollment.trail_id,
+    status: parseStatus(row.enrollment.progress_status),
+    nextAction: parseNextAction(row.next_action),
+    stageNumber: row.enrollment.current_stage_number,
+    questionNumber: row.enrollment.current_question_number,
+    progressRatio:
+      typeof row.progress_ratio === 'number' && Number.isFinite(row.progress_ratio)
+        ? row.progress_ratio
+        : null,
+    totalStages:
+      typeof row.total_stages === 'number' && Number.isFinite(row.total_stages)
+        ? row.total_stages
+        : null,
+    totalQuestions:
+      typeof row.total_questions === 'number' &&
+      Number.isFinite(row.total_questions)
+        ? row.total_questions
+        : null,
+  }
+}
+
+/** Compat: resposta antiga sem `enrollments[]` → um card a partir do enrollment. */
+function cardsFromHome(home: Awaited<ReturnType<typeof fetchTrilhaHome>>): TrilhaHomeTrailCard[] {
+  if (Array.isArray(home.enrollments) && home.enrollments.length > 0) {
+    return home.enrollments.map(mapEnrollmentCard)
+  }
+  if (!home.enrollment || !home.trail) return []
+  return [
+    mapEnrollmentCard({
+      enrollment: home.enrollment,
+      trail: home.trail,
+      next_action: home.next_action,
+      is_released: home.is_released,
+      stage_type: home.stage_type,
+      progress_ratio: home.progress_ratio,
+      total_stages: home.total_stages,
+      total_questions: home.total_questions,
+    }),
+  ]
 }
 
 export function TrilhaHomePage() {
@@ -41,111 +102,20 @@ export function TrilhaHomePage() {
     'loading' | 'ready' | 'empty' | 'error'
   >('loading')
   const [errorMessage, setErrorMessage] = useState<string | undefined>()
-  const [trailTitle, setTrailTitle] = useState('')
-  const [stageNumber, setStageNumber] = useState(1)
-  const [questionNumber, setQuestionNumber] = useState(1)
-  const [progressRatio, setProgressRatio] = useState<number | null>(null)
-  const [totalStages, setTotalStages] = useState<number | null>(null)
-  const [totalQuestions, setTotalQuestions] = useState<number | null>(null)
-  const [stageType, setStageType] = useState<
-    'fixed' | 'exercise' | 'ai' | null
-  >(null)
-  const [historyHints, setHistoryHints] = useState<HistoryStepHint[]>([])
-  const [status, setStatus] = useState<
-    'in_progress' | 'completed' | 'blocked' | 'not_started'
-  >('not_started')
-  const [nextAction, setNextAction] = useState<HomeNextAction | null>(null)
+  const [trails, setTrails] = useState<TrilhaHomeTrailCard[]>([])
 
   const load = useCallback(async () => {
     setLoadState('loading')
     setErrorMessage(undefined)
     try {
       const home = await fetchTrilhaHome(session.token)
-      if (!home.enrollment || !home.trail) {
-        setNextAction(null)
-        setProgressRatio(null)
-        setTotalStages(null)
-        setTotalQuestions(null)
-        setStageType(null)
-        setHistoryHints([])
+      const cards = cardsFromHome(home)
+      if (cards.length === 0) {
+        setTrails([])
         setLoadState('empty')
         return
       }
-      setTrailTitle(home.trail.title)
-      setStageNumber(home.enrollment.current_stage_number)
-      setQuestionNumber(home.enrollment.current_question_number)
-      setProgressRatio(
-        typeof home.progress_ratio === 'number' &&
-          Number.isFinite(home.progress_ratio)
-          ? home.progress_ratio
-          : null,
-      )
-      setTotalStages(
-        typeof home.total_stages === 'number' &&
-          Number.isFinite(home.total_stages)
-          ? home.total_stages
-          : null,
-      )
-      setTotalQuestions(
-        typeof home.total_questions === 'number' &&
-          Number.isFinite(home.total_questions)
-          ? home.total_questions
-          : null,
-      )
-      const stype = home.stage_type
-      setStageType(
-        stype === 'fixed' || stype === 'exercise' || stype === 'ai'
-          ? stype
-          : null,
-      )
-      const st = home.enrollment.progress_status
-      if (
-        st === 'in_progress' ||
-        st === 'completed' ||
-        st === 'blocked' ||
-        st === 'not_started'
-      ) {
-        setStatus(st)
-      } else {
-        setStatus('in_progress')
-      }
-      const action = home.next_action
-      if (
-        action === 'deliver_content' ||
-        action === 'await_answer' ||
-        action === 'await_release' ||
-        action === 'blocked' ||
-        action === 'completed'
-      ) {
-        setNextAction(action)
-      } else {
-        setNextAction(null)
-      }
-
-      try {
-        const hist = await fetchTrailHistory(
-          session.student.student_id,
-          home.enrollment.trail_id,
-          session.token,
-        )
-        setHistoryHints(
-          (hist.items ?? []).map((item) => ({
-            stageNumber: item.stage_number,
-            questionNumber: item.question_number,
-            stageType:
-              item.stage_type === 'fixed' ||
-              item.stage_type === 'exercise' ||
-              item.stage_type === 'ai'
-                ? item.stage_type
-                : null,
-            title: item.title ?? null,
-            attemptedAt: item.attempted_at ?? null,
-          })),
-        )
-      } catch {
-        setHistoryHints([])
-      }
-
+      setTrails(cards)
       setLoadState('ready')
     } catch (e) {
       if (e instanceof TrilhaApiError && (e.status === 401 || e.status === 403)) {
@@ -158,7 +128,7 @@ export function TrilhaHomePage() {
       )
       setLoadState('error')
     }
-  }, [navigate, session.student.student_id, session.token])
+  }, [navigate, session.token])
 
   useEffect(() => {
     const id = window.setTimeout(() => {
@@ -172,8 +142,24 @@ export function TrilhaHomePage() {
     navigate('/trilha/login', { replace: true })
   }
 
-  const canContinue = loadState === 'ready' && homeCanContinue(nextAction)
-  const homeHint = deriveHomeHint(nextAction, status)
+  const totals = useMemo(() => {
+    let inProgress = 0
+    let completed = 0
+    let active = 0
+    for (const t of trails) {
+      if (t.status === 'completed' || t.nextAction === 'completed') {
+        completed += 1
+      } else if (t.status === 'in_progress' || homeCanContinue(t.nextAction)) {
+        inProgress += 1
+      } else if (t.status === 'not_started') {
+        inProgress += 1
+      }
+      if (t.status !== 'blocked' && t.nextAction !== 'blocked') {
+        active += 1
+      }
+    }
+    return { inProgress, completed, active }
+  }, [trails])
 
   return (
     <StudentShellView
@@ -182,23 +168,14 @@ export function TrilhaHomePage() {
     >
       <TrilhaHomePageView
         studentName={session.student.name || 'aluno'}
-        trailTitle={trailTitle}
-        stageNumber={stageNumber}
-        questionNumber={questionNumber}
-        progressRatio={progressRatio}
-        totalStages={totalStages}
-        totalQuestions={totalQuestions}
-        stageType={stageType}
-        statusLabel={homeStatusLabel(status, nextAction)}
-        homeHint={homeHint}
-        nextAction={nextAction}
-        canContinue={canContinue}
-        historyHints={historyHints}
-        habitLine={habitLineFromAttempts(historyHints.map((h) => h.attemptedAt))}
+        trails={trails}
+        totals={totals}
         whatsappHelpHref={WA_HELP}
         loadState={loadState}
         errorMessage={errorMessage}
-        onContinue={() => navigate('/trilha/play')}
+        onContinue={(trailId) =>
+          navigate(`/trilha/play?trail_id=${encodeURIComponent(trailId)}`)
+        }
         onOpenHistory={() => navigate('/trilha/historico')}
         onRetry={() => void load()}
       />
