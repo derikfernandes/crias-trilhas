@@ -23,6 +23,8 @@ export function TrilhaUxDemoPage() {
             {
               trailId: 't1',
               title: 'Introdução à cidadania',
+              institutionName: 'Escola Demo',
+              subject: 'Cidadania',
               status: 'completed',
               nextAction: 'completed',
               stageNumber: 4,
@@ -30,9 +32,11 @@ export function TrilhaUxDemoPage() {
               progressRatio: 1,
               totalStages: 4,
               totalQuestions: 4,
+              stagesCompleted: 4,
+              lastActivityAt: '2026-09-21T10:00:00Z',
             },
           ]}
-          totals={{ inProgress: 0, completed: 1, active: 1 }}
+          totals={{ trails: 1, inProgress: 0, completed: 1, stagesCompleted: 4 }}
           loadState="ready"
           onContinue={noop}
           onOpenHistory={noop}
@@ -51,6 +55,8 @@ export function TrilhaUxDemoPage() {
             {
               trailId: 't1',
               title: 'Introdução à cidadania',
+              institutionName: 'Escola Demo',
+              subject: 'Cidadania',
               status: 'in_progress',
               nextAction: paused ? 'await_release' : 'await_answer',
               stageNumber: 2,
@@ -58,20 +64,25 @@ export function TrilhaUxDemoPage() {
               progressRatio: paused ? 0.35 : 0.4,
               totalStages: 4,
               totalQuestions: 4,
+              stagesCompleted: 1,
+              lastActivityAt: '2026-09-23T14:30:00Z',
             },
             {
               trailId: 't2',
               title: 'Matemática — Demo',
-              status: 'in_progress',
+              institutionName: 'Escola Demo',
+              subject: 'Matemática',
+              status: 'not_started',
               nextAction: 'deliver_content',
               stageNumber: 1,
               questionNumber: 1,
-              progressRatio: 0.1,
+              progressRatio: 0,
               totalStages: 3,
               totalQuestions: 5,
+              stagesCompleted: 0,
             },
           ]}
-          totals={{ inProgress: 2, completed: 0, active: 2 }}
+          totals={{ trails: 2, inProgress: 1, completed: 0, stagesCompleted: 1 }}
           whatsappHelpHref="https://wa.me/5512974085258"
           loadState="ready"
           onContinue={noop}

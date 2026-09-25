@@ -25,5 +25,16 @@ export function homeStatusLabel(
   }
   if (progressStatus === 'blocked') return 'Bloqueada'
   if (progressStatus === 'not_started') return 'Não iniciada'
-  return 'Em progresso'
+  return 'Em andamento'
+}
+
+/** CTA amarelo do card: Começar (não iniciada) ou Continuar. */
+export function homePrimaryCtaLabel(
+  progressStatus: 'in_progress' | 'completed' | 'blocked' | 'not_started',
+  nextAction: HomeNextAction | null | undefined,
+): string {
+  if (progressStatus === 'not_started' && nextAction !== 'completed') {
+    return 'Começar'
+  }
+  return 'Continuar'
 }

@@ -12,6 +12,8 @@ const noop = () => {}
 const sampleTrail = {
   trailId: 't1',
   title: 'Trilha Crias',
+  institutionName: 'Escola Demo',
+  subject: 'Cidadania',
   status: 'in_progress' as const,
   nextAction: 'deliver_content' as const,
   stageNumber: 2,
@@ -19,6 +21,7 @@ const sampleTrail = {
   progressRatio: 0.4,
   totalStages: 4,
   totalQuestions: 4,
+  stagesCompleted: 1,
 }
 
 describe('Trilha a11y — login / home / player', () => {
@@ -65,7 +68,7 @@ describe('Trilha a11y — login / home / player', () => {
           <TrilhaHomePageView
             studentName="Ana"
             trails={[sampleTrail]}
-            totals={{ inProgress: 1, completed: 0, active: 1 }}
+            totals={{ trails: 1, inProgress: 1, completed: 0, stagesCompleted: 1 }}
             whatsappHelpHref="https://wa.me/5512974085258"
             loadState="ready"
             onContinue={noop}
@@ -79,16 +82,18 @@ describe('Trilha a11y — login / home / player', () => {
     expect(
       screen.getByRole('navigation', { name: /navegação do aluno/i }),
     ).toBeInTheDocument()
-    const progressLinks = screen.getAllByRole('link', { name: /meu progresso/i })
+    const trailLinks = screen.getAllByRole('link', {
+      name: /trilhas|minhas trilhas/i,
+    })
     expect(
-      progressLinks.some((el) => el.getAttribute('aria-current') === 'page'),
+      trailLinks.some((el) => el.getAttribute('aria-current') === 'page'),
     ).toBe(true)
     expect(screen.getByRole('link', { name: /revisão/i })).toBeInTheDocument()
     expect(
       screen.getByRole('heading', { level: 1, name: /minhas trilhas/i }),
     ).toBeInTheDocument()
     expect(
-      screen.getByRole('region', { name: /resumo das trilhas/i }),
+      screen.getByRole('region', { name: /resumo do aluno/i }),
     ).toBeInTheDocument()
     expect(
       screen.getByRole('region', { name: /minhas trilhas/i }),
@@ -118,7 +123,7 @@ describe('Trilha a11y — login / home / player', () => {
             status: 'in_progress',
           },
         ]}
-        totals={{ inProgress: 1, completed: 0, active: 1 }}
+        totals={{ trails: 1, inProgress: 1, completed: 0, stagesCompleted: 1 }}
         loadState="ready"
         onContinue={noop}
         onOpenHistory={noop}
@@ -128,9 +133,7 @@ describe('Trilha a11y — login / home / player', () => {
     expect(
       screen.queryByRole('button', { name: /^continuar$/i }),
     ).not.toBeInTheDocument()
-    expect(screen.getAllByText(/aguardando liberação/i).length).toBeGreaterThan(
-      0,
-    )
+    expect(screen.getByText(/pausa esperada/i)).toBeInTheDocument()
   })
 
   it('home loading: anuncia estado busy com texto para leitores de ecrã', () => {
@@ -138,7 +141,7 @@ describe('Trilha a11y — login / home / player', () => {
       <TrilhaHomePageView
         studentName="Ana"
         trails={[]}
-        totals={{ inProgress: 0, completed: 0, active: 0 }}
+        totals={{ trails: 0, inProgress: 0, completed: 0, stagesCompleted: 0 }}
         loadState="loading"
         onContinue={noop}
       />,
@@ -155,7 +158,7 @@ describe('Trilha a11y — login / home / player', () => {
       <TrilhaHomePageView
         studentName="Ana"
         trails={[]}
-        totals={{ inProgress: 0, completed: 0, active: 0 }}
+        totals={{ trails: 0, inProgress: 0, completed: 0, stagesCompleted: 0 }}
         loadState="empty"
         onContinue={noop}
       />,

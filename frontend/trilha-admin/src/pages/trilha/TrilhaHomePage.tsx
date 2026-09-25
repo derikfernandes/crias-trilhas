@@ -5,10 +5,7 @@ import {
   TrilhaHomePageView,
   type TrilhaHomeTrailCard,
 } from '../../design/views/TrilhaHomePageView'
-import {
-  homeCanContinue,
-  type HomeNextAction,
-} from '../../lib/trilha/homeCta'
+import { type HomeNextAction } from '../../lib/trilha/homeCta'
 import {
   fetchTrilhaHome,
   TrilhaApiError,
@@ -51,11 +48,25 @@ function parseNextAction(raw: unknown): HomeNextAction | null {
 }
 
 function mapEnrollmentCard(row: TrilhaHomeEnrollmentCard): TrilhaHomeTrailCard {
+  const status = parseStatus(row.enrollment.progress_status)
+  const nextAction = parseNextAction(row.next_action)
+  const stagesCompleted =
+    typeof row.stages_completed === 'number' &&
+    Number.isFinite(row.stages_completed)
+      ? Math.max(0, Math.floor(row.stages_completed))
+      : status === 'completed' || nextAction === 'completed'
+        ? typeof row.total_stages === 'number'
+          ? row.total_stages
+          : Math.max(0, row.enrollment.current_stage_number)
+        : Math.max(0, row.enrollment.current_stage_number - 1)
+
   return {
     trailId: row.enrollment.trail_id,
     title: row.trail?.title ?? row.enrollment.trail_id,
-    status: parseStatus(row.enrollment.progress_status),
-    nextAction: parseNextAction(row.next_action),
+    institutionName: row.trail?.institution_name ?? null,
+    subject: row.trail?.subject ?? null,
+    status,
+    nextAction,
     stageNumber: row.enrollment.current_stage_number,
     questionNumber: row.enrollment.current_question_number,
     progressRatio:
@@ -71,11 +82,15 @@ function mapEnrollmentCard(row: TrilhaHomeEnrollmentCard): TrilhaHomeTrailCard {
       Number.isFinite(row.total_questions)
         ? row.total_questions
         : null,
+    stagesCompleted,
+    lastActivityAt: row.enrollment.last_interaction_at ?? null,
   }
 }
 
 /** Compat: resposta antiga sem `enrollments[]` → um card a partir do enrollment. */
-function cardsFromHome(home: Awaited<ReturnType<typeof fetchTrilhaHome>>): TrilhaHomeTrailCard[] {
+function cardsFromHome(
+  home: Awaited<ReturnType<typeof fetchTrilhaHome>>,
+): TrilhaHomeTrailCard[] {
   if (Array.isArray(home.enrollments) && home.enrollments.length > 0) {
     return home.enrollments.map(mapEnrollmentCard)
   }
@@ -145,20 +160,21 @@ export function TrilhaHomePage() {
   const totals = useMemo(() => {
     let inProgress = 0
     let completed = 0
-    let active = 0
+    let stagesCompleted = 0
     for (const t of trails) {
       if (t.status === 'completed' || t.nextAction === 'completed') {
         completed += 1
-      } else if (t.status === 'in_progress' || homeCanContinue(t.nextAction)) {
-        inProgress += 1
-      } else if (t.status === 'not_started') {
+      } else if (t.status === 'in_progress') {
         inProgress += 1
       }
-      if (t.status !== 'blocked' && t.nextAction !== 'blocked') {
-        active += 1
-      }
+      stagesCompleted += t.stagesCompleted
     }
-    return { inProgress, completed, active }
+    return {
+      trails: trails.length,
+      inProgress,
+      completed,
+      stagesCompleted,
+    }
   }, [trails])
 
   return (
@@ -176,7 +192,15 @@ export function TrilhaHomePage() {
         onContinue={(trailId) =>
           navigate(`/trilha/play?trail_id=${encodeURIComponent(trailId)}`)
         }
-        onOpenHistory={() => navigate('/trilha/historico')}
+        onOpenHistory={(trailId) => {
+          if (trailId) {
+            navigate(
+              `/trilha/historico?trail_id=${encodeURIComponent(trailId)}`,
+            )
+          } else {
+            navigate('/trilha/historico')
+          }
+        }}
         onRetry={() => void load()}
       />
     </StudentShellView>

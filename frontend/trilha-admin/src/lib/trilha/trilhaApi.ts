@@ -126,8 +126,15 @@ export type TrilhaHomeEnrollmentCard = {
     progress_status: string
     progress_version: number
     last_channel: string | null
+    last_interaction_at?: string | null
   }
-  trail: { id: string; title: string }
+  trail: {
+    id: string
+    title: string
+    subject?: string | null
+    institution_id?: string | null
+    institution_name?: string | null
+  }
   next_action?:
     | 'deliver_content'
     | 'await_answer'
@@ -139,6 +146,7 @@ export type TrilhaHomeEnrollmentCard = {
   progress_ratio?: number | null
   total_stages?: number | null
   total_questions?: number | null
+  stages_completed?: number | null
 }
 
 export type TrilhaHomeResponse = {

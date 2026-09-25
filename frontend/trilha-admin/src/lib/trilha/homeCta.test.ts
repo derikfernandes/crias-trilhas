@@ -22,7 +22,7 @@ describe('homeStatusLabel', () => {
 
   it('usa progresso quando next é deliver', () => {
     expect(homeStatusLabel('in_progress', 'deliver_content')).toBe(
-      'Em progresso',
+      'Em andamento',
     )
     expect(homeStatusLabel('completed', 'completed')).toBe('Concluída')
   })

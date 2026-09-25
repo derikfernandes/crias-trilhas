@@ -3,6 +3,7 @@ import { TrilhaErrorBanner } from '../components/trilha/TrilhaErrorBanner'
 import { WaSyncBadge } from '../components/trilha/WaSyncBadge'
 import {
   homeCanContinue,
+  homePrimaryCtaLabel,
   homeStatusLabel,
   type HomeNextAction,
 } from '../../lib/trilha/homeCta'
@@ -10,6 +11,8 @@ import {
 export type TrilhaHomeTrailCard = {
   trailId: string
   title: string
+  institutionName?: string | null
+  subject?: string | null
   status: 'in_progress' | 'completed' | 'blocked' | 'not_started'
   nextAction: HomeNextAction | null
   stageNumber: number
@@ -17,12 +20,15 @@ export type TrilhaHomeTrailCard = {
   progressRatio: number | null
   totalStages: number | null
   totalQuestions: number | null
+  stagesCompleted: number
+  lastActivityAt?: string | null
 }
 
 export type TrilhaHomeTotals = {
+  trails: number
   inProgress: number
   completed: number
-  active: number
+  stagesCompleted: number
 }
 
 export type TrilhaHomePageViewProps = {
@@ -34,7 +40,7 @@ export type TrilhaHomePageViewProps = {
   errorMessage?: string
   /** Continuar → /trilha/play (sem ensure-ai no open). */
   onContinue: (trailId: string) => void
-  onOpenHistory?: () => void
+  onOpenHistory?: (trailId?: string) => void
   onRetry?: () => void
 }
 
@@ -58,71 +64,138 @@ function progressPctLabel(ratio: number | null): string {
   return `${Math.round(Math.max(0, Math.min(1, ratio)) * 100)}%`
 }
 
-function stageProgressLine(card: TrilhaHomeTrailCard): string {
-  const stage =
-    typeof card.totalStages === 'number' && card.totalStages > 0
-      ? `Etapa ${card.stageNumber} de ${card.totalStages}`
-      : `Etapa ${card.stageNumber}`
-  return `${stage} · Questão ${card.questionNumber}`
+function formatLastActivity(iso: string | null | undefined): string | null {
+  if (!iso) return null
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return null
+  try {
+    return new Intl.DateTimeFormat('pt-BR', {
+      day: '2-digit',
+      month: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
+    }).format(d)
+  } catch {
+    return null
+  }
 }
 
 function TrailCard({
   card,
   onContinue,
+  onOpenHistory,
 }: {
   card: TrilhaHomeTrailCard
   onContinue: (trailId: string) => void
+  onOpenHistory?: (trailId?: string) => void
 }) {
   const canContinue = homeCanContinue(card.nextAction)
   const statusLabel = homeStatusLabel(card.status, card.nextAction)
+  const ctaLabel = homePrimaryCtaLabel(card.status, card.nextAction)
   const pct = progressPctLabel(card.progressRatio)
+  const isCompleted =
+    card.nextAction === 'completed' || card.status === 'completed'
+  const subtitle = [card.institutionName, card.subject]
+    .map((s) => s?.trim())
+    .filter(Boolean)
+    .join(' · ')
+  const stagesLabel =
+    typeof card.totalStages === 'number' && card.totalStages > 0
+      ? `${card.stagesCompleted} de ${card.totalStages}`
+      : String(card.stagesCompleted)
+  const nowLabel = isCompleted
+    ? 'Concluída'
+    : typeof card.totalStages === 'number' && card.totalStages > 0
+      ? `Etapa ${card.stageNumber} de ${card.totalStages}`
+      : `Etapa ${card.stageNumber} · Q${card.questionNumber}`
+  const lastActivity = formatLastActivity(card.lastActivityAt)
 
   return (
     <article className="home-dash__card trilha-home-dash__card">
       <header className="home-dash__card-head">
         <div>
           <h3>{card.title || 'Trilha'}</h3>
-          <p className="muted">{statusLabel}</p>
+          {subtitle ? <p className="muted">{subtitle}</p> : null}
         </div>
-        <div className="home-dash__card-actions">
-          {canContinue ? (
-            <button
-              type="button"
-              className="btn btn--small btn--primary"
-              onClick={() => onContinue(card.trailId)}
-            >
-              Continuar
-            </button>
-          ) : card.nextAction === 'completed' || card.status === 'completed' ? (
-            <span className="trilha-home-dash__badge trilha-home-dash__badge--done">
-              Concluída
-            </span>
-          ) : (
-            <span className="trilha-home-dash__badge">{statusLabel}</span>
-          )}
-        </div>
+        <span
+          className={
+            isCompleted
+              ? 'trilha-home-dash__badge trilha-home-dash__badge--done'
+              : card.status === 'not_started'
+                ? 'trilha-home-dash__badge trilha-home-dash__badge--idle'
+                : 'trilha-home-dash__badge trilha-home-dash__badge--active'
+          }
+        >
+          {statusLabel}
+        </span>
       </header>
 
-      <div className="home-dash__card-stats">
+      <div className="home-dash__card-stats" aria-label="Métricas da trilha">
+        <StatCard label="Etapas" value={stagesLabel} />
         <StatCard label="Progresso" value={pct} />
-        <StatCard
-          label="Posição"
-          value={`${card.stageNumber}.${card.questionNumber}`}
-        />
+        <StatCard label="Agora" value={nowLabel} />
       </div>
 
       <div className="home-dash__card-usage trilha-home-dash__meta">
         <h4>Detalhe</h4>
         <dl className="home-dash__usage">
           <div>
-            <dt>Etapa atual</dt>
-            <dd>{stageProgressLine(card)}</dd>
+            <dt>Etapas concluídas</dt>
+            <dd>{card.stagesCompleted}</dd>
           </div>
           <div>
-            <dt>Progresso</dt>
-            <dd>{pct}</dd>
+            <dt>Etapas totais</dt>
+            <dd>
+              {typeof card.totalStages === 'number' ? card.totalStages : '—'}
+            </dd>
           </div>
+          {typeof card.totalQuestions === 'number' ? (
+            <div>
+              <dt>Questões na grade</dt>
+              <dd>{card.totalQuestions}</dd>
+            </div>
+          ) : null}
+          {lastActivity ? (
+            <div>
+              <dt>Última atividade</dt>
+              <dd>{lastActivity}</dd>
+            </div>
+          ) : null}
         </dl>
+      </div>
+
+      <div className="trilha-home-dash__card-actions">
+        {canContinue ? (
+          <button
+            type="button"
+            className="btn btn--primary trilha-cta"
+            onClick={() => onContinue(card.trailId)}
+          >
+            {ctaLabel}
+          </button>
+        ) : isCompleted && onOpenHistory ? (
+          <button
+            type="button"
+            className="btn btn--primary trilha-cta"
+            onClick={() => onOpenHistory(card.trailId)}
+          >
+            Revisar a trilha
+          </button>
+        ) : null}
+        {onOpenHistory && !isCompleted ? (
+          <button
+            type="button"
+            className="btn btn--ghost btn--small"
+            onClick={() => onOpenHistory(card.trailId)}
+          >
+            Abrir revisão
+          </button>
+        ) : null}
+        {!canContinue && !isCompleted && card.nextAction === 'await_release' ? (
+          <p className="trilha-home-dash__hint muted">
+            Pausa esperada — a próxima etapa ainda não foi liberada.
+          </p>
+        ) : null}
       </div>
     </article>
   )
@@ -185,9 +258,6 @@ export function TrilhaHomePageView({
     )
   }
 
-  const single = trails.length === 1 ? trails[0] : null
-  const showAutoCta = single && homeCanContinue(single.nextAction)
-
   return (
     <div className="trilha-home trilha-home-dash">
       <WaSyncBadge />
@@ -197,51 +267,25 @@ export function TrilhaHomePageView({
           <p className="trilha-home__hello">Olá, {studentName}</p>
           <h1>Minhas trilhas</h1>
           <p className="admin__lede muted">
-            {single
-              ? 'Continue a trilha em que está matriculado.'
-              : 'Trilhas em que você está matriculado — escolha Continuar para retomar.'}
+            Trilhas vinculadas à sua conta — continue de onde parou.
           </p>
         </div>
-        <section className="home-dash__stats" aria-label="Resumo das trilhas">
+        <section className="home-dash__stats" aria-label="Resumo do aluno">
+          <StatCard label="Trilhas" value={totals.trails} />
           <StatCard label="Em andamento" value={totals.inProgress} />
+          <StatCard label="Etapas feitas" value={totals.stagesCompleted} />
           <StatCard label="Concluídas" value={totals.completed} />
-          <StatCard label="Ativas" value={totals.active} />
         </section>
-        {showAutoCta ? (
-          <p className="admin__actions dashboard-header__toolbar">
-            <button
-              type="button"
-              className="btn btn--primary"
-              onClick={() => onContinue(single.trailId)}
-            >
-              Continuar
-            </button>
-            {onOpenHistory ? (
-              <button
-                type="button"
-                className="btn btn--ghost"
-                onClick={onOpenHistory}
-              >
-                Abrir revisão
-              </button>
-            ) : null}
-          </p>
-        ) : onOpenHistory ? (
-          <p className="admin__actions dashboard-header__toolbar">
-            <button
-              type="button"
-              className="btn btn--ghost"
-              onClick={onOpenHistory}
-            >
-              Abrir revisão
-            </button>
-          </p>
-        ) : null}
       </header>
 
       <section className="home-dash__grid" aria-label="Minhas trilhas">
         {trails.map((card) => (
-          <TrailCard key={card.trailId} card={card} onContinue={onContinue} />
+          <TrailCard
+            key={card.trailId}
+            card={card}
+            onContinue={onContinue}
+            onOpenHistory={onOpenHistory}
+          />
         ))}
       </section>
 

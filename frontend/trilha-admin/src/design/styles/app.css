@@ -5750,6 +5750,10 @@
   letter-spacing: -0.02em;
 }
 
+.trilha-home-dash__card {
+  background: #fff;
+}
+
 .trilha-home-dash__card .home-dash__usage dd {
   font-size: 0.92rem;
   font-weight: 650;
@@ -5761,17 +5765,52 @@
   align-items: center;
   padding: 0.35rem 0.65rem;
   border-radius: 8px;
-  font-size: 0.78rem;
-  font-weight: 650;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
   color: var(--text);
-  background: var(--surface-muted);
+  background: var(--surface-muted, color-mix(in srgb, var(--bg) 70%, #fff));
   border: 1px solid var(--border);
+  white-space: nowrap;
 }
 
 .trilha-home-dash__badge--done {
-  color: var(--success-text);
-  background: var(--success-bg);
-  border-color: color-mix(in srgb, var(--success-text) 25%, var(--border));
+  color: var(--sidebar-bg);
+  background: color-mix(in srgb, var(--sidebar-bg) 14%, #fff);
+  border-color: color-mix(in srgb, var(--sidebar-bg) 35%, var(--border));
+}
+
+.trilha-home-dash__badge--active {
+  color: color-mix(in srgb, var(--sidebar-bg) 75%, #0f172a);
+  background: color-mix(in srgb, var(--sidebar-bg) 10%, #fff);
+  border-color: color-mix(in srgb, var(--sidebar-bg) 30%, var(--border));
+}
+
+.trilha-home-dash__badge--idle {
+  color: #6b5a00;
+  background: color-mix(in srgb, var(--accent-solid) 16%, #fff);
+  border-color: color-mix(in srgb, var(--accent-solid) 45%, var(--border));
+}
+
+.trilha-home-dash__card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem;
+  margin-top: 0.15rem;
+}
+
+.trilha-home-dash__hint {
+  margin: 0;
+  flex-basis: 100%;
+  font-size: 0.85rem;
+}
+
+@media (max-width: 720px) {
+  .trilha-home-dash__card-actions .trilha-cta {
+    width: 100%;
+  }
 }
 
 .trilha-home-dash .trilha-home__wa {

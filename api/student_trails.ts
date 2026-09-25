@@ -128,6 +128,8 @@ async function buildHomeEnrollmentCard(
   enrollment: StudentTrailProgress,
 ): Promise<Json> {
   const trailsCollection = process.env.TRAILS_COLLECTION ?? 'trails'
+  const institutionsCollection =
+    process.env.INSTITUTIONS_COLLECTION ?? 'institutions'
   const trailSnap = await db
     .collection(trailsCollection)
     .doc(enrollment.trail_id)
@@ -139,6 +141,30 @@ async function buildHomeEnrollmentCard(
       : typeof trailData.title === 'string'
         ? trailData.title
         : enrollment.trail_id
+  const subject =
+    typeof trailData.subject === 'string' && trailData.subject.trim()
+      ? trailData.subject.trim()
+      : null
+  const trailInstitutionId =
+    typeof trailData.institution_id === 'string' && trailData.institution_id
+      ? trailData.institution_id
+      : enrollment.institution_id
+
+  let institutionName: string | null = null
+  if (trailInstitutionId) {
+    try {
+      const instSnap = await db
+        .collection(institutionsCollection)
+        .doc(trailInstitutionId)
+        .get()
+      const instData = (instSnap.data() ?? {}) as Record<string, unknown>
+      if (typeof instData.name === 'string' && instData.name.trim()) {
+        institutionName = instData.name.trim()
+      }
+    } catch {
+      institutionName = null
+    }
+  }
 
   const next = await getNextContent(db, {
     student_id: enrollment.student_id,
@@ -174,6 +200,13 @@ async function buildHomeEnrollmentCard(
     total_questions = null
   }
 
+  const stages_completed =
+    enrollment.status === 'completed' || next.next_action === 'completed'
+      ? typeof total_stages === 'number' && total_stages > 0
+        ? total_stages
+        : Math.max(0, enrollment.current_stage_number)
+      : Math.max(0, enrollment.current_stage_number - 1)
+
   return {
     enrollment: {
       student_id: enrollment.student_id,
@@ -184,10 +217,14 @@ async function buildHomeEnrollmentCard(
       progress_status: enrollment.status,
       progress_version: enrollment.progress_version,
       last_channel: enrollment.last_channel,
+      last_interaction_at: serializeTs(enrollment.last_interaction_at),
     },
     trail: {
       id: enrollment.trail_id,
       title: trailTitle,
+      subject,
+      institution_id: trailInstitutionId || null,
+      institution_name: institutionName,
     },
     next_action: next.next_action,
     is_released: next.is_released,
@@ -195,6 +232,7 @@ async function buildHomeEnrollmentCard(
     progress_ratio,
     total_stages,
     total_questions,
+    stages_completed,
   }
 }
 
