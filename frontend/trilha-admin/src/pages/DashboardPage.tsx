@@ -653,6 +653,16 @@ export function DashboardPage() {
   }, [selectedId])
 
   useEffect(() => {
+    function onStorage(e: StorageEvent) {
+      if (e.key !== LAST_INSTITUTION_ID_STORAGE_KEY) return
+      const next = e.newValue?.trim() || null
+      setSelectedId(next)
+    }
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
+  }, [])
+
+  useEffect(() => {
     let cancelled = false
 
     async function run() {

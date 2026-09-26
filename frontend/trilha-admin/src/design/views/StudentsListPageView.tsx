@@ -40,6 +40,11 @@ export function StudentsListPageView({
   onToggleSelectAll,
   allPageSelected = false,
   onBulkDeactivate,
+  onBulkExport,
+  onBulkLink,
+  bulkLinkTrailOptions,
+  bulkLinkTrailId = '',
+  onBulkLinkTrailIdChange,
   bulkBusy = false,
   canImport = false,
   onImportClick,
@@ -143,17 +148,58 @@ export function StudentsListPageView({
             />
           </label>
         </div>
-        {showBulk && selectedCount > 0 && onBulkDeactivate ? (
-          <p className="admin__actions">
+        {showBulk && selectedCount > 0 ? (
+          <p className="admin__actions" style={{ flexWrap: 'wrap' }}>
             <span className="muted">{selectedCount} selecionado(s)</span>
-            <button
-              type="button"
-              className="btn btn--ghost btn--small"
-              disabled={bulkBusy}
-              onClick={onBulkDeactivate}
-            >
-              Desativar selecionados
-            </button>
+            {onBulkExport ? (
+              <button
+                type="button"
+                className="btn btn--ghost btn--small"
+                disabled={bulkBusy}
+                onClick={onBulkExport}
+              >
+                Exportar CSV
+              </button>
+            ) : null}
+            {onBulkLink &&
+            bulkLinkTrailOptions &&
+            onBulkLinkTrailIdChange ? (
+              <>
+                <label className="list-toolbar__field">
+                  <span className="muted">Vincular à trilha</span>
+                  <select
+                    value={bulkLinkTrailId}
+                    onChange={(e) => onBulkLinkTrailIdChange(e.target.value)}
+                    disabled={bulkBusy}
+                  >
+                    <option value="">Selecione…</option>
+                    {bulkLinkTrailOptions.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button
+                  type="button"
+                  className="btn btn--ghost btn--small"
+                  disabled={bulkBusy || !bulkLinkTrailId}
+                  onClick={onBulkLink}
+                >
+                  Vincular selecionados
+                </button>
+              </>
+            ) : null}
+            {onBulkDeactivate ? (
+              <button
+                type="button"
+                className="btn btn--ghost btn--small"
+                disabled={bulkBusy}
+                onClick={onBulkDeactivate}
+              >
+                Desativar selecionados
+              </button>
+            ) : null}
           </p>
         ) : null}
       </header>

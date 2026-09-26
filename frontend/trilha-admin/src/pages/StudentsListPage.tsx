@@ -3,6 +3,7 @@ import {
   collection,
   doc,
   onSnapshot,
+  serverTimestamp,
   writeBatch,
 } from 'firebase/firestore'
 import { StudentsListPageView } from '../design/views/StudentsListPageView'
@@ -20,6 +21,7 @@ import {
 import {
   snapshotToStudentTrail,
   STUDENT_TRAILS_COLLECTION,
+  studentTrailDocId,
 } from '../lib/studentTrailFirestore'
 import { snapshotToTrail, TRAILS_COLLECTION } from '../lib/trailFirestore'
 import { studentPath } from '../lib/paths'
@@ -48,6 +50,7 @@ export function StudentsListPage() {
   const [page, setPage] = useState(1)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [bulkBusy, setBulkBusy] = useState(false)
+  const [bulkLinkTrailId, setBulkLinkTrailId] = useState('')
 
   const institutionOptions = useMemo(() => {
     return filterInstitutions(institutions)
@@ -317,6 +320,103 @@ export function StudentsListPage() {
     }
   }
 
+  function handleBulkExport() {
+    const selected = filtered.filter((r) => selectedIds.has(r.student.id))
+    if (selected.length === 0) return
+    const header = [
+      'id',
+      'nome',
+      'instituicao',
+      'telefone',
+      'serie',
+      'nivel',
+      'ativo',
+      'situacao',
+    ]
+    const lines = [header.join(',')]
+    for (const { student, situation } of selected) {
+      const cells = [
+        student.id,
+        student.name || '',
+        institutionNameById.get(student.institution_id) ||
+          student.institution_id ||
+          '',
+        student.phone_number || '',
+        student.school_grade || '',
+        String(student.student_level ?? ''),
+        student.active ? 'sim' : 'nao',
+        situation.label,
+      ].map((c) => `"${String(c).replace(/"/g, '""')}"`)
+      lines.push(cells.join(','))
+    }
+    const blob = new Blob([lines.join('\n')], {
+      type: 'text/csv;charset=utf-8',
+    })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `alunos-selecionados-${Date.now()}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  async function handleBulkLink() {
+    if (!db || selectedIds.size === 0 || !bulkLinkTrailId.trim()) return
+    const trail = trails.find((t) => t.id === bulkLinkTrailId)
+    if (!trail) {
+      setError('Trilha não encontrada.')
+      return
+    }
+    setBulkBusy(true)
+    try {
+      const batch = writeBatch(db)
+      const now = serverTimestamp()
+      let linked = 0
+      for (const studentId of selectedIds) {
+        const student = students.find((s) => s.id === studentId)
+        if (!student?.institution_id) continue
+        if (student.institution_id !== trail.institution_id) continue
+        const already = studentTrails.some(
+          (st) => st.student_id === studentId && st.trail_id === trail.id,
+        )
+        if (already) continue
+        const ref = doc(
+          db,
+          STUDENT_TRAILS_COLLECTION,
+          studentTrailDocId(studentId, trail.id),
+        )
+        batch.set(ref, {
+          student_id: studentId,
+          institution_id: student.institution_id,
+          trail_id: trail.id,
+          current_stage_number: 1,
+          current_question_number: 1,
+          status: 'not_started',
+          started_at: null,
+          completed_at: null,
+          last_interaction_at: null,
+          created_at: now,
+          updated_at: now,
+        })
+        linked += 1
+      }
+      if (linked === 0) {
+        setError(
+          'Nenhum aluno elegível para vincular (já vinculados ou instituição diferente da trilha).',
+        )
+        return
+      }
+      await batch.commit()
+      setSelectedIds(new Set())
+      setBulkLinkTrailId('')
+      setError(null)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Falha ao vincular')
+    } finally {
+      setBulkBusy(false)
+    }
+  }
+
   return (
     <StudentsListPageView
       canCreate={canNav('student_new')}
@@ -392,6 +492,11 @@ export function StudentsListPage() {
       }}
       allPageSelected={allPageSelected}
       onBulkDeactivate={() => void handleBulkDeactivate()}
+      onBulkExport={handleBulkExport}
+      onBulkLink={() => void handleBulkLink()}
+      bulkLinkTrailOptions={trailOptions}
+      bulkLinkTrailId={bulkLinkTrailId}
+      onBulkLinkTrailIdChange={setBulkLinkTrailId}
       bulkBusy={bulkBusy}
     />
   )

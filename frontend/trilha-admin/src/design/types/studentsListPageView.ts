@@ -65,6 +65,11 @@ export type StudentsListPageViewProps = {
   onToggleSelectAll?: () => void
   allPageSelected?: boolean
   onBulkDeactivate?: () => void
+  onBulkExport?: () => void
+  onBulkLink?: () => void
+  bulkLinkTrailOptions?: { id: string; label: string }[]
+  bulkLinkTrailId?: string
+  onBulkLinkTrailIdChange?: (trailId: string) => void
   bulkBusy?: boolean
   canImport?: boolean
   onImportClick?: () => void
