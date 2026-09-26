@@ -92,6 +92,38 @@
     },
     { "source": "/student_trails/", "destination": "/api/student_trails" },
     { "source": "/student_trails", "destination": "/api/student_trails" },
+    {
+      "source": "/student_trails/next-content",
+      "destination": "/api/student_trails?facade=next-content"
+    },
+    {
+      "source": "/student_trails/next-content/",
+      "destination": "/api/student_trails?facade=next-content"
+    },
+    {
+      "source": "/student_trails/advance",
+      "destination": "/api/student_trails?facade=advance"
+    },
+    {
+      "source": "/student_trails/advance/",
+      "destination": "/api/student_trails?facade=advance"
+    },
+    {
+      "source": "/student_trails/status",
+      "destination": "/api/student_trails?facade=status"
+    },
+    {
+      "source": "/student_trails/status/",
+      "destination": "/api/student_trails?facade=status"
+    },
+    {
+      "source": "/student/by-phone/:phone([0-9]+)",
+      "destination": "/api/student?phone_number=:phone"
+    },
+    {
+      "source": "/student/by-phone/:phone([0-9]+)/",
+      "destination": "/api/student?phone_number=:phone"
+    },
     { "source": "/conversation_logs/", "destination": "/api/conversation_logs" },
     { "source": "/conversation_logs", "destination": "/api/conversation_logs" },
     {

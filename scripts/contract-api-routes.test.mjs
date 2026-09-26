@@ -32,6 +32,22 @@ const CRITICAL_REWRITES = [
   { source: '/trail_stages', destination: '/api/trail_stages' },
   { source: '/trail_stage_questions', destination: '/api/trail_stage_questions' },
   { source: '/student_trails', destination: '/api/student_trails' },
+  {
+    source: '/student_trails/next-content',
+    destination: '/api/student_trails?facade=next-content',
+  },
+  {
+    source: '/student_trails/advance',
+    destination: '/api/student_trails?facade=advance',
+  },
+  {
+    source: '/student_trails/status',
+    destination: '/api/student_trails?facade=status',
+  },
+  {
+    source: '/student/by-phone/:phone([0-9]+)',
+    destination: '/api/student?phone_number=:phone',
+  },
   { source: '/conversation_logs', destination: '/api/conversation_logs' },
 ]
 
@@ -109,4 +125,37 @@ test('dashboardSummaryApi mantém GET /api/dashboard_summary', () => {
     'utf8',
   )
   assert.match(src, /\/api\/dashboard_summary/)
+})
+
+test('Shared Trail Engine Wave A existe no servidor', () => {
+  const engineDir = join(root, 'server/lib/trail-engine')
+  for (const name of [
+    'index.ts',
+    'advance.ts',
+    'getNextContent.ts',
+    'phoneNormalize.ts',
+    'resolveStudent.ts',
+    'enrollment.ts',
+    'errors.ts',
+    'auth.ts',
+    'idempotencyKey.ts',
+  ]) {
+    assert.equal(
+      existsSync(join(engineDir, name)),
+      true,
+      `faltando server/lib/trail-engine/${name}`,
+    )
+  }
+  assert.match(
+    readFileSync(join(root, 'api/student_trails.ts'), 'utf8'),
+    /assertServiceBearer/,
+  )
+  assert.match(
+    readFileSync(join(root, 'server/lib/studentTrailService.ts'), 'utf8'),
+    /buildStableIdempotencyKey/,
+  )
+  assert.doesNotMatch(
+    readFileSync(join(root, 'server/lib/studentTrailService.ts'), 'utf8'),
+    /randomUUID/,
+  )
 })
