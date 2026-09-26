@@ -18,6 +18,8 @@
   display: flex;
   flex-direction: column;
   min-height: 100svh;
+  max-width: 100%;
+  overflow-x: clip;
   background: var(--c-bg);
   position: relative;
 }
@@ -64,12 +66,17 @@
 [data-shell='admin'] .shell__inst {
   display: inline-flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 6px;
   min-width: 0;
+  max-width: 100%;
 }
 
 [data-shell='admin'] .shell__inst select {
   max-width: 220px;
+  min-width: 0;
+  width: auto;
+  flex: 1 1 auto;
   font: inherit;
   font-size: 13px;
   font-weight: 600;
@@ -79,6 +86,7 @@
   border-radius: 0;
   padding: 6px 10px;
   height: 36px;
+  box-sizing: border-box;
 }
 
 [data-shell='admin'] .shell__inst-manage {
@@ -253,10 +261,30 @@
 [data-shell='admin'] .shell__content {
   flex: 1 1 auto;
   width: 100%;
+  min-width: 0;
   max-width: var(--c-page-max);
   margin: 0 auto;
   padding: 32px var(--shell-pad) 48px;
   box-sizing: border-box;
+}
+
+/* Neutraliza tipografia global de index.css dentro do shell admin */
+[data-shell='admin'] h1 {
+  font-family: var(--c-font);
+  font-weight: 800;
+  color: var(--c-text);
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+[data-shell='admin'] h2 {
+  font-family: var(--c-font);
+  font-weight: 800;
+  color: var(--c-text);
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 [data-shell='admin'] .app-version {
@@ -270,21 +298,50 @@
 @media (max-width: 900px) {
   [data-shell='admin'] .shell__top {
     padding: 10px 16px;
+    row-gap: 10px;
   }
 
   [data-shell='admin'] .shell__content {
     --shell-pad: 16px;
-    padding-top: 24px;
+    --shell-pad-left: 16px;
+    /* Sobrescreve padding-top: 4rem do hamburger legado em app.css */
+    padding: 24px 16px 40px;
   }
 
   [data-shell='admin'] .shell__primary-nav {
     width: 100%;
     order: 3;
     margin-left: 0;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+    gap: 2px;
+    padding-bottom: 2px;
+  }
+
+  [data-shell='admin'] .shell__primary-link {
+    flex-shrink: 0;
   }
 
   [data-shell='admin'] .shell__inst {
+    flex: 1 1 auto;
+    max-width: calc(100% - 96px);
+  }
+
+  [data-shell='admin'] .shell__inst select {
     max-width: 100%;
+  }
+
+  [data-shell='admin'] .shell__top-right {
+    flex-shrink: 0;
+  }
+
+  [data-shell='admin'] .shell__user-menu,
+  [data-shell='admin'] .shell__config-panel {
+    right: 16px;
+    left: auto;
+    max-width: calc(100vw - 32px);
   }
 }
 
@@ -743,4 +800,251 @@
 /* Hide legacy sidebar remnants inside admin shell */
 [data-shell='admin'] .shell__sidebar {
   display: none !important;
+}
+
+[data-shell='admin'] .shell__menu-toggle {
+  display: none !important;
+}
+
+[data-shell='admin'] .shell__backdrop {
+  display: none !important;
+}
+
+/* —— Tabelas: scroll horizontal garantido —— */
+[data-shell='admin'] .table-wrap {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  margin-left: 0;
+  margin-right: 0;
+}
+
+[data-shell='admin'] .table-wrap .table {
+  min-width: 36rem;
+}
+
+/* —— Abas: scroll horizontal em vez de wrap quebrado —— */
+[data-shell='admin'] .crias-tabs {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+}
+
+[data-shell='admin'] .crias-tabs__btn {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+/* —— Filtros / toolbars —— */
+[data-shell='admin'] .list-toolbar,
+[data-shell='admin'] .dashboard-filters,
+[data-shell='admin'] .trail-students-filter,
+[data-shell='admin'] .gerenciamento-toolbar,
+[data-shell='admin'] .trail-header-actions,
+[data-shell='admin'] .admin__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1rem;
+  max-width: 100%;
+  min-width: 0;
+}
+
+[data-shell='admin'] .trail-header-actions {
+  align-items: flex-end;
+}
+
+[data-shell='admin'] .trail-header-select {
+  min-width: 0;
+}
+
+[data-shell='admin'] .trail-header-select input {
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+[data-shell='admin'] .list-toolbar__field,
+[data-shell='admin'] .gerenciamento-select {
+  min-width: 0;
+  max-width: 100%;
+}
+
+[data-shell='admin'] .list-toolbar__field select,
+[data-shell='admin'] .list-toolbar__field input,
+[data-shell='admin'] .gerenciamento-select select {
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+[data-shell='admin'] .trail-students-filter__count {
+  margin-left: auto;
+}
+
+/* —— Mobile / tablet estreito (P0/P1) —— */
+@media (max-width: 640px) {
+  [data-shell='admin'] .shell__top {
+    padding: 8px 12px;
+  }
+
+  [data-shell='admin'] .shell__content {
+    --shell-pad: 12px;
+    --shell-pad-left: 12px;
+    padding: 16px 12px 36px;
+  }
+
+  [data-shell='admin'] .shell__inst-manage {
+    display: none;
+  }
+
+  [data-shell='admin'] .shell__inst {
+    max-width: calc(100% - 88px);
+  }
+
+  [data-shell='admin'] .shell__inst select {
+    width: 100%;
+    max-width: 100%;
+  }
+
+  [data-shell='admin'] .shell__user-menu,
+  [data-shell='admin'] .shell__config-panel {
+    right: 12px;
+    left: 12px;
+    min-width: 0;
+    width: auto;
+    max-width: none;
+  }
+
+  [data-shell='admin'] .admin__header h1,
+  [data-shell='admin'] .crias-page-title {
+    font-size: clamp(1.5rem, 7vw, 2rem);
+    max-width: 100%;
+  }
+
+  [data-shell='admin'] .admin__lede,
+  [data-shell='admin'] .crias-page-lede {
+    font-size: 14px;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+  }
+
+  [data-shell='admin'] .crias-section-title,
+  [data-shell='admin'] .panel__head h2 {
+    font-size: clamp(1.15rem, 5vw, 1.5rem);
+    max-width: 100%;
+  }
+
+  /* KPIs e faixas: 1 coluna no mobile */
+  [data-shell='admin'] .crias-kpi-grid {
+    grid-template-columns: 1fr;
+  }
+
+  [data-shell='admin'] .crias-journey__grid {
+    grid-template-columns: 1fr;
+  }
+
+  [data-shell='admin'] .crias-kpi__value {
+    font-size: clamp(1.5rem, 9vw, 2.25rem);
+    overflow-wrap: anywhere;
+  }
+
+  [data-shell='admin'] .dashboard-cards {
+    flex-wrap: wrap;
+  }
+
+  [data-shell='admin'] .dashboard-cards > * {
+    flex: 1 1 100%;
+  }
+
+  [data-shell='admin'] .dashboard-header {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      'intro'
+      'stats'
+      'toolbar';
+  }
+
+  [data-shell='admin'] .dashboard-header__stats {
+    justify-content: flex-start;
+  }
+
+  [data-shell='admin'] .dashboard-filter-name,
+  [data-shell='admin'] .dashboard-student-autocomplete,
+  [data-shell='admin'] .trail-students-search,
+  [data-shell='admin'] .list-toolbar__field,
+  [data-shell='admin'] .list-toolbar__field--grow {
+    flex: 1 1 100%;
+    min-width: 0;
+    max-width: 100%;
+    width: 100%;
+  }
+
+  [data-shell='admin'] .gerenciamento-select {
+    flex: 1 1 100%;
+    width: 100%;
+  }
+
+  [data-shell='admin'] .gerenciamento-select select {
+    min-width: 0;
+    width: 100%;
+  }
+
+  [data-shell='admin'] .dashboard-question-filters {
+    grid-template-columns: 1fr;
+  }
+
+  [data-shell='admin'] .dashboard-question-filters .dashboard-filter-name,
+  [data-shell='admin'] .dashboard-question-filters .dashboard-filter-trail,
+  [data-shell='admin'] .dashboard-question-filters .dashboard-filter-min,
+  [data-shell='admin'] .dashboard-question-filters .dashboard-pct-filter,
+  [data-shell='admin'] .dashboard-question-filters .dashboard-question-student-count {
+    grid-column: 1 / -1;
+  }
+
+  [data-shell='admin'] .trail-students-filter__count {
+    margin-left: 0;
+    width: 100%;
+  }
+
+  [data-shell='admin'] .table-wrap .table {
+    min-width: 40rem;
+  }
+
+  [data-shell='admin'] .trail-cadastro-details {
+    grid-template-columns: 1fr;
+  }
+
+  [data-shell='admin'] .trail-structure__benefits,
+  [data-shell='admin'] .trail-structure__timeline,
+  [data-shell='admin'] .trail-create-grid,
+  [data-shell='admin'] .trail-structure__builder {
+    grid-template-columns: 1fr;
+  }
+
+  [data-shell='admin'] .btn {
+    max-width: 100%;
+  }
+
+  [data-shell='admin'] .admin__actions .btn {
+    width: auto;
+  }
+}
+
+@media (max-width: 480px) {
+  [data-shell='admin'] .shell__primary-link {
+    padding: 0 10px;
+    font-size: 13px;
+  }
+
+  [data-shell='admin'] .crias-tabs__btn {
+    padding: 10px 12px;
+    font-size: 13px;
+  }
+
+  [data-shell='admin'] .crias-kpi {
+    padding: 14px 14px 16px;
+    min-height: 96px;
+  }
 }
