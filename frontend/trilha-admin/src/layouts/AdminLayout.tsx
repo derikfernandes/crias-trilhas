@@ -15,12 +15,13 @@ import {
 } from '../design/layouts/AdminLayoutView'
 
 /**
- * Shell visual autenticado (sidebar + área de conteúdo).
+ * Shell visual autenticado (header topo + área de conteúdo).
  * Lógica de permissão permanece nos hooks; a view só recebe props.
+ * Rótulos Visão geral / Trilhas / Alunos são aplicados na view; rotas intactas.
  */
 export function AdminLayout({ children }: { children: ReactNode }) {
   const { user, signOut } = useAuth()
-  const { canNav, permissionsLoading } = usePermissions()
+  const { canNav, permissionsLoading, adminProfile } = usePermissions()
   const location = useLocation()
   const authed = Boolean(user)
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
@@ -80,11 +81,26 @@ export function AdminLayout({ children }: { children: ReactNode }) {
     return entries
   }, [canNav, location.pathname])
 
+  const userRoleLabel = useMemo(() => {
+    if (!adminProfile) return 'Acesso completo'
+    if (adminProfile.is_super_admin) return 'Super admin'
+    if (!adminProfile.active) return 'Inativo'
+    const nav = adminProfile.nav_permissions ?? []
+    if (nav.includes('admin') && nav.includes('dashboard')) {
+      return 'Coordenação'
+    }
+    if (nav.length > 0 && !nav.includes('admin')) {
+      return 'Leitura'
+    }
+    return 'Usuário'
+  }, [adminProfile])
+
   return (
     <AdminLayoutView
       brandLabel="Crias Trilha"
       navEntries={navEntries}
       userEmail={user?.email ?? null}
+      userRoleLabel={userRoleLabel}
       permissionsLoading={permissionsLoading}
       authed={authed}
       onLogout={() => void signOut()}
@@ -98,6 +114,7 @@ export function AdminLayout({ children }: { children: ReactNode }) {
         { path: '/doc', label: 'API e documentação' },
         { path: '/login', label: 'Entrar' },
       ]}
+      manageInstitutionsHref="/"
     >
       {children}
     </AdminLayoutView>

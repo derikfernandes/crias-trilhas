@@ -140,7 +140,7 @@ export function TrailsListPage() {
       trail.institution_id ||
       '—',
     subject: trail.subject || '—',
-    activeLabel: trail.active ? 'Sim' : 'Não',
+    activeLabel: trail.active ? 'Ativa' : 'Inativa',
     createdAtLabel: formatTrailTs(trail.created_at),
     detailHref: trailPath(trail.id),
   }))

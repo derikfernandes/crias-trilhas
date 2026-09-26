@@ -145,7 +145,7 @@ export function TrailDetailPageView(props: TrailDetailPageViewProps) {
               }`}
               onClick={() => onActiveTabChange('content')}
             >
-              Conteúdo
+              Atividades
             </button>
             <button
               id="trail-students-tab"
