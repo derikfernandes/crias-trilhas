@@ -12,12 +12,14 @@
 }
 
 /* —— Shell topo —— */
-[data-shell='admin'] .shell {
+/* data-shell está NO próprio .shell — seletor no mesmo elemento (não descendente). */
+[data-shell='admin'].shell {
   --shell-pad: 32px;
   --shell-pad-left: 32px;
   display: flex;
   flex-direction: column;
   min-height: 100svh;
+  width: 100%;
   max-width: 100%;
   overflow-x: clip;
   background: var(--c-bg);
@@ -40,6 +42,8 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 8px 16px;
+  width: 100%;
+  flex: 0 0 auto;
   min-height: var(--c-header-h);
   padding: 10px 24px;
   background: var(--c-bg);
@@ -253,6 +257,7 @@
 
 [data-shell='admin'] .shell__main {
   flex: 1 1 auto;
+  width: 100%;
   min-width: 0;
   display: flex;
   flex-direction: column;
@@ -275,16 +280,17 @@
   color: var(--c-text);
   letter-spacing: -0.03em;
   line-height: 1.1;
-  overflow-wrap: anywhere;
-  word-break: break-word;
+  overflow-wrap: break-word;
+  word-break: normal;
+  hyphens: manual;
 }
 
 [data-shell='admin'] h2 {
   font-family: var(--c-font);
   font-weight: 800;
   color: var(--c-text);
-  overflow-wrap: anywhere;
-  word-break: break-word;
+  overflow-wrap: break-word;
+  word-break: normal;
 }
 
 [data-shell='admin'] .app-version {
