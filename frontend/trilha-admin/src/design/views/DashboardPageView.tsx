@@ -9,6 +9,11 @@ import { LessonTopicCode } from './dashboard/LessonTopicCode'
 import { QuestionsCharts } from './dashboard/QuestionsCharts'
 import { StudentsCharts } from './dashboard/StudentsCharts'
 import { AgentUsageSection } from './dashboard/AgentUsageSection'
+import { KpiGrid, KpiStat } from '../components/cards/KpiStat'
+import { JourneyBands } from '../components/cards/JourneyBands'
+import { CriasTabs } from '../components/navigation/CriasTabs'
+import { PageEmpty, PageError } from '../components/feedback/PageState'
+import { StatusTag } from '../components/ui/StatusTag'
 
 export type {
   DashboardPageViewProps,
@@ -126,6 +131,21 @@ export function DashboardPageView({
   selectedAgentTrailId,
   onSelectAgentTrailId,
   selectedAgentStudents,
+  journeyBands,
+  journeyStalledLinkLabel,
+  journeyStalledHref,
+  registeredStudentCount,
+  agentCoverageOfActivePct,
+  gradeOptions,
+  selectedGrade,
+  onSelectGrade,
+  activityMatrix,
+  selectedMatrixCellKey,
+  onSelectMatrixCell,
+  optionDistribution,
+  ranking,
+  topicDoubts,
+  learningOpportunities,
 }: DashboardPageViewProps) {
   const [expandedEnunciado, setExpandedEnunciado] =
     useState<ExpandedEnunciado | null>(null)
@@ -139,38 +159,27 @@ export function DashboardPageView({
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [expandedEnunciado])
 
+  const selectedInstitutionLabel =
+    institutionOptions.find((o) => o.id === selectedId)?.label ?? null
+
+  void ranking
+  void topicDoubts
+  void learningOpportunities
+
   return (
     <>
       <header className="admin__header dashboard-header">
         <div className="dashboard-header__intro">
-          <h1>Dashboard</h1>
+          <h1>Visão geral</h1>
           {!isDashboardLoading ? (
             <p className="admin__lede muted">
-              Visão geral de engajamento dos alunos e desempenho por aula
-              (exercício).
+              {selectedInstitutionLabel
+                ? `${selectedInstitutionLabel} · engajamento, percurso e tutores`
+                : 'Engajamento dos alunos, percurso e conversas com tutores.'}
             </p>
           ) : null}
         </div>
-        {selectedId && !isDashboardLoading ? (
-          <div className="dashboard-header__stats" aria-label="Resumo rápido">
-            <div className="dashboard-stat-card">
-              <span className="dashboard-stat-card__label">Alunos ativos</span>
-              <span className="dashboard-stat-card__value">
-                {summary.activeStudents}
-              </span>
-            </div>
-            <div className="dashboard-stat-card">
-              <span className="dashboard-stat-card__label">Trilhas ativas</span>
-              <span className="dashboard-stat-card__value">
-                {summary.activeTrails}
-              </span>
-            </div>
-          </div>
-        ) : null}
         <div className="gerenciamento-toolbar dashboard-header__toolbar">
-          <Link className="btn btn--ghost" to="/">
-            ← Início
-          </Link>
           <label className="gerenciamento-select">
             <span className="muted">Instituição</span>
             <select
@@ -193,6 +202,25 @@ export function DashboardPageView({
               ))}
             </select>
           </label>
+          {gradeOptions && gradeOptions.length > 0 && onSelectGrade ? (
+            <label className="gerenciamento-select">
+              <span className="muted">Série</span>
+              <select
+                value={selectedGrade ?? ''}
+                onChange={(e) => {
+                  const next = e.target.value.trim()
+                  onSelectGrade(next || null)
+                }}
+              >
+                <option value="">Todas</option>
+                {gradeOptions.map((g) => (
+                  <option key={g.id} value={g.id}>
+                    {g.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
         </div>
       </header>
 
@@ -213,11 +241,10 @@ export function DashboardPageView({
       ) : null}
 
       {!selectedId ? (
-        <section className="panel">
-          <p className="muted gerenciamento-placeholder">
-            Selecione uma instituição para ver o dashboard.
-          </p>
-        </section>
+        <PageEmpty
+          title="Selecione uma instituição"
+          body="Escolha uma instituição para ver a visão geral."
+        />
       ) : isDashboardLoading ? (
         <section
           className="dashboard-load-progress dashboard-load-progress--gate panel"
@@ -226,7 +253,7 @@ export function DashboardPageView({
         >
           <div className="dashboard-load-progress__head">
             <span className="dashboard-load-progress__label">
-              {loadLabel || 'Carregando dashboard…'}
+              {loadLabel || 'Carregando visão geral…'}
             </span>
             <span className="dashboard-load-progress__pct">{loadPercent}%</span>
           </div>
@@ -247,123 +274,210 @@ export function DashboardPageView({
           </div>
         </section>
       ) : logsError ? (
-        <section className="panel" data-testid="dashboard-logs-error">
-          <p className="banner banner--error" role="alert">
-            Não foi possível carregar as métricas dos alunos e o uso dos
-            tutores: {logsError}
-          </p>
-          <p className="muted">
-            Os totais de alunos e trilhas foram carregados, mas conclusões,
-            acertos e o bloco de tutores ficariam incompletos. Tente novamente.
-          </p>
-          <button type="button" className="btn" onClick={onRetryLogs}>
-            Tentar novamente
-          </button>
-        </section>
+        <div data-testid="dashboard-logs-error">
+          <PageError
+            title="Não foi possível carregar as métricas"
+            body={logsError}
+            onRetry={onRetryLogs}
+          />
+        </div>
+      ) : filteredStudentCount === 0 && totalStudentCount === 0 ? (
+        <PageEmpty
+          title="Nenhum aluno no período"
+          body="Não há alunos cadastrados nesta instituição para montar a visão geral."
+        />
       ) : (
         <>
-          <nav
-            className="trail-detail-tabs dashboard-tabs"
-            aria-label="Seções do dashboard"
-            role="tablist"
-          >
-            <button
-              id="dashboard-students-tab"
-              type="button"
-              role="tab"
-              aria-selected={activeTab === 'students'}
-              aria-controls="dashboard-students-panel"
-              className={`trail-detail-tabs__tab${
-                activeTab === 'students'
-                  ? ' trail-detail-tabs__tab--active'
-                  : ''
-              }`}
-              onClick={() => onActiveTabChange('students')}
-            >
-              Alunos
-            </button>
-            <button
-              id="dashboard-questions-tab"
-              type="button"
-              role="tab"
-              aria-selected={activeTab === 'questions'}
-              aria-controls="dashboard-questions-panel"
-              className={`trail-detail-tabs__tab${
-                activeTab === 'questions'
-                  ? ' trail-detail-tabs__tab--active'
-                  : ''
-              }`}
-              onClick={() => onActiveTabChange('questions')}
-            >
-              Questões
-            </button>
-          </nav>
+          <KpiGrid>
+            <KpiStat
+              label="Alunos ativos"
+              value={String(summary.activeStudents)}
+              hint={
+                registeredStudentCount != null
+                  ? `de ${registeredStudentCount} cadastrados`
+                  : `${summary.activeTrails} trilha(s) ativa(s)`
+              }
+              barPct={
+                registeredStudentCount && registeredStudentCount > 0
+                  ? (summary.activeStudents / registeredStudentCount) * 100
+                  : null
+              }
+            />
+            <KpiStat
+              label="Progresso médio"
+              value={formatPct(summary.avgCompletion, 1)}
+              hint="Tópicos feitos ÷ liberados"
+              barPct={summary.avgCompletion}
+            />
+            <KpiStat
+              label="Acerto médio"
+              value={formatPct(summary.avgAccuracy, 1)}
+              hint="Respostas corretas ÷ total"
+              barPct={summary.avgAccuracy}
+            />
+            <KpiStat
+              label="Tutores"
+              value={
+                agentCoverageOfActivePct != null
+                  ? formatPct(agentCoverageOfActivePct, 1)
+                  : formatPct(agentUsage.coveragePct, 1)
+              }
+              hint="% dos ativos que conversaram"
+              barPct={agentCoverageOfActivePct ?? agentUsage.coveragePct}
+            />
+          </KpiGrid>
+
+          {journeyBands && journeyBands.length > 0 ? (
+            <JourneyBands
+              bands={journeyBands}
+              stalledHref={journeyStalledHref}
+              stalledLinkLabel={journeyStalledLinkLabel}
+            />
+          ) : null}
+
+          {activityMatrix && activityMatrix.cells.length > 0 ? (
+            <section className="crias-journey" aria-label="Mapa conteúdo a conteúdo">
+              <div className="crias-journey__head">
+                <div>
+                  <div className="crias-label">Mapa conteúdo a conteúdo</div>
+                  <h2
+                    className="crias-section-title"
+                    style={{ borderBottom: 0, paddingBottom: 0 }}
+                  >
+                    Acerto por atividade × exercício
+                  </h2>
+                </div>
+              </div>
+              <div className="crias-matrix">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Bloco \ Ativ.</th>
+                      {activityMatrix.questions.map((q) => (
+                        <th key={q}>A{q}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {activityMatrix.stages.map((stage) => (
+                      <tr key={stage}>
+                        <th scope="row">B{stage}</th>
+                        {activityMatrix.questions.map((q) => {
+                          const cell = activityMatrix.cells.find(
+                            (c) =>
+                              c.stageNumber === stage &&
+                              c.questionNumber === q,
+                          )
+                          if (!cell || cell.total === 0) {
+                            return (
+                              <td
+                                key={`${stage}-${q}`}
+                                className="crias-matrix__cell crias-matrix__cell--empty"
+                              >
+                                —
+                              </td>
+                            )
+                          }
+                          const pctVal = cell.accuracyPct ?? 0
+                          const tone =
+                            pctVal >= 70
+                              ? 'crias-matrix__cell--high'
+                              : pctVal >= 40
+                                ? 'crias-matrix__cell--mid'
+                                : 'crias-matrix__cell--low'
+                          const selected =
+                            selectedMatrixCellKey === cell.key
+                          return (
+                            <td key={`${stage}-${q}`}>
+                              <button
+                                type="button"
+                                className={`crias-matrix__cell ${tone}`}
+                                aria-pressed={selected}
+                                onClick={() =>
+                                  onSelectMatrixCell?.(
+                                    selected ? null : cell.key,
+                                  )
+                                }
+                              >
+                                {formatPct(cell.accuracyPct, 0)}
+                              </button>
+                            </td>
+                          )
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {optionDistribution && optionDistribution.length > 0 ? (
+                <div className="crias-option-dist" aria-label="Distribuição A/B/C">
+                  {optionDistribution.map((item) => (
+                    <div key={item.option} className="crias-option-dist__item">
+                      <span className="crias-option-dist__key">
+                        {item.option}
+                      </span>
+                      {item.count} ({item.pct}%)
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </section>
+          ) : null}
+
+          <CriasTabs
+            ariaLabel="Seções da visão geral"
+            activeId={activeTab}
+            onChange={(id) => onActiveTabChange(id as 'students' | 'questions')}
+            items={[
+              { id: 'students', label: 'Alunos' },
+              { id: 'questions', label: 'Questões' },
+            ]}
+          />
 
           {activeTab === 'students' ? (
             <div
               id="dashboard-students-panel"
               className="trail-tab-panel"
               role="tabpanel"
-              aria-labelledby="dashboard-students-tab"
             >
-              <section className="dashboard-cards">
-            <div className="dashboard-card">
-              <span className="dashboard-card__label">
-                % médio de conclusão (tópicos)
-              </span>
-              <span className="dashboard-card__value">
-                {formatPct(summary.avgCompletion, 1)}
-              </span>
-              <span className="dashboard-card__hint">
-                Tópicos feitos ÷ tópicos liberados
-              </span>
-            </div>
-            <div className="dashboard-card">
-              <span className="dashboard-card__label">
-                % médio de conclusão (aulas)
-              </span>
-              <span className="dashboard-card__value">
-                {formatPct(summary.avgLessonCompletion, 1)}
-              </span>
-              <span className="dashboard-card__hint">
-                Aulas concluídas ÷ aulas liberadas
-              </span>
-            </div>
-            <div className="dashboard-card">
-              <span className="dashboard-card__label">% médio de acerto</span>
-              <span className="dashboard-card__value">
-                {formatPct(summary.avgAccuracy, 1)}
-              </span>
-            </div>
-            {annulledGabaritoCount > 0 ? (
-              <Link to="/gabarito" className="dashboard-card dashboard-card--muted">
-                <span className="dashboard-card__label">
-                  Questões anuladas
-                </span>
-                <span className="dashboard-card__value">
-                  {annulledGabaritoCount}
-                </span>
-                <span className="dashboard-card__hint">
-                  {annulledAnswersExcluded > 0
-                    ? `${annulledAnswersExcluded} resposta${annulledAnswersExcluded === 1 ? '' : 's'} fora do % de acerto`
-                    : 'Nenhuma resposta de aluno nessas questões ainda'}
-                </span>
-              </Link>
-            ) : null}
-            {missingGabaritoCount > 0 ? (
-              <Link to="/gabarito" className="dashboard-card dashboard-card--warn">
-                <span className="dashboard-card__label">
-                  Aulas sem gabarito
-                </span>
-                <span className="dashboard-card__value">
-                  {missingGabaritoCount}
-                </span>
-                <span className="dashboard-card__hint">
-                  Preencher gabarito →
-                </span>
-              </Link>
-            ) : null}
-              </section>
+              {(annulledGabaritoCount > 0 || missingGabaritoCount > 0) && (
+                <section className="dashboard-cards" style={{ marginBottom: 24 }}>
+                  {annulledGabaritoCount > 0 ? (
+                    <Link
+                      to="/gabarito"
+                      className="dashboard-card dashboard-card--muted"
+                    >
+                      <span className="dashboard-card__label">
+                        Questões anuladas
+                      </span>
+                      <span className="dashboard-card__value">
+                        {annulledGabaritoCount}
+                      </span>
+                      <span className="dashboard-card__hint">
+                        {annulledAnswersExcluded > 0
+                          ? `${annulledAnswersExcluded} resposta${annulledAnswersExcluded === 1 ? '' : 's'} fora do % de acerto`
+                          : 'Nenhuma resposta de aluno nessas questões ainda'}
+                      </span>
+                    </Link>
+                  ) : null}
+                  {missingGabaritoCount > 0 ? (
+                    <Link
+                      to="/gabarito"
+                      className="dashboard-card dashboard-card--warn"
+                    >
+                      <span className="dashboard-card__label">
+                        Aulas sem gabarito
+                      </span>
+                      <span className="dashboard-card__value">
+                        {missingGabaritoCount}
+                      </span>
+                      <span className="dashboard-card__hint">
+                        Preencher gabarito →
+                      </span>
+                    </Link>
+                  ) : null}
+                </section>
+              )}
 
           <AgentUsageSection
             agentUsage={agentUsage}
@@ -535,6 +649,8 @@ export function DashboardPageView({
                     >
                       Nome{nameSortIndicator}
                     </th>
+                    <th>Situação</th>
+                    <th>Série</th>
                     {visibleColumns.map((c) => (
                       <th
                         key={c.key}
@@ -551,7 +667,7 @@ export function DashboardPageView({
                   {filteredStudentCount === 0 ? (
                     <tr>
                       <td
-                        colSpan={visibleColumns.length + 1}
+                        colSpan={visibleColumns.length + 3}
                         className="muted table__empty"
                       >
                         {studentRowsEmpty
@@ -567,6 +683,17 @@ export function DashboardPageView({
                             {row.name || '—'}
                           </Link>
                         </td>
+                        <td>
+                          {row.situationLabel && row.situationTone ? (
+                            <StatusTag
+                              label={row.situationLabel}
+                              tone={row.situationTone}
+                            />
+                          ) : (
+                            '—'
+                          )}
+                        </td>
+                        <td>{row.schoolGrade?.trim() || '—'}</td>
                         {visibleColumns.map((c) => {
                           switch (c.key) {
                             case 'phone':

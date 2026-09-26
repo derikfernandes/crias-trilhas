@@ -45,6 +45,18 @@ export type DashboardStudentRowView = {
   correct: number
   wrong: number
   accuracyPct: number | null
+  /** Fase B: série/ano quando já existe no aluno. */
+  schoolGrade?: string | null
+  /** Situação calculada no container. */
+  situationLabel?: string | null
+  situationTone?:
+    | 'concluiu'
+    | 'final'
+    | 'meio'
+    | 'inicio'
+    | 'parado'
+    | 'nao-iniciou'
+    | null
 }
 
 export type DashboardStudentColumnView = {
@@ -197,6 +209,46 @@ export type DashboardAgentStudentLink = {
   lastActivityLabel: string
 }
 
+/** Faixas de percurso (Início/Meio/Final/Parado/…). */
+export type DashboardJourneyBandView = {
+  key: 'completed' | 'final' | 'mid' | 'start' | 'stalled' | 'notStarted'
+  label: string
+  count: number
+}
+
+export type DashboardActivityMatrixCell = {
+  stageNumber: number
+  questionNumber: number
+  accuracyPct: number | null
+  total: number
+  key: string
+}
+
+export type DashboardActivityMatrixView = {
+  stages: number[]
+  questions: number[]
+  cells: DashboardActivityMatrixCell[]
+}
+
+export type DashboardOptionDistributionItem = {
+  option: string
+  count: number
+  pct: number
+}
+
+/** Opcional / bloqueado por 08 — view não renderiza se undefined. */
+export type DashboardRankingRowView = {
+  studentId: string
+  name: string
+  href: string
+  scoreLabel: string
+}
+
+export type DashboardTopicDoubtView = {
+  topic: string
+  count: number
+}
+
 export type DashboardPageViewProps = {
   loadingInst: boolean
   institutionOptions: DashboardInstitutionOption[]
@@ -303,4 +355,21 @@ export type DashboardPageViewProps = {
   selectedAgentTrailId: string | null
   onSelectAgentTrailId: (trailId: string | null) => void
   selectedAgentStudents: DashboardAgentStudentLink[]
+  /** Fase B — faixas Início/Meio/Final + Parado 7+. */
+  journeyBands?: DashboardJourneyBandView[]
+  journeyStalledLinkLabel?: string | null
+  journeyStalledHref?: string | null
+  registeredStudentCount?: number | null
+  agentCoverageOfActivePct?: number | null
+  gradeOptions?: DashboardPickerItem[]
+  selectedGrade?: string | null
+  onSelectGrade?: (grade: string | null) => void
+  activityMatrix?: DashboardActivityMatrixView | null
+  selectedMatrixCellKey?: string | null
+  onSelectMatrixCell?: (key: string | null) => void
+  optionDistribution?: DashboardOptionDistributionItem[] | null
+  /** Bloqueados por 08 — não renderizar se undefined. */
+  ranking?: DashboardRankingRowView[]
+  topicDoubts?: DashboardTopicDoubtView[]
+  learningOpportunities?: unknown
 }

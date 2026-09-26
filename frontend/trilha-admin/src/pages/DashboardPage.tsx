@@ -54,6 +54,7 @@ import {
 import { loadXlsx } from '../lib/loadXlsx'
 import { studentPath, trailPath } from '../lib/paths'
 import { usePermissions } from '../hooks/usePermissions'
+import { situationFromProgress } from '../lib/studentSituation'
 import type { Institution } from '../types/institution'
 import type { Student } from '../types/student'
 import type { StudentTrail } from '../types/studentTrail'
@@ -577,6 +578,10 @@ export function DashboardPage() {
   const [nameFilter, setNameFilter] = useState('')
   const [pctMin, setPctMin] = useState(0)
   const [pctMax, setPctMax] = useState(100)
+  const [selectedGrade, setSelectedGrade] = useState<string | null>(null)
+  const [selectedMatrixCellKey, setSelectedMatrixCellKey] = useState<
+    string | null
+  >(null)
   const [studentChartFilter, setStudentChartFilter] =
     useState<DashboardStudentChartFilter | null>(null)
   const [hiddenColumns, setHiddenColumns] = useState<Set<StudentColumnKey>>(
@@ -646,6 +651,16 @@ export function DashboardPage() {
     if (!selectedId?.trim()) return
     window.localStorage.setItem(LAST_INSTITUTION_ID_STORAGE_KEY, selectedId)
   }, [selectedId])
+
+  useEffect(() => {
+    function onStorage(e: StorageEvent) {
+      if (e.key !== LAST_INSTITUTION_ID_STORAGE_KEY) return
+      const next = e.newValue?.trim() || null
+      setSelectedId(next)
+    }
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -1307,21 +1322,30 @@ export function DashboardPage() {
     const queryDigits = query.replace(/\D/g, '')
     const lo = Math.min(pctMin, pctMax)
     const hi = Math.max(pctMin, pctMax)
+
     return studentRows.filter((row) => {
-      if (query) {
-        const nameMatch = row.student.name.toLowerCase().includes(query)
-        const phone = (row.student.phone_number ?? '').toLowerCase()
-        const phoneDigits = phone.replace(/\D/g, '')
-        const phoneMatch =
-          phone.includes(query) ||
-          (queryDigits.length > 0 && phoneDigits.includes(queryDigits))
-        if (!nameMatch && !phoneMatch) return false
+      if (selectedGrade) {
+        const grade = (row.student.school_grade || '').trim()
+        if (grade !== selectedGrade) return false
       }
-      const p = row.completionPct ?? 0
-      if (p < lo || p > hi) return false
+      if (query) {
+        const name = (row.student.name || '').toLowerCase()
+        const phone = (row.student.phone_number || '').replace(/\D/g, '')
+        const matchName = name.includes(query)
+        const matchPhone =
+          queryDigits.length > 0 && phone.includes(queryDigits)
+        if (!matchName && !matchPhone) return false
+      }
+      const completion = row.completionPct
+      if (completion === null) {
+        // Sem progresso: só passa se a faixa incluir 0.
+        if (lo > 0) return false
+      } else if (completion < lo || completion > hi) {
+        return false
+      }
       return true
     })
-  }, [studentRows, nameFilter, pctMin, pctMax])
+  }, [studentRows, nameFilter, pctMin, pctMax, selectedGrade])
 
   const chartFilteredStudentRows = useMemo(() => {
     if (!studentChartFilter) return filteredStudentRows
@@ -1621,6 +1645,91 @@ export function DashboardPage() {
     trailsByStudentIds,
     enrichedDoneByStudent,
   ])
+
+  const lastInteractionByStudent = useMemo(() => {
+    const map = new Map<string, number>()
+    const relevantIds = new Set(relevantTrails.map((t) => t.id))
+    for (const st of studentTrails) {
+      if (!relevantIds.has(st.trail_id)) continue
+      const ms = st.last_interaction_at?.toMillis?.() ?? 0
+      if (ms <= 0) continue
+      const prev = map.get(st.student_id) ?? 0
+      if (ms > prev) map.set(st.student_id, ms)
+    }
+    return map
+  }, [studentTrails, relevantTrails])
+
+  const statusByStudent = useMemo(() => {
+    const map = new Map<string, string>()
+    const relevantIds = new Set(relevantTrails.map((t) => t.id))
+    const byStudent = new Map<string, StudentTrail[]>()
+    for (const st of studentTrails) {
+      if (!relevantIds.has(st.trail_id)) continue
+      const arr = byStudent.get(st.student_id)
+      if (arr) arr.push(st)
+      else byStudent.set(st.student_id, [st])
+    }
+    for (const [studentId, list] of byStudent) {
+      if (list.every((s) => s.status === 'completed')) {
+        map.set(studentId, 'completed')
+      } else if (list.every((s) => s.status === 'not_started')) {
+        map.set(studentId, 'not_started')
+      } else if (list.some((s) => s.status === 'completed')) {
+        map.set(studentId, 'in_progress')
+      } else if (list.some((s) => s.status === 'in_progress')) {
+        map.set(studentId, 'in_progress')
+      } else {
+        map.set(studentId, 'not_started')
+      }
+    }
+    return map
+  }, [studentTrails, relevantTrails])
+
+  const journeyBands = useMemo(() => {
+    const counts = {
+      completed: 0,
+      final: 0,
+      mid: 0,
+      start: 0,
+      stalled: 0,
+      notStarted: 0,
+    }
+    for (const row of filteredStudentRows) {
+      const situation = situationFromProgress({
+        status: statusByStudent.get(row.student.id),
+        completionPct: row.completionPct,
+        lastInteractionAtMs: lastInteractionByStudent.get(row.student.id) ?? null,
+      })
+      counts[situation.key] += 1
+    }
+    return [
+      { key: 'completed' as const, label: 'Concluiu', count: counts.completed },
+      { key: 'final' as const, label: 'Final', count: counts.final },
+      { key: 'mid' as const, label: 'Meio', count: counts.mid },
+      { key: 'start' as const, label: 'Início', count: counts.start },
+      {
+        key: 'stalled' as const,
+        label: 'Parado 7+ dias',
+        count: counts.stalled,
+      },
+      {
+        key: 'notStarted' as const,
+        label: 'Não iniciou',
+        count: counts.notStarted,
+      },
+    ]
+  }, [filteredStudentRows, statusByStudent, lastInteractionByStudent])
+
+  const gradeOptions = useMemo(() => {
+    const set = new Set<string>()
+    for (const s of students) {
+      const g = s.school_grade?.trim()
+      if (g) set.add(g)
+    }
+    return [...set]
+      .sort((a, b) => a.localeCompare(b, 'pt-BR'))
+      .map((g) => ({ id: g, label: g }))
+  }, [students])
 
   // Ranking de pílulas — itera só respostas existentes no mapa
   const gradablePillQuestions = useMemo(() => {
@@ -2284,21 +2393,101 @@ export function DashboardPage() {
     trailHref: trailPath(p.trailId),
   })
 
-  const paginatedStudentRowsView = paginatedStudentRows.map((row) => ({
-    id: row.student.id,
-    name: row.student.name,
-    href: studentPath(row.student.id),
-    phone: row.student.phone_number || '',
-    released: row.released,
-    done: row.done,
-    completionPct: row.completionPct,
-    lessonsReleased: row.lessonsReleased,
-    lessonsDone: row.lessonsDone,
-    lessonsCompletionPct: row.lessonsCompletionPct,
-    correct: row.correct,
-    wrong: row.wrong,
-    accuracyPct: row.accuracyPct,
-  }))
+  const activityMatrix = useMemo(() => {
+    if (!questionsDataEnabled || filteredPillRows.length === 0) return null
+    const stages = [
+      ...new Set(filteredPillRows.map((r) => r.stageNumber)),
+    ].sort((a, b) => a - b)
+    const questionsNums = [
+      ...new Set(filteredPillRows.map((r) => r.questionNumber)),
+    ].sort((a, b) => a - b)
+    const agg = new Map<
+      string,
+      { stageNumber: number; questionNumber: number; correct: number; total: number }
+    >()
+    for (const row of filteredPillRows) {
+      const key = `${row.stageNumber}|${row.questionNumber}`
+      const cur = agg.get(key) ?? {
+        stageNumber: row.stageNumber,
+        questionNumber: row.questionNumber,
+        correct: 0,
+        total: 0,
+      }
+      cur.correct += row.correct
+      cur.total += row.total
+      agg.set(key, cur)
+    }
+    const cells = [...agg.values()].map((c) => ({
+      stageNumber: c.stageNumber,
+      questionNumber: c.questionNumber,
+      key: `${c.stageNumber}|${c.questionNumber}`,
+      total: c.total,
+      accuracyPct:
+        c.total > 0 ? Math.round((c.correct / c.total) * 100) : null,
+    }))
+    return { stages, questions: questionsNums, cells }
+  }, [filteredPillRows, questionsDataEnabled])
+
+  const optionDistribution = useMemo(() => {
+    if (!selectedMatrixCellKey || !questionsDataEnabled) return null
+    const [stageStr, qStr] = selectedMatrixCellKey.split('|')
+    const stageNumber = Number(stageStr)
+    const questionNumber = Number(qStr)
+    if (!Number.isFinite(stageNumber) || !Number.isFinite(questionNumber)) {
+      return null
+    }
+    const counts = new Map<string, number>()
+    let total = 0
+    for (const [answerKey, answer] of studentAnswerMap) {
+      const parts = answerKey.split('|')
+      if (parts.length < 3) continue
+      const s = Number(parts[1])
+      const q = Number(parts[2])
+      if (s !== stageNumber || q !== questionNumber) continue
+      const letter = answer.trim().toUpperCase().charAt(0) || '?'
+      if (!/[A-E]/.test(letter)) continue
+      counts.set(letter, (counts.get(letter) ?? 0) + 1)
+      total += 1
+    }
+    if (total === 0) return null
+    return [...counts.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([option, count]) => ({
+        option,
+        count,
+        pct: Math.round((count / total) * 100),
+      }))
+  }, [selectedMatrixCellKey, studentAnswerMap, questionsDataEnabled])
+
+  const paginatedStudentRowsView = paginatedStudentRows.map((row) => {
+    const situation = situationFromProgress({
+      status: statusByStudent.get(row.student.id),
+      completionPct: row.completionPct,
+      lastInteractionAtMs:
+        lastInteractionByStudent.get(row.student.id) ?? null,
+    })
+    return {
+      id: row.student.id,
+      name: row.student.name,
+      href: studentPath(row.student.id),
+      phone: row.student.phone_number || '',
+      released: row.released,
+      done: row.done,
+      completionPct: row.completionPct,
+      lessonsReleased: row.lessonsReleased,
+      lessonsDone: row.lessonsDone,
+      lessonsCompletionPct: row.lessonsCompletionPct,
+      correct: row.correct,
+      wrong: row.wrong,
+      accuracyPct: row.accuracyPct,
+      schoolGrade: row.student.school_grade || null,
+      situationLabel: situation.label,
+      situationTone: situation.tone,
+    }
+  })
+
+  const registeredStudentCount = students.length
+  const activeStudentCount = summary.activeStudents
 
   const visibleColumnsView = visibleColumns.map((c) => ({
     key: c.key,
@@ -2347,6 +2536,13 @@ export function DashboardPage() {
     }
   })()
 
+  const agentCoverageFinal =
+    activeStudentCount > 0
+      ? Math.round(
+          (agentUsageView.uniqueStudents / activeStudentCount) * 1000,
+        ) / 10
+      : null
+
   const selectedAgentStudents = (() => {
     if (!selectedAgentTrailId) return []
     const row = agentUsage.agents.find((a) => a.trailId === selectedAgentTrailId)
@@ -2388,6 +2584,8 @@ export function DashboardPage() {
         setQuestionsDataEnabled(false)
         setAgentPeriodDays(30)
         setSelectedAgentTrailId(null)
+        setSelectedGrade(null)
+        setSelectedMatrixCellKey(null)
         setPillSearch('')
         setPillTrailFilter('')
         setPillMinResponses(1)
@@ -2553,6 +2751,22 @@ export function DashboardPage() {
       selectedAgentTrailId={selectedAgentTrailId}
       onSelectAgentTrailId={setSelectedAgentTrailId}
       selectedAgentStudents={selectedAgentStudents}
+      journeyBands={journeyBands}
+      journeyStalledLinkLabel={
+        journeyBands.find((b) => b.key === 'stalled')?.count
+          ? `${journeyBands.find((b) => b.key === 'stalled')!.count} alunos parados há 7 dias ou mais`
+          : null
+      }
+      journeyStalledHref="/alunos"
+      registeredStudentCount={registeredStudentCount}
+      agentCoverageOfActivePct={agentCoverageFinal}
+      gradeOptions={gradeOptions}
+      selectedGrade={selectedGrade}
+      onSelectGrade={setSelectedGrade}
+      activityMatrix={activityMatrix}
+      selectedMatrixCellKey={selectedMatrixCellKey}
+      onSelectMatrixCell={setSelectedMatrixCellKey}
+      optionDistribution={optionDistribution}
     />
   )
 }
