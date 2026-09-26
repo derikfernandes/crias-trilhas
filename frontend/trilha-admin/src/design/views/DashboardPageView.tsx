@@ -9,11 +9,20 @@ import { LessonTopicCode } from './dashboard/LessonTopicCode'
 import { QuestionsCharts } from './dashboard/QuestionsCharts'
 import { StudentsCharts } from './dashboard/StudentsCharts'
 import { AgentUsageSection } from './dashboard/AgentUsageSection'
-import { KpiGrid, KpiStat } from '../components/cards/KpiStat'
+import { KpiGrid, KpiStat, kpiBarToneFromPct } from '../components/cards/KpiStat'
 import { JourneyBands } from '../components/cards/JourneyBands'
 import { CriasTabs } from '../components/navigation/CriasTabs'
 import { PageEmpty, PageError } from '../components/feedback/PageState'
 import { StatusTag } from '../components/ui/StatusTag'
+import {
+  IconCalendar,
+  IconChat,
+  IconDownload,
+  IconSearch,
+  IconTarget,
+  IconTrendUp,
+  IconUsers,
+} from '../components/icons/KpiIcons'
 
 export type {
   DashboardPageViewProps,
@@ -165,64 +174,79 @@ export function DashboardPageView({
   void ranking
   void topicDoubts
   void learningOpportunities
+  void loadingInst
+  void institutionOptions
+  void onSelectInstitution
+
+  const tutorMessages = agentUsage.totalMessages
+  const tutorCoverage =
+    agentCoverageOfActivePct ?? agentUsage.coveragePct
+  const progressPct =
+    summary.avgCompletion == null ? null : Math.round(summary.avgCompletion)
+  const accuracyPct =
+    summary.avgAccuracy == null ? null : Math.round(summary.avgAccuracy)
+  const activeBarPct =
+    registeredStudentCount && registeredStudentCount > 0
+      ? (summary.activeStudents / registeredStudentCount) * 100
+      : null
+
+  const periodChips: {
+    days: 0 | 7 | 30 | 'custom'
+    label: string
+    disabled?: boolean
+  }[] = [
+    { days: 0, label: 'Tudo' },
+    { days: 30, label: '30 dias' },
+    { days: 7, label: '7 dias' },
+    { days: 'custom', label: 'Período', disabled: true },
+  ]
+
+  const exportDisabled =
+    !studentExportTrails.length || Boolean(exportingTrailId)
 
   return (
     <>
-      <header className="admin__header dashboard-header">
-        <div className="dashboard-header__intro">
-          <h1>Visão geral</h1>
-          {!isDashboardLoading ? (
-            <p className="admin__lede muted">
+      {!selectedId ? null : (
+        <header className="crias-vg-header">
+          <div className="crias-vg-header__intro">
+            <div className="crias-vg-header__kicker">
               {selectedInstitutionLabel
-                ? `${selectedInstitutionLabel} · engajamento, percurso e tutores`
-                : 'Engajamento dos alunos, percurso e conversas com tutores.'}
-            </p>
-          ) : null}
-        </div>
-        <div className="gerenciamento-toolbar dashboard-header__toolbar">
-          <label className="gerenciamento-select">
-            <span className="muted">Instituição</span>
-            <select
-              value={selectedId ?? ''}
-              onChange={(e) => {
-                const next = e.target.value.trim()
-                onSelectInstitution(next || null)
-              }}
-              disabled={loadingInst || institutionOptions.length === 0}
-            >
-              <option value="">
-                {loadingInst
-                  ? 'Carregando instituições…'
-                  : 'Selecione uma instituição'}
-              </option>
-              {institutionOptions.map((inst) => (
-                <option key={inst.id} value={inst.id}>
-                  {inst.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          {gradeOptions && gradeOptions.length > 0 && onSelectGrade ? (
-            <label className="gerenciamento-select">
-              <span className="muted">Série</span>
-              <select
-                value={selectedGrade ?? ''}
-                onChange={(e) => {
-                  const next = e.target.value.trim()
-                  onSelectGrade(next || null)
+                ? `${selectedInstitutionLabel} · atualizado há pouco`
+                : 'Atualizado há pouco'}
+            </div>
+            <h1 className="crias-vg-header__title">Visão geral</h1>
+          </div>
+          {!isDashboardLoading && !logsError ? (
+            <div className="crias-vg-header__actions">
+              <div className="crias-vg-search">
+                <span className="crias-vg-search__icon">
+                  <IconSearch />
+                </span>
+                <input
+                  className="crias-vg-search__input"
+                  type="search"
+                  value={nameFilter}
+                  onChange={(e) => onNameFilterChange(e.target.value)}
+                  placeholder="Buscar aluno por nome ou telefone"
+                  aria-label="Buscar aluno por nome ou telefone"
+                />
+              </div>
+              <button
+                type="button"
+                className="crias-vg-export"
+                disabled={exportDisabled}
+                onClick={() => {
+                  const first = studentExportTrails[0]
+                  if (first) onExportTrailHistory(first.id)
                 }}
               >
-                <option value="">Todas</option>
-                {gradeOptions.map((g) => (
-                  <option key={g.id} value={g.id}>
-                    {g.label}
-                  </option>
-                ))}
-              </select>
-            </label>
+                <IconDownload />
+                {exportingTrailId ? 'Gerando…' : 'Exportar'}
+              </button>
+            </div>
           ) : null}
-        </div>
-      </header>
+        </header>
+      )}
 
       {instError ? (
         <p className="banner banner--error" role="alert">
@@ -243,7 +267,7 @@ export function DashboardPageView({
       {!selectedId ? (
         <PageEmpty
           title="Selecione uma instituição"
-          body="Escolha uma instituição para ver a visão geral."
+          body="Escolha uma instituição no topo para ver a visão geral."
         />
       ) : isDashboardLoading ? (
         <section
@@ -288,6 +312,64 @@ export function DashboardPageView({
         />
       ) : (
         <>
+          <section className="crias-vg-period" aria-label="Período">
+            <span className="crias-vg-period__scope">Toda a instituição</span>
+            {gradeOptions && gradeOptions.length > 0 && onSelectGrade ? (
+              <label className="crias-vg-period__grade">
+                <span>Série</span>
+                <select
+                  value={selectedGrade ?? ''}
+                  onChange={(e) => {
+                    const next = e.target.value.trim()
+                    onSelectGrade(next || null)
+                  }}
+                >
+                  <option value="">Todas</option>
+                  {gradeOptions.map((g) => (
+                    <option key={g.id} value={g.id}>
+                      {g.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
+            <div
+              className="crias-vg-period__chips"
+              role="group"
+              aria-label="Período"
+            >
+              {periodChips.map((chip) => {
+                const on =
+                  chip.days !== 'custom' && agentPeriodDays === chip.days
+                return (
+                  <button
+                    key={String(chip.days)}
+                    type="button"
+                    className={
+                      on
+                        ? 'crias-vg-period__chip crias-vg-period__chip--on'
+                        : 'crias-vg-period__chip'
+                    }
+                    aria-pressed={on}
+                    disabled={chip.disabled}
+                    title={
+                      chip.disabled
+                        ? 'Período personalizado em breve'
+                        : undefined
+                    }
+                    onClick={() => {
+                      if (chip.days === 'custom' || chip.disabled) return
+                      onAgentPeriodDaysChange(chip.days)
+                    }}
+                  >
+                    {chip.days === 'custom' ? <IconCalendar /> : null}
+                    {chip.label}
+                  </button>
+                )
+              })}
+            </div>
+          </section>
+
           <KpiGrid>
             <KpiStat
               label="Alunos ativos"
@@ -297,35 +379,52 @@ export function DashboardPageView({
                   ? `de ${registeredStudentCount} cadastrados`
                   : `${summary.activeTrails} trilha(s) ativa(s)`
               }
-              barPct={
-                registeredStudentCount && registeredStudentCount > 0
-                  ? (summary.activeStudents / registeredStudentCount) * 100
-                  : null
-              }
+              barPct={activeBarPct}
+              barTone={kpiBarToneFromPct(activeBarPct)}
+              icon={<IconUsers />}
             />
             <KpiStat
               label="Progresso médio"
-              value={formatPct(summary.avgCompletion, 1)}
-              hint="Tópicos feitos ÷ liberados"
-              barPct={summary.avgCompletion}
+              value={formatPct(progressPct, 0)}
+              hint="dos conteúdos liberados"
+              barPct={progressPct}
+              barTone={kpiBarToneFromPct(progressPct)}
+              icon={<IconTrendUp />}
             />
             <KpiStat
               label="Acerto médio"
-              value={formatPct(summary.avgAccuracy, 1)}
-              hint="Respostas corretas ÷ total"
-              barPct={summary.avgAccuracy}
+              value={formatPct(accuracyPct, 0)}
+              hint="dos exercícios da trilha"
+              barPct={accuracyPct}
+              barTone={kpiBarToneFromPct(accuracyPct)}
+              icon={<IconTarget />}
             />
             <KpiStat
-              label="Tutores"
-              value={
-                agentCoverageOfActivePct != null
-                  ? formatPct(agentCoverageOfActivePct, 1)
-                  : formatPct(agentUsage.coveragePct, 1)
+              label="Interações com tutores"
+              value={tutorMessages.toLocaleString('pt-BR')}
+              hint={
+                tutorCoverage == null
+                  ? 'dos alunos ativos'
+                  : `${Math.round(tutorCoverage)}% dos alunos ativos`
               }
-              hint="% dos ativos que conversaram"
-              barPct={agentCoverageOfActivePct ?? agentUsage.coveragePct}
+              barPct={tutorCoverage}
+              barTone={kpiBarToneFromPct(tutorCoverage)}
+              icon={<IconChat />}
             />
           </KpiGrid>
+
+          <AgentUsageSection
+            agentUsage={agentUsage}
+            periodDays={agentPeriodDays}
+            onPeriodDaysChange={onAgentPeriodDaysChange}
+            loading={agentUsageLoading}
+            unavailable={agentUsageUnavailable}
+            onRetry={onRetryLogs}
+            selectedAgentTrailId={selectedAgentTrailId}
+            onSelectAgentTrailId={onSelectAgentTrailId}
+            selectedAgentStudents={selectedAgentStudents}
+            coverageOfActivePct={agentCoverageOfActivePct}
+          />
 
           {journeyBands && journeyBands.length > 0 ? (
             <JourneyBands
@@ -478,18 +577,6 @@ export function DashboardPageView({
                   ) : null}
                 </section>
               )}
-
-          <AgentUsageSection
-            agentUsage={agentUsage}
-            periodDays={agentPeriodDays}
-            onPeriodDaysChange={onAgentPeriodDaysChange}
-            loading={agentUsageLoading}
-            unavailable={agentUsageUnavailable}
-            onRetry={onRetryLogs}
-            selectedAgentTrailId={selectedAgentTrailId}
-            onSelectAgentTrailId={onSelectAgentTrailId}
-            selectedAgentStudents={selectedAgentStudents}
-          />
 
           <section className="panel">
             <div className="panel__head">

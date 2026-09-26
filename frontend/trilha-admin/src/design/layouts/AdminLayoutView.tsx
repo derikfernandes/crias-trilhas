@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
+import { IconChevronDown } from '../components/icons/KpiIcons'
 
 export type AdminLayoutNavChild = {
   key: string
@@ -126,6 +127,7 @@ export function AdminLayoutView({
 }: AdminLayoutViewProps) {
   const [userMenuOpen, setUserMenuOpen] = useState(false)
   const [configOpen, setConfigOpen] = useState(false)
+  const [instOpen, setInstOpen] = useState(false)
   const topRef = useRef<HTMLElement>(null)
 
   const allLinks = useMemo(() => flattenLinks(navEntries), [navEntries])
@@ -167,6 +169,7 @@ export function AdminLayoutView({
       if (!topRef.current?.contains(e.target as Node)) {
         setUserMenuOpen(false)
         setConfigOpen(false)
+        setInstOpen(false)
       }
     }
     document.addEventListener('mousedown', onDocClick)
@@ -176,6 +179,10 @@ export function AdminLayoutView({
   const avatarTitle = [userEmail || 'Usuário', userRoleLabel]
     .filter(Boolean)
     .join(' · ')
+
+  const selectedInstitutionLabel =
+    institutionOptions.find((o) => o.id === selectedInstitutionId)?.label ??
+    null
 
   return (
     <div className="shell" data-shell="admin">
@@ -195,27 +202,58 @@ export function AdminLayoutView({
 
         {authed && institutionOptions.length > 0 ? (
           <div className="shell__inst">
-            <label className="visually-hidden" htmlFor="shell-institution">
-              Instituição
-            </label>
-            <select
-              id="shell-institution"
-              value={selectedInstitutionId ?? ''}
-              onChange={(e) => {
-                const v = e.target.value.trim()
-                onSelectInstitution?.(v || null)
+            <button
+              type="button"
+              className="shell__inst-trigger"
+              aria-expanded={instOpen}
+              aria-haspopup="listbox"
+              onClick={() => {
+                setInstOpen((o) => !o)
+                setConfigOpen(false)
+                setUserMenuOpen(false)
               }}
             >
-              <option value="">Instituição</option>
-              {institutionOptions.map((inst) => (
-                <option key={inst.id} value={inst.id}>
-                  {inst.label}
-                </option>
-              ))}
-            </select>
-            <Link className="shell__inst-manage" to={manageInstitutionsHref}>
-              Gerenciar instituições
-            </Link>
+              <span className="shell__inst-copy">
+                <span className="shell__inst-label">Instituição</span>
+                <span className="shell__inst-name">
+                  {selectedInstitutionLabel || 'Selecionar'}
+                </span>
+              </span>
+              <IconChevronDown />
+            </button>
+            {instOpen ? (
+              <div className="shell__inst-menu" role="listbox">
+                {institutionOptions.map((inst) => {
+                  const selected = inst.id === selectedInstitutionId
+                  return (
+                    <button
+                      key={inst.id}
+                      type="button"
+                      role="option"
+                      aria-selected={selected}
+                      className={
+                        selected
+                          ? 'shell__inst-option shell__inst-option--selected'
+                          : 'shell__inst-option'
+                      }
+                      onClick={() => {
+                        onSelectInstitution?.(inst.id)
+                        setInstOpen(false)
+                      }}
+                    >
+                      <span>{inst.label}</span>
+                    </button>
+                  )
+                })}
+                <Link
+                  className="shell__inst-manage"
+                  to={manageInstitutionsHref}
+                  onClick={() => setInstOpen(false)}
+                >
+                  Gerenciar instituições
+                </Link>
+              </div>
+            ) : null}
           </div>
         ) : null}
 
@@ -264,6 +302,7 @@ export function AdminLayoutView({
               onClick={() => {
                 setConfigOpen((o) => !o)
                 setUserMenuOpen(false)
+                setInstOpen(false)
               }}
             >
               <svg
@@ -297,6 +336,7 @@ export function AdminLayoutView({
               onClick={() => {
                 setUserMenuOpen((o) => !o)
                 setConfigOpen(false)
+                setInstOpen(false)
               }}
             >
               {initialsFromEmail(userEmail)}

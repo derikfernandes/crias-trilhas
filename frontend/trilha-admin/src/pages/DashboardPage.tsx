@@ -544,7 +544,7 @@ export function DashboardPage() {
   const [agentUsage, setAgentUsage] =
     useState<AgentUsageView>(EMPTY_AGENT_USAGE)
   const [agentPeriodDays, setAgentPeriodDays] =
-    useState<AgentUsagePeriodDays>(30)
+    useState<AgentUsagePeriodDays>(0)
   const [selectedAgentTrailId, setSelectedAgentTrailId] = useState<
     string | null
   >(null)
@@ -2582,7 +2582,7 @@ export function DashboardPage() {
         setStudentChartFilter(null)
         setActiveTab('students')
         setQuestionsDataEnabled(false)
-        setAgentPeriodDays(30)
+        setAgentPeriodDays(0)
         setSelectedAgentTrailId(null)
         setSelectedGrade(null)
         setSelectedMatrixCellKey(null)

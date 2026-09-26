@@ -156,7 +156,7 @@ function baseProps(
 }
 
 describe('DashboardPageView — colocação Tutores', () => {
-  it('mostra Tutores de IA só na tab Alunos', async () => {
+  it('mostra Conversas com os tutores acima das tabs (sempre na VG)', async () => {
     const user = userEvent.setup()
     const onActiveTabChange = vi.fn()
     const { rerender } = render(
@@ -169,8 +169,12 @@ describe('DashboardPageView — colocação Tutores', () => {
 
     expect(screen.getByTestId('agent-usage-section')).toBeInTheDocument()
     expect(
-      screen.getByRole('heading', { name: 'Tutores de IA' }),
+      screen.getByRole('heading', { name: 'Conversas com os tutores' }),
     ).toBeInTheDocument()
+    expect(
+      screen.getByRole('heading', { name: 'Visão geral' }),
+    ).toBeInTheDocument()
+    expect(screen.getByText(/Interações com tutores/i)).toBeInTheDocument()
 
     await user.click(screen.getByRole('tab', { name: 'Questões' }))
     expect(onActiveTabChange).toHaveBeenCalledWith('questions')
@@ -183,10 +187,10 @@ describe('DashboardPageView — colocação Tutores', () => {
       </MemoryRouter>,
     )
 
-    expect(screen.queryByTestId('agent-usage-section')).not.toBeInTheDocument()
+    expect(screen.getByTestId('agent-usage-section')).toBeInTheDocument()
     expect(
-      screen.queryByRole('heading', { name: 'Tutores de IA' }),
-    ).not.toBeInTheDocument()
+      screen.getByRole('heading', { name: 'Conversas com os tutores' }),
+    ).toBeInTheDocument()
   })
 
   it('exibe banner de erro + retry acessível (não fica no gate)', () => {
