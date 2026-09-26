@@ -28,12 +28,15 @@ export function StudentDetailPageView(props: StudentDetailPageViewProps) {
     trailRows,
     editStage,
     editQuestion,
+    editStatus,
     editBusy,
     onEditStageChange,
     onEditQuestionChange,
+    onEditStatusChange,
     onStartEditTrail,
     onCancelEditTrail,
     onSaveTrailPosition,
+    onUnlinkTrail,
     missingInstitutionId,
     institutionTrailsError,
     linkError,
@@ -169,7 +172,20 @@ export function StudentDetailPageView(props: StudentDetailPageViewProps) {
                       )}
                     </td>
                     <td>
-                      <code>{row.status}</code>
+                      {row.isEditing ? (
+                        <select
+                          value={editStatus}
+                          onChange={(e) => onEditStatusChange(e.target.value)}
+                          disabled={editBusy}
+                        >
+                          <option value="not_started">not_started</option>
+                          <option value="in_progress">in_progress</option>
+                          <option value="completed">completed</option>
+                          <option value="blocked">blocked</option>
+                        </select>
+                      ) : (
+                        <code>{row.status}</code>
+                      )}
                     </td>
                     <td>{row.startedAtLabel}</td>
                     <td>{row.lastInteractionAtLabel}</td>
@@ -204,6 +220,14 @@ export function StudentDetailPageView(props: StudentDetailPageViewProps) {
                             Editar
                           </button>
                         )}
+                        <button
+                          type="button"
+                          className="btn btn--small btn--danger"
+                          onClick={() => onUnlinkTrail(row.id)}
+                          disabled={editBusy}
+                        >
+                          Desvincular
+                        </button>
                       </div>
                     </td>
                   </tr>

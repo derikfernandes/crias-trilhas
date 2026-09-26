@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
 import {
   collection,
+  deleteDoc,
   doc,
   onSnapshot,
   query,
@@ -77,6 +78,7 @@ export function StudentDetailPage() {
   const [editingTrailId, setEditingTrailId] = useState<string | null>(null)
   const [editStage, setEditStage] = useState('')
   const [editQuestion, setEditQuestion] = useState('')
+  const [editStatus, setEditStatus] = useState<StudentTrailStatus>('not_started')
   const [editBusy, setEditBusy] = useState(false)
   const [editError, setEditError] = useState<string | null>(null)
 
@@ -314,6 +316,7 @@ export function StudentDetailPage() {
     setEditingTrailId(row.id)
     setEditStage(String(row.current_stage_number))
     setEditQuestion(String(row.current_question_number))
+    setEditStatus(row.status)
     setEditError(null)
   }
 
@@ -322,6 +325,7 @@ export function StudentDetailPage() {
     setEditingTrailId(null)
     setEditStage('')
     setEditQuestion('')
+    setEditStatus('not_started')
     setEditError(null)
   }
 
@@ -333,6 +337,20 @@ export function StudentDetailPage() {
     return n
   }
 
+  function parseStudentTrailStatus(value: string): StudentTrailStatus {
+    if (
+      value === 'not_started' ||
+      value === 'in_progress' ||
+      value === 'completed' ||
+      value === 'blocked'
+    ) {
+      return value
+    }
+    throw new Error(
+      'Status inválido. Use not_started, in_progress, completed ou blocked.',
+    )
+  }
+
   async function handleSaveTrailPosition(row: StudentTrail) {
     if (!db) return
     setEditBusy(true)
@@ -340,6 +358,7 @@ export function StudentDetailPage() {
     try {
       const nextStage = parsePositiveInteger(editStage, 'Stage atual')
       const nextQuestion = parsePositiveInteger(editQuestion, 'Questão atual')
+      const nextStatus = parseStudentTrailStatus(editStatus)
       const firestore = db
       await runTransaction(firestore, async (tx) => {
         const ref = doc(firestore, STUDENT_TRAILS_COLLECTION, row.id)
@@ -347,19 +366,62 @@ export function StudentDetailPage() {
         if (!snap.exists()) {
           throw new Error('Registro de trilha do aluno não encontrado.')
         }
-        tx.update(ref, {
+        const data = snap.data() ?? {}
+        const now = serverTimestamp()
+        const patch: Record<string, unknown> = {
           current_stage_number: nextStage,
           current_question_number: nextQuestion,
-          updated_at: serverTimestamp(),
-          last_interaction_at: serverTimestamp(),
-        })
+          status: nextStatus,
+          updated_at: now,
+          last_interaction_at: now,
+        }
+        if (
+          (nextStatus === 'in_progress' || nextStatus === 'completed') &&
+          !data.started_at
+        ) {
+          patch.started_at = now
+        }
+        if (nextStatus === 'completed') {
+          patch.completed_at = now
+        }
+        tx.update(ref, patch)
       })
       setEditingTrailId(null)
       setEditStage('')
       setEditQuestion('')
+      setEditStatus('not_started')
     } catch (err) {
       setEditError(
         err instanceof Error ? err.message : 'Erro ao atualizar progresso da trilha.',
+      )
+    } finally {
+      setEditBusy(false)
+    }
+  }
+
+  async function handleUnlinkTrail(row: StudentTrail) {
+    if (!db || editBusy) return
+    const meta = trailById.get(row.trail_id)
+    const label = meta?.name?.trim() ? meta.name : row.trail_id
+    const ok = window.confirm(
+      `Desvincular o aluno da trilha "${label}"?\n\n` +
+        'O registro em student_trails será removido. O histórico de conversa permanece.',
+    )
+    if (!ok) return
+
+    setEditBusy(true)
+    setEditError(null)
+    try {
+      await deleteDoc(doc(db, STUDENT_TRAILS_COLLECTION, row.id))
+      if (editingTrailId === row.id) {
+        setEditingTrailId(null)
+        setEditStage('')
+        setEditQuestion('')
+        setEditStatus('not_started')
+      }
+    } catch (err) {
+      setEditError(
+        err instanceof Error ? err.message : 'Erro ao desvincular trilha.',
       )
     } finally {
       setEditBusy(false)
@@ -406,9 +468,20 @@ export function StudentDetailPage() {
       trailRows={trailRows}
       editStage={editStage}
       editQuestion={editQuestion}
+      editStatus={editStatus}
       editBusy={editBusy}
       onEditStageChange={setEditStage}
       onEditQuestionChange={setEditQuestion}
+      onEditStatusChange={(value) => {
+        if (
+          value === 'not_started' ||
+          value === 'in_progress' ||
+          value === 'completed' ||
+          value === 'blocked'
+        ) {
+          setEditStatus(value)
+        }
+      }}
       onStartEditTrail={(rowId) => {
         const row = trails.find((t) => t.id === rowId)
         if (row) handleStartEditTrail(row)
@@ -417,6 +490,10 @@ export function StudentDetailPage() {
       onSaveTrailPosition={(rowId) => {
         const row = trails.find((t) => t.id === rowId)
         if (row) void handleSaveTrailPosition(row)
+      }}
+      onUnlinkTrail={(rowId) => {
+        const row = trails.find((t) => t.id === rowId)
+        if (row) void handleUnlinkTrail(row)
       }}
       missingInstitutionId={!stu?.institution_id}
       institutionTrailsError={institutionTrailsError}
