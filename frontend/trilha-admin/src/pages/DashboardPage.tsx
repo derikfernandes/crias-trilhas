@@ -579,6 +579,20 @@ export function DashboardPage() {
   const [pctMin, setPctMin] = useState(0)
   const [pctMax, setPctMax] = useState(100)
   const [selectedGrade, setSelectedGrade] = useState<string | null>(null)
+  const [selectedSubject, setSelectedSubject] = useState<string | null>(null)
+  const [selectedTrailId, setSelectedTrailId] = useState<string | null>(null)
+  const [selectedContentKey, setSelectedContentKey] = useState<string | null>(
+    null,
+  )
+  const [opportunityTab, setOpportunityTab] = useState<'err' | 'duv' | 'hit'>(
+    'err',
+  )
+  const [rankingWeights, setRankingWeights] = useState({
+    progress: 100 / 3,
+    interact: 100 / 3,
+    accuracy: 100 / 3,
+  })
+  const [showAllRanking, setShowAllRanking] = useState(false)
   const [selectedMatrixCellKey, setSelectedMatrixCellKey] = useState<
     string | null
   >(null)
@@ -1069,6 +1083,80 @@ export function DashboardPage() {
   /** Trilhas ativas consideradas nos números da tabela de alunos. */
   const relevantTrails = activeTrails
 
+  // Paridade VG: habilita agregações de exercícios cedo (ranking/oportunidades/
+  // conteúdo) sem esperar a aba Questões — só leitura, sem escrever no banco.
+  useEffect(() => {
+    if (!selectedId || loadingData || loadingMeta) return
+    if (!questionsDataEnabled) {
+      startQuestionsTransition(() => {
+        setQuestionsDataEnabled(true)
+      })
+    }
+  }, [
+    selectedId,
+    loadingData,
+    loadingMeta,
+    questionsDataEnabled,
+    startQuestionsTransition,
+  ])
+
+  const subjectTabs = useMemo(() => {
+    const set = new Set<string>()
+    for (const t of activeTrails) {
+      const s = t.subject?.trim()
+      if (s) set.add(s)
+    }
+    return [...set]
+      .sort((a, b) => a.localeCompare(b, 'pt-BR'))
+      .map((s) => ({ id: s, label: s }))
+  }, [activeTrails])
+
+  // Garante matéria/trilha selecionadas quando a lista muda.
+  useEffect(() => {
+    if (subjectTabs.length === 0) {
+      if (selectedSubject !== null) setSelectedSubject(null)
+      if (selectedTrailId !== null) setSelectedTrailId(null)
+      return
+    }
+    const subjectOk =
+      selectedSubject != null &&
+      subjectTabs.some((t) => t.id === selectedSubject)
+    const nextSubject = subjectOk
+      ? selectedSubject!
+      : subjectTabs[0]!.id
+    if (nextSubject !== selectedSubject) {
+      setSelectedSubject(nextSubject)
+    }
+    const trailsForSubject = activeTrails.filter(
+      (t) => (t.subject?.trim() || '') === nextSubject,
+    )
+    if (trailsForSubject.length === 0) {
+      if (selectedTrailId !== null) setSelectedTrailId(null)
+      return
+    }
+    const trailOk =
+      selectedTrailId != null &&
+      trailsForSubject.some((t) => t.id === selectedTrailId)
+    const nextTrail = trailOk
+      ? selectedTrailId!
+      : trailsForSubject[0]!.id
+    if (nextTrail !== selectedTrailId) {
+      setSelectedTrailId(nextTrail)
+    }
+  }, [subjectTabs, activeTrails, selectedSubject, selectedTrailId])
+
+  const scopedTrails = useMemo(() => {
+    if (!selectedSubject) return activeTrails
+    return activeTrails.filter(
+      (t) => (t.subject?.trim() || '') === selectedSubject,
+    )
+  }, [activeTrails, selectedSubject])
+
+  const scopedTrail = useMemo(() => {
+    if (!selectedTrailId) return scopedTrails[0] ?? null
+    return scopedTrails.find((t) => t.id === selectedTrailId) ?? null
+  }, [scopedTrails, selectedTrailId])
+
   /** Stages das trilhas relevantes, para o filtro de seleção (agrupados por trilha). */
   const availableStages = useMemo(() => {
     const relevantIds = new Set(relevantTrails.map((t) => t.id))
@@ -1346,6 +1434,14 @@ export function DashboardPage() {
       return true
     })
   }, [studentRows, nameFilter, pctMin, pctMax, selectedGrade])
+
+  const scopedStudentRows = useMemo(() => {
+    if (!scopedTrail) return filteredStudentRows
+    return filteredStudentRows.filter((row) => {
+      const enrolled = trailsByStudentIds.get(row.student.id)
+      return enrolled?.has(scopedTrail.id) ?? false
+    })
+  }, [filteredStudentRows, scopedTrail, trailsByStudentIds])
 
   const chartFilteredStudentRows = useMemo(() => {
     if (!studentChartFilter) return filteredStudentRows
@@ -1694,7 +1790,7 @@ export function DashboardPage() {
       stalled: 0,
       notStarted: 0,
     }
-    for (const row of filteredStudentRows) {
+    for (const row of scopedStudentRows) {
       const situation = situationFromProgress({
         status: statusByStudent.get(row.student.id),
         completionPct: row.completionPct,
@@ -1718,7 +1814,7 @@ export function DashboardPage() {
         count: counts.notStarted,
       },
     ]
-  }, [filteredStudentRows, statusByStudent, lastInteractionByStudent])
+  }, [scopedStudentRows, statusByStudent, lastInteractionByStudent])
 
   const gradeOptions = useMemo(() => {
     const set = new Set<string>()
@@ -2459,6 +2555,304 @@ export function DashboardPage() {
       }))
   }, [selectedMatrixCellKey, studentAnswerMap, questionsDataEnabled])
 
+  const trailFilterOptions = useMemo(
+    () =>
+      scopedTrails.map((t) => ({
+        id: t.id,
+        label: t.name || t.id,
+      })),
+    [scopedTrails],
+  )
+
+  const scopeSummary = useMemo(() => {
+    const subjectLabel = selectedSubject ?? 'Instituição'
+    const trailLabel = scopedTrail?.name || scopedTrail?.id || '—'
+    let accuracySum = 0
+    let accuracyCount = 0
+    for (const row of scopedStudentRows) {
+      if (row.accuracyPct == null) continue
+      accuracySum += row.accuracyPct
+      accuracyCount += 1
+    }
+    return {
+      studentCount: scopedStudentRows.length,
+      trailCount: scopedTrails.length,
+      accuracyPct:
+        accuracyCount > 0 ? Math.round(accuracySum / accuracyCount) : null,
+      scopeLabel: `${subjectLabel} · ${trailLabel}`,
+    }
+  }, [selectedSubject, scopedTrail, scopedStudentRows, scopedTrails])
+
+  const contentBarsAndSummary = useMemo(() => {
+    if (!scopedTrail) {
+      return { bars: [] as const, summary: null }
+    }
+    const trailId = scopedTrail.id
+    const lessonNumbers = trailLessonNumbers(
+      trailId,
+      questionsByTrail,
+      deselectedStages,
+      deselectedQuestions,
+    )
+    const byQuestion = groupTopicsByLesson(
+      filterTrailTopicPositions(
+        trailId,
+        questionsByTrail.get(trailId) ?? [],
+        deselectedStages,
+        deselectedQuestions,
+      ),
+    )
+
+    // Acerto por aula (question_number) a partir das pílulas da trilha.
+    const accByLesson = new Map<
+      number,
+      { correct: number; total: number }
+    >()
+    if (questionsDataEnabled) {
+      for (const row of pillRows) {
+        if (row.trailId !== trailId) continue
+        const cur = accByLesson.get(row.questionNumber) ?? {
+          correct: 0,
+          total: 0,
+        }
+        cur.correct += row.correct
+        cur.total += row.total
+        accByLesson.set(row.questionNumber, cur)
+      }
+    }
+
+    const bars = lessonNumbers.map((lessonNumber) => {
+      const topics = byQuestion.get(lessonNumber) ?? []
+      let enrolledCount = 0
+      let completedCount = 0
+      for (const row of scopedStudentRows) {
+        const enrolled = trailsByStudentIds.get(row.student.id)
+        if (!enrolled?.has(trailId)) continue
+        enrolledCount += 1
+        const studentDone =
+          enrichedDoneByStudent.get(row.student.id) ?? new Set()
+        if (isLessonCompleteForTrail(trailId, topics, studentDone)) {
+          completedCount += 1
+        }
+      }
+      const firstStage = topics[0]
+        ? stageByKey.get(`${trailId}|${topics[0].stage}`)
+        : null
+      const released =
+        topics.length === 0
+          ? false
+          : topics.some((p) => {
+              const st = stageByKey.get(`${trailId}|${p.stage}`)
+              return st?.is_released !== false
+            })
+      const acc = accByLesson.get(lessonNumber)
+      const accuracyPct =
+        acc && acc.total > 0
+          ? Math.round((acc.correct / acc.total) * 100)
+          : null
+      const completionPct = pct(completedCount, enrolledCount)
+      return {
+        key: `${trailId}|${lessonNumber}`,
+        num: String(lessonNumber).padStart(2, '0'),
+        title: firstStage?.title?.trim() || `Aula ${lessonNumber}`,
+        completionPct,
+        accuracyPct,
+        completedCount,
+        enrolledCount,
+        released,
+      }
+    })
+
+    const releasedBars = bars.filter((b) => b.released)
+    const progressVals = releasedBars
+      .map((b) => b.completionPct)
+      .filter((v): v is number => v != null)
+    const accuracyVals = releasedBars
+      .map((b) => b.accuracyPct)
+      .filter((v): v is number => v != null)
+    const avg = (vals: number[]) =>
+      vals.length === 0
+        ? null
+        : Math.round(vals.reduce((a, b) => a + b, 0) / vals.length)
+
+    let lowest: { label: string; pct: number } | null = null
+    let highest: { label: string; pct: number } | null = null
+    for (const bar of releasedBars) {
+      if (bar.accuracyPct == null) continue
+      if (!lowest || bar.accuracyPct < lowest.pct) {
+        lowest = { label: bar.title, pct: bar.accuracyPct }
+      }
+      if (!highest || bar.accuracyPct > highest.pct) {
+        highest = { label: bar.title, pct: bar.accuracyPct }
+      }
+    }
+
+    const below60Count = questionsDataEnabled
+      ? pillRows.filter(
+          (r) =>
+            r.trailId === trailId && r.total >= 1 && r.accuracyPct < 60,
+        ).length
+      : 0
+
+    return {
+      bars,
+      summary: {
+        progressAvg: avg(progressVals),
+        accuracyAvg: avg(accuracyVals),
+        lowest,
+        highest,
+        releasedCount: releasedBars.length,
+        totalCount: bars.length,
+        below60Count,
+      },
+    }
+  }, [
+    scopedTrail,
+    questionsByTrail,
+    deselectedStages,
+    deselectedQuestions,
+    scopedStudentRows,
+    trailsByStudentIds,
+    enrichedDoneByStudent,
+    stageByKey,
+    pillRows,
+    questionsDataEnabled,
+  ])
+
+  const opportunityRows = useMemo(() => {
+    if (opportunityTab === 'duv') return []
+    if (!questionsDataEnabled || !scopedTrail) return []
+    const rows = pillRows
+      .filter((r) => r.trailId === scopedTrail.id && r.total >= 1)
+      .slice()
+    rows.sort((a, b) =>
+      opportunityTab === 'err'
+        ? a.accuracyPct - b.accuracyPct || b.total - a.total
+        : b.accuracyPct - a.accuracyPct || b.total - a.total,
+    )
+    return rows.slice(0, 5).map((row, idx) => ({
+      rank: String(idx + 1).padStart(2, '0'),
+      tag: `T${row.stageNumber}`,
+      tag2: `A${row.questionNumber}`,
+      title: row.title || 'Exercício',
+      detail: row.trailName,
+      value:
+        opportunityTab === 'err'
+          ? `${row.wrong} erros`
+          : `${row.correct} acertos`,
+      valueSub: `${row.accuracyPct}% de acerto · ${row.total} resp.`,
+      tone: (opportunityTab === 'err' ? 'err' : 'hit') as 'err' | 'hit',
+      href: trailPath(row.trailId),
+    }))
+  }, [
+    opportunityTab,
+    questionsDataEnabled,
+    scopedTrail,
+    pillRows,
+  ])
+
+  const opportunityNote = useMemo(() => {
+    if (opportunityTab === 'duv') {
+      return 'Dúvidas por tema ainda não estão disponíveis — o banco atual não grava tópico da conversa. Sem alteração de schema.'
+    }
+    if (opportunityTab === 'err') {
+      return 'Exercícios com menor % de acerto nesta trilha (mín. 1 resposta).'
+    }
+    return 'Exercícios com maior % de acerto nesta trilha (mín. 1 resposta).'
+  }, [opportunityTab])
+
+  const messagesByStudent = useMemo(() => {
+    const map = new Map<string, number>()
+    for (const agent of agentUsage.agents) {
+      if (agent.studentStats?.length) {
+        for (const st of agent.studentStats) {
+          map.set(
+            st.studentId,
+            (map.get(st.studentId) ?? 0) + st.messages,
+          )
+        }
+      } else {
+        // API antiga: sem stats por aluno — não inventa mensagens.
+        for (const id of agent.studentIds) {
+          if (!map.has(id)) map.set(id, 0)
+        }
+      }
+    }
+    return map
+  }, [agentUsage])
+
+  const rankingRows = useMemo(() => {
+    const rows = scopedStudentRows
+    if (rows.length === 0) return []
+    const msgs = rows.map(
+      (r) => messagesByStudent.get(r.student.id) ?? 0,
+    )
+    const avgMsgs =
+      msgs.reduce((a, b) => a + b, 0) / Math.max(1, msgs.length)
+
+    const scored = rows.map((row) => {
+      const progressPct = row.completionPct
+      const accuracyPct = row.accuracyPct
+      const messages = messagesByStudent.get(row.student.id) ?? 0
+      const interactNorm = Math.min(
+        100,
+        avgMsgs > 0 ? (50 * messages) / avgMsgs : 0,
+      )
+      const p = progressPct ?? 0
+      const a = accuracyPct ?? 0
+      const wp = rankingWeights.progress / 100
+      const wi = rankingWeights.interact / 100
+      const wa = rankingWeights.accuracy / 100
+      const score = Math.round(wp * p + wi * interactNorm + wa * a)
+      const rawP = wp * p
+      const rawI = wi * interactNorm
+      const rawA = wa * a
+      const rawSum = rawP + rawI + rawA || 1
+      const delta = messages - avgMsgs
+      const deltaPct =
+        avgMsgs > 0 ? Math.round((delta / avgMsgs) * 100) : 0
+      return {
+        studentId: row.student.id,
+        name: row.student.name || row.student.id,
+        href: studentPath(row.student.id),
+        meta: [
+          row.student.school_grade?.trim() || null,
+          scopedTrail?.name || null,
+        ]
+          .filter(Boolean)
+          .join(' · '),
+        progressPct,
+        accuracyPct,
+        messages,
+        messagesVsAvgLabel:
+          delta >= 0
+            ? `+${deltaPct}% vs média`
+            : `${deltaPct}% vs média`,
+        messagesPositive: delta >= 0,
+        score,
+        segProgress: Math.round((rawP / rawSum) * 100),
+        segInteract: Math.round((rawI / rawSum) * 100),
+        segAccuracy: Math.round((rawA / rawSum) * 100),
+      }
+    })
+    scored.sort((a, b) => b.score - a.score || b.messages - a.messages)
+    return scored
+  }, [
+    scopedStudentRows,
+    messagesByStudent,
+    rankingWeights,
+    scopedTrail,
+  ])
+
+  const rankingScopeLabel = useMemo(() => {
+    const parts = [
+      selectedSubject ?? 'todas as matérias',
+      scopedTrail?.name || 'todas as trilhas',
+      selectedGrade ? `série ${selectedGrade}` : 'todas as séries',
+    ]
+    return parts.join(' · ')
+  }, [selectedSubject, scopedTrail, selectedGrade])
+
   const paginatedStudentRowsView = paginatedStudentRows.map((row) => {
     const situation = situationFromProgress({
       status: statusByStudent.get(row.student.id),
@@ -2585,6 +2979,11 @@ export function DashboardPage() {
         setAgentPeriodDays(0)
         setSelectedAgentTrailId(null)
         setSelectedGrade(null)
+        setSelectedSubject(null)
+        setSelectedTrailId(null)
+        setSelectedContentKey(null)
+        setOpportunityTab('err')
+        setShowAllRanking(false)
         setSelectedMatrixCellKey(null)
         setPillSearch('')
         setPillTrailFilter('')
@@ -2763,10 +3162,38 @@ export function DashboardPage() {
       gradeOptions={gradeOptions}
       selectedGrade={selectedGrade}
       onSelectGrade={setSelectedGrade}
+      subjectTabs={subjectTabs}
+      selectedSubject={selectedSubject}
+      onSelectSubject={(subject) => {
+        setSelectedSubject(subject)
+        setSelectedContentKey(null)
+        setSelectedTrailId(null)
+      }}
+      trailFilterOptions={trailFilterOptions}
+      selectedTrailId={selectedTrailId}
+      onSelectTrailId={(trailId) => {
+        setSelectedTrailId(trailId)
+        setSelectedContentKey(null)
+      }}
+      scopeSummary={scopeSummary}
+      contentSummary={contentBarsAndSummary.summary}
+      contentBars={[...contentBarsAndSummary.bars]}
+      selectedContentKey={selectedContentKey}
+      onSelectContentKey={setSelectedContentKey}
       activityMatrix={activityMatrix}
       selectedMatrixCellKey={selectedMatrixCellKey}
       onSelectMatrixCell={setSelectedMatrixCellKey}
       optionDistribution={optionDistribution}
+      opportunityTab={opportunityTab}
+      onOpportunityTabChange={setOpportunityTab}
+      opportunityRows={opportunityRows}
+      opportunityNote={opportunityNote}
+      ranking={rankingRows}
+      rankingScopeLabel={rankingScopeLabel}
+      rankingWeights={rankingWeights}
+      onRankingWeightsChange={setRankingWeights}
+      showAllRanking={showAllRanking}
+      onToggleShowAllRanking={() => setShowAllRanking((v) => !v)}
     />
   )
 }

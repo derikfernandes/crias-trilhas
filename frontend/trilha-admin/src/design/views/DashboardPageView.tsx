@@ -9,6 +9,10 @@ import { LessonTopicCode } from './dashboard/LessonTopicCode'
 import { QuestionsCharts } from './dashboard/QuestionsCharts'
 import { StudentsCharts } from './dashboard/StudentsCharts'
 import { AgentUsageSection } from './dashboard/AgentUsageSection'
+import { ContentPerformanceSection } from './dashboard/ContentPerformanceSection'
+import { LearningOpportunitiesSection } from './dashboard/LearningOpportunitiesSection'
+import { StudentRankingSection } from './dashboard/StudentRankingSection'
+import { SubjectScopeSection } from './dashboard/SubjectScopeSection'
 import { KpiGrid, KpiStat, kpiBarToneFromPct } from '../components/cards/KpiStat'
 import { JourneyBands } from '../components/cards/JourneyBands'
 import { CriasTabs } from '../components/navigation/CriasTabs'
@@ -148,13 +152,31 @@ export function DashboardPageView({
   gradeOptions,
   selectedGrade,
   onSelectGrade,
+  subjectTabs,
+  selectedSubject,
+  onSelectSubject,
+  trailFilterOptions,
+  selectedTrailId,
+  onSelectTrailId,
+  scopeSummary,
+  contentSummary,
+  contentBars,
+  selectedContentKey,
+  onSelectContentKey,
   activityMatrix,
   selectedMatrixCellKey,
   onSelectMatrixCell,
   optionDistribution,
+  opportunityTab,
+  onOpportunityTabChange,
+  opportunityRows,
+  opportunityNote,
   ranking,
-  topicDoubts,
-  learningOpportunities,
+  rankingScopeLabel,
+  rankingWeights,
+  onRankingWeightsChange,
+  showAllRanking,
+  onToggleShowAllRanking,
 }: DashboardPageViewProps) {
   const [expandedEnunciado, setExpandedEnunciado] =
     useState<ExpandedEnunciado | null>(null)
@@ -171,9 +193,6 @@ export function DashboardPageView({
   const selectedInstitutionLabel =
     institutionOptions.find((o) => o.id === selectedId)?.label ?? null
 
-  void ranking
-  void topicDoubts
-  void learningOpportunities
   void loadingInst
   void institutionOptions
   void onSelectInstitution
@@ -426,11 +445,42 @@ export function DashboardPageView({
             coverageOfActivePct={agentCoverageOfActivePct}
           />
 
+          {subjectTabs &&
+          subjectTabs.length > 0 &&
+          onSelectSubject &&
+          onSelectTrailId &&
+          scopeSummary ? (
+            <SubjectScopeSection
+              subjectTabs={subjectTabs}
+              selectedSubject={selectedSubject ?? null}
+              onSelectSubject={onSelectSubject}
+              gradeOptions={gradeOptions ?? []}
+              selectedGrade={selectedGrade ?? null}
+              onSelectGrade={onSelectGrade ?? (() => {})}
+              trailOptions={trailFilterOptions ?? []}
+              selectedTrailId={selectedTrailId ?? null}
+              onSelectTrailId={onSelectTrailId}
+              scopeSummary={scopeSummary}
+            />
+          ) : null}
+
           {journeyBands && journeyBands.length > 0 ? (
             <JourneyBands
               bands={journeyBands}
               stalledHref={journeyStalledHref}
               stalledLinkLabel={journeyStalledLinkLabel}
+            />
+          ) : null}
+
+          {contentSummary &&
+          contentBars &&
+          contentBars.length > 0 &&
+          onSelectContentKey ? (
+            <ContentPerformanceSection
+              summary={contentSummary}
+              bars={contentBars}
+              selectedKey={selectedContentKey ?? null}
+              onSelectKey={onSelectContentKey}
             />
           ) : null}
 
@@ -521,6 +571,37 @@ export function DashboardPageView({
                 </div>
               ) : null}
             </section>
+          ) : null}
+
+          {onOpportunityTabChange ? (
+            <LearningOpportunitiesSection
+              subjectLabel={
+                selectedSubject ??
+                subjectTabs?.[0]?.label ??
+                'Instituição'
+              }
+              tab={opportunityTab ?? 'err'}
+              onTabChange={onOpportunityTabChange}
+              rows={opportunityRows ?? []}
+              note={
+                opportunityNote ??
+                'Top exercícios com respostas neste filtro. Dúvidas por tema exigem metadado ainda inexistente.'
+              }
+            />
+          ) : null}
+
+          {ranking &&
+          rankingWeights &&
+          onRankingWeightsChange &&
+          onToggleShowAllRanking ? (
+            <StudentRankingSection
+              rows={ranking}
+              scopeLabel={rankingScopeLabel ?? 'Todos os alunos do filtro'}
+              weights={rankingWeights}
+              onWeightsChange={onRankingWeightsChange}
+              showAll={showAllRanking ?? false}
+              onToggleShowAll={onToggleShowAllRanking}
+            />
           ) : null}
 
           <CriasTabs
