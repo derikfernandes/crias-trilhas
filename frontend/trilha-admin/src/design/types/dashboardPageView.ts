@@ -246,22 +246,35 @@ export type DashboardSubjectTabView = {
   label: string
 }
 
+export type DashboardContentExerciseView = {
+  key: string
+  label: string
+  prompt: string
+  accuracyPct: number | null
+  note: string
+  href?: string
+}
+
 export type DashboardContentBarView = {
   key: string
   num: string
   title: string
+  /** Ex.: "3 exercícios · 1 sem gabarito" */
+  subtitle?: string
   completionPct: number | null
   accuracyPct: number | null
   completedCount: number
   enrolledCount: number
   released: boolean
+  exercises: DashboardContentExerciseView[]
+  trailHref?: string
 }
 
 export type DashboardContentSummaryView = {
   progressAvg: number | null
   accuracyAvg: number | null
-  lowest: { label: string; pct: number } | null
-  highest: { label: string; pct: number } | null
+  lowest: { label: string; pct: number; note?: string } | null
+  highest: { label: string; pct: number; note?: string } | null
   releasedCount: number
   totalCount: number
   below60Count: number

@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import type {
   DashboardContentBarView,
   DashboardContentSummaryView,
@@ -61,17 +62,31 @@ export function ContentPerformanceSection({
   selectedKey,
   onSelectKey,
 }: ContentPerformanceSectionProps) {
+  const [hoverKey, setHoverKey] = useState<string | null>(null)
   if (bars.length === 0) return null
-  const selected = bars.find((b) => b.key === selectedKey) ?? null
+
+  const selected =
+    bars.find((b) => b.key === selectedKey && b.released) ?? null
+  const hovered = bars.find((b) => b.key === hoverKey) ?? null
+  const tip = hovered ?? selected
+
+  const colTemplate = `repeat(${bars.length}, minmax(28px, 1fr))`
 
   return (
-    <section className="crias-content" aria-label="Como a turma está em cada conteúdo">
+    <section
+      className="crias-content"
+      aria-label="Como a turma está em cada conteúdo"
+    >
       <div className="crias-content__head">
         <div>
           <div className="crias-label">
-            Conteúdos · {summary.releasedCount} de {summary.totalCount} liberados
+            Conteúdos · {summary.releasedCount} de {summary.totalCount}{' '}
+            liberados
           </div>
-          <h2 className="crias-section-title" style={{ borderBottom: 0, paddingBottom: 0 }}>
+          <h2
+            className="crias-section-title"
+            style={{ borderBottom: 0, paddingBottom: 0 }}
+          >
             Como a turma está em cada conteúdo
           </h2>
         </div>
@@ -129,6 +144,12 @@ export function ContentPerformanceSection({
           </span>
           <span className="crias-content__sum-note">
             <strong>{summary.lowest?.label ?? ''}</strong>
+            {summary.lowest?.note ? (
+              <>
+                <br />
+                {summary.lowest.note}
+              </>
+            ) : null}
           </span>
         </div>
         <div className="crias-content__sum-item">
@@ -146,11 +167,20 @@ export function ContentPerformanceSection({
           </span>
           <span className="crias-content__sum-note">
             <strong>{summary.highest?.label ?? ''}</strong>
+            {summary.highest?.note ? (
+              <>
+                <br />
+                {summary.highest.note}
+              </>
+            ) : null}
           </span>
         </div>
       </div>
 
-      <div className="crias-content__chart">
+      <div
+        className="crias-content__chart"
+        onMouseLeave={() => setHoverKey(null)}
+      >
         <div className="crias-content__legend">
           <span>
             <i style={{ background: 'var(--c-green)' }} /> Concluíram
@@ -162,69 +192,159 @@ export function ContentPerformanceSection({
             <i className="crias-content__dash" /> 60% de acerto
           </span>
           <span className="crias-content__legend-hint">
-            Clique na coluna para detalhar
+            Passe o cursor para ver o nome · clique para ver os exercícios
           </span>
         </div>
-        <div
-          className="crias-content__bars"
-          style={{
-            gridTemplateColumns: `repeat(${bars.length}, minmax(0, 1fr))`,
-          }}
-        >
-          {bars.map((bar) => {
-            const open = selectedKey === bar.key
-            const ch = bar.completionPct ?? 0
-            const ah = bar.accuracyPct ?? 0
-            const low = bar.accuracyPct != null && bar.accuracyPct < 60
-            return (
-              <button
+
+        <div className="crias-content__plot">
+          <div className="crias-content__yaxis" aria-hidden="true">
+            <span style={{ bottom: 'calc(100% - 36px)' }}>100%</span>
+            <span
+              style={{
+                bottom: 'calc((100% - 36px) * 0.6)',
+                color: '#b3263e',
+                fontWeight: 800,
+              }}
+            >
+              60%
+            </span>
+            <span style={{ bottom: 'calc((100% - 36px) * 0.5)' }}>50%</span>
+            <span style={{ bottom: 0 }}>0</span>
+          </div>
+
+          <div
+            className="crias-content__plot-main"
+            style={{ minWidth: Math.max(0, bars.length * 36) }}
+          >
+            <div className="crias-content__gridline crias-content__gridline--100" />
+            <div className="crias-content__gridline crias-content__gridline--50" />
+            <div className="crias-content__gridline crias-content__gridline--60" />
+
+            <div
+              className="crias-content__bars"
+              style={{ gridTemplateColumns: colTemplate }}
+            >
+              {bars.map((bar) => {
+                const open = selectedKey === bar.key
+                const ch = bar.released ? (bar.completionPct ?? 0) : 0
+                const ah = bar.released ? (bar.accuracyPct ?? 0) : 0
+                const low =
+                  bar.accuracyPct != null && bar.accuracyPct < 60
+                return (
+                  <button
+                    key={bar.key}
+                    type="button"
+                    className={[
+                      'crias-content__col',
+                      open ? 'crias-content__col--open' : '',
+                      !bar.released ? 'crias-content__col--future' : '',
+                    ]
+                      .filter(Boolean)
+                      .join(' ')}
+                    disabled={!bar.released}
+                    aria-pressed={open}
+                    aria-label={
+                      bar.released
+                        ? `Conteúdo ${bar.num}, ${bar.title}: ${formatPct(bar.completionPct, 0)} concluíram, ${formatPct(bar.accuracyPct, 0)} de acerto`
+                        : `Conteúdo ${bar.num}, ${bar.title}: ainda não liberado`
+                    }
+                    onMouseEnter={() => setHoverKey(bar.key)}
+                    onFocus={() => setHoverKey(bar.key)}
+                    onClick={() =>
+                      onSelectKey(
+                        open || !bar.released ? null : bar.key,
+                      )
+                    }
+                  >
+                    {bar.released ? (
+                      <>
+                        <span
+                          className="crias-content__bar crias-content__bar--comp"
+                          style={{
+                            height: `${Math.max(0, Math.min(100, ch))}%`,
+                          }}
+                        />
+                        <span
+                          className="crias-content__bar crias-content__bar--acc"
+                          style={{
+                            height: `${Math.max(0, Math.min(100, ah))}%`,
+                            background: low ? '#d9546b' : 'var(--c-text)',
+                          }}
+                        />
+                      </>
+                    ) : null}
+                  </button>
+                )
+              })}
+            </div>
+
+            {tip ? (
+              <div
+                className="crias-content__tooltip"
+                style={{
+                  left: `${((bars.findIndex((b) => b.key === tip.key) + 0.5) / bars.length) * 100}%`,
+                }}
+              >
+                <span className="crias-content__tooltip-kicker">
+                  Conteúdo {tip.num}
+                </span>
+                <strong>{tip.title}</strong>
+                {tip.released ? (
+                  <span className="crias-content__tooltip-grid">
+                    <span>
+                      <span className="muted">Concluíram</span>
+                      <strong>{formatPct(tip.completionPct, 0)}</strong>
+                      <span className="muted">
+                        {tip.completedCount.toLocaleString('pt-BR')} alunos
+                      </span>
+                    </span>
+                    <span>
+                      <span className="muted">Acerto</span>
+                      <strong
+                        style={{
+                          color:
+                            tip.accuracyPct != null && tip.accuracyPct < 60
+                              ? '#ff9fb0'
+                              : undefined,
+                        }}
+                      >
+                        {formatPct(tip.accuracyPct, 0)}
+                      </strong>
+                      <span className="muted">
+                        {tip.subtitle ?? 'exercícios'}
+                      </span>
+                    </span>
+                  </span>
+                ) : (
+                  <span className="muted">ainda não liberado</span>
+                )}
+              </div>
+            ) : null}
+          </div>
+        </div>
+
+        <div className="crias-content__xaxis">
+          <span className="crias-content__xaxis-label">CONT.</span>
+          <div
+            className="crias-content__nums"
+            style={{
+              gridTemplateColumns: colTemplate,
+              minWidth: Math.max(0, bars.length * 36),
+            }}
+          >
+            {bars.map((bar) => (
+              <span
                 key={bar.key}
-                type="button"
                 className={
-                  open
-                    ? 'crias-content__col crias-content__col--open'
-                    : 'crias-content__col'
-                }
-                disabled={!bar.released}
-                aria-pressed={open}
-                aria-label={`Conteúdo ${bar.num}, ${bar.title}`}
-                onClick={() =>
-                  onSelectKey(open || !bar.released ? null : bar.key)
+                  selectedKey === bar.key
+                    ? 'crias-content__num crias-content__num--on'
+                    : 'crias-content__num'
                 }
               >
-                <span
-                  className="crias-content__bar crias-content__bar--comp"
-                  style={{ height: `${Math.max(0, Math.min(100, ch))}%` }}
-                />
-                <span
-                  className="crias-content__bar crias-content__bar--acc"
-                  style={{
-                    height: `${Math.max(0, Math.min(100, ah))}%`,
-                    background: low ? '#d9546b' : 'var(--c-text)',
-                  }}
-                />
-              </button>
-            )
-          })}
-        </div>
-        <div
-          className="crias-content__nums"
-          style={{
-            gridTemplateColumns: `repeat(${bars.length}, minmax(0, 1fr))`,
-          }}
-        >
-          {bars.map((bar) => (
-            <span
-              key={bar.key}
-              className={
-                selectedKey === bar.key
-                  ? 'crias-content__num crias-content__num--on'
-                  : 'crias-content__num'
-              }
-            >
-              {bar.num}
-            </span>
-          ))}
+                {bar.num}
+              </span>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -235,12 +355,63 @@ export function ContentPerformanceSection({
               Conteúdo {selected.num}
             </span>
             <strong>{selected.title}</strong>
-            <span className="muted">
+            <span className="crias-content__detail-meta">
               {formatPct(selected.completionPct, 0)} concluíram ·{' '}
-              {formatPct(selected.accuracyPct, 0)} de acerto ·{' '}
-              {selected.completedCount}/{selected.enrolledCount} alunos
+              {formatPct(selected.accuracyPct, 0)} de acerto
             </span>
           </div>
+
+          {selected.exercises.length === 0 ? (
+            <p className="muted" style={{ marginTop: 16 }}>
+              Nenhum tópico de exercício nesta aula.
+            </p>
+          ) : (
+            <ul className="crias-content__ex-list">
+              {selected.exercises.map((ex) => {
+                const low =
+                  ex.accuracyPct != null && ex.accuracyPct < 60
+                return (
+                  <li key={ex.key} className="crias-content__ex">
+                    <span className="crias-content__ex-body">
+                      <span className="crias-content__ex-tag">{ex.label}</span>
+                      <span className="crias-content__ex-q">{ex.prompt}</span>
+                    </span>
+                    <span className="crias-content__ex-acc">
+                      <strong
+                        style={{
+                          color: low ? 'var(--c-rose-900)' : undefined,
+                        }}
+                      >
+                        {ex.accuracyPct == null
+                          ? '—'
+                          : `${ex.accuracyPct}%`}
+                      </strong>
+                      <span>{ex.note}</span>
+                    </span>
+                    {ex.href ? (
+                      <a href={ex.href} className="btn btn--ghost btn--small">
+                        Ver exercício
+                      </a>
+                    ) : (
+                      <span className="btn btn--ghost btn--small" aria-hidden>
+                        Ver exercício
+                      </span>
+                    )}
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+
+          {selected.trailHref ? (
+            <a
+              href={selected.trailHref}
+              className="btn btn--primary"
+              style={{ marginTop: 16 }}
+            >
+              Abrir conteúdo na trilha →
+            </a>
+          ) : null}
         </div>
       ) : null}
     </section>

@@ -95,12 +95,18 @@ function GapRowBody({ row }: { row: DashboardOpportunityRowView }) {
     <>
       <span className="crias-gap__rank">{row.rank}</span>
       <span className="crias-gap__body">
-        <span className="crias-gap__tag">{row.tag}</span>
-        {row.tag2 ? <span className="crias-gap__tag2">{row.tag2}</span> : null}
-        <span className="crias-gap__title">{row.title}</span>
-        {row.detail ? <span className="crias-gap__detail">{row.detail}</span> : null}
+        <span className="crias-gap__tags">
+          <span className="crias-gap__tag">{row.tag}</span>
+          {row.tag2 ? (
+            <span className="crias-gap__tag2">{row.tag2}</span>
+          ) : null}
+        </span>
+        <strong className="crias-gap__title">{row.title}</strong>
+        {row.detail ? (
+          <span className="crias-gap__detail">{row.detail}</span>
+        ) : null}
       </span>
-      <span className="crias-gap__value">
+      <span className={`crias-gap__value crias-gap__value--${row.tone}`}>
         <strong>{row.value}</strong>
         <span>{row.valueSub}</span>
       </span>

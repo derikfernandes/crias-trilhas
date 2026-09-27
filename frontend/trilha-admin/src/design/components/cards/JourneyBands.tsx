@@ -29,9 +29,10 @@ export function JourneyBands({
   stalledHref,
   stalledLinkLabel,
 }: JourneyBandsProps) {
-  const visible = bands.filter((b) => b.count > 0)
+  // Parado 7+ não entra na barra (só no link), como no protótipo HTML.
+  const visible = bands.filter((b) => b.key !== 'stalled' && b.count > 0)
   if (visible.length === 0) return null
-  const total = bands.reduce((a, b) => a + b.count, 0) || 1
+  const total = visible.reduce((a, b) => a + b.count, 0) || 1
 
   return (
     <section className="crias-journey" aria-label="Situação dos alunos">

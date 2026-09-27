@@ -1798,20 +1798,45 @@ export function DashboardPage() {
       })
       counts[situation.key] += 1
     }
+    // Ordem do protótipo: Não iniciaram → Início → Meio → Fim → Concluíram.
+    // "Parado 7+" fica só no link do cabeçalho (não entra na barra).
     return [
-      { key: 'completed' as const, label: 'Concluiu', count: counts.completed },
-      { key: 'final' as const, label: 'Final', count: counts.final },
-      { key: 'mid' as const, label: 'Meio', count: counts.mid },
-      { key: 'start' as const, label: 'Início', count: counts.start },
+      {
+        key: 'notStarted' as const,
+        label: 'Não iniciaram',
+        count: counts.notStarted,
+        criterion: '0 conteúdos concluídos',
+      },
+      {
+        key: 'start' as const,
+        label: 'Início',
+        count: counts.start,
+        criterion: '1% a 33% dos conteúdos liberados',
+      },
+      {
+        key: 'mid' as const,
+        label: 'Meio',
+        count: counts.mid,
+        criterion: '34% a 66%',
+      },
+      {
+        key: 'final' as const,
+        label: 'Fim',
+        count: counts.final,
+        criterion: '67% a 99%',
+      },
+      {
+        key: 'completed' as const,
+        label: 'Concluíram',
+        count: counts.completed,
+        criterion: '100% dos conteúdos liberados',
+      },
+      // Contagem usada só pelo link do cabeçalho (filtrada na view).
       {
         key: 'stalled' as const,
         label: 'Parado 7+ dias',
         count: counts.stalled,
-      },
-      {
-        key: 'notStarted' as const,
-        label: 'Não iniciou',
-        count: counts.notStarted,
+        criterion: 'sem interação há 7 dias ou mais',
       },
     ]
   }, [scopedStudentRows, statusByStudent, lastInteractionByStudent])
@@ -2585,16 +2610,17 @@ export function DashboardPage() {
 
   const contentBarsAndSummary = useMemo(() => {
     if (!scopedTrail) {
-      return { bars: [] as const, summary: null }
+      return { bars: [] as const, summary: null, defaultOpenKey: null as string | null }
     }
     const trailId = scopedTrail.id
+    const trailHref = trailPath(trailId)
     const lessonNumbers = trailLessonNumbers(
       trailId,
       questionsByTrail,
       deselectedStages,
       deselectedQuestions,
     )
-    const byQuestion = groupTopicsByLesson(
+    const byLesson = groupTopicsByLesson(
       filterTrailTopicPositions(
         trailId,
         questionsByTrail.get(trailId) ?? [],
@@ -2603,26 +2629,26 @@ export function DashboardPage() {
       ),
     )
 
-    // Acerto por aula (question_number) a partir das pílulas da trilha.
-    const accByLesson = new Map<
-      number,
-      { correct: number; total: number }
-    >()
+    // Índice de pílulas por stage|question nesta trilha.
+    const pillByPos = new Map<string, PillRow>()
     if (questionsDataEnabled) {
       for (const row of pillRows) {
         if (row.trailId !== trailId) continue
-        const cur = accByLesson.get(row.questionNumber) ?? {
-          correct: 0,
-          total: 0,
-        }
-        cur.correct += row.correct
-        cur.total += row.total
-        accByLesson.set(row.questionNumber, cur)
+        pillByPos.set(`${row.stageNumber}|${row.questionNumber}`, row)
       }
     }
 
     const bars = lessonNumbers.map((lessonNumber) => {
-      const topics = byQuestion.get(lessonNumber) ?? []
+      const topics = [...(byLesson.get(lessonNumber) ?? [])].sort(
+        (a, b) => a.stage - b.stage,
+      )
+
+      // Liberação vem da questão (is_released), não do stage.
+      const released = topics.some((p) => {
+        const q = questionByKey.get(`${trailId}|${p.stage}|${p.question}`)
+        return q?.is_released === true
+      })
+
       let enrolledCount = 0
       let completedCount = 0
       for (const row of scopedStudentRows) {
@@ -2635,76 +2661,183 @@ export function DashboardPage() {
           completedCount += 1
         }
       }
-      const firstStage = topics[0]
-        ? stageByKey.get(`${trailId}|${topics[0].stage}`)
-        : null
-      const released =
-        topics.length === 0
-          ? false
-          : topics.some((p) => {
-              const st = stageByKey.get(`${trailId}|${p.stage}`)
-              return st?.is_released !== false
-            })
-      const acc = accByLesson.get(lessonNumber)
+
+      // Título da aula: preferir stage não-exercício; senão título da 1ª questão.
+      let title = `Aula ${lessonNumber}`
+      for (const p of topics) {
+        const st = stageByKey.get(`${trailId}|${p.stage}`)
+        if (st && st.stage_type !== 'exercise' && st.title?.trim()) {
+          title = st.title.trim()
+          break
+        }
+      }
+      if (title === `Aula ${lessonNumber}`) {
+        for (const p of topics) {
+          const q = questionByKey.get(`${trailId}|${p.stage}|${p.question}`)
+          if (q?.title?.trim()) {
+            title = q.title.trim()
+            break
+          }
+        }
+      }
+
+      const exerciseTopics = topics.filter((p) => {
+        const st = stageByKey.get(`${trailId}|${p.stage}`)
+        return st?.stage_type === 'exercise'
+      })
+
+      let missingGabarito = 0
+      let accCorrect = 0
+      let accTotal = 0
+      const exercises = exerciseTopics.map((p, idx) => {
+        const q = questionByKey.get(`${trailId}|${p.stage}|${p.question}`)
+        const pill = pillByPos.get(`${p.stage}|${p.question}`)
+        const gabarito = (q?.correct_option ?? '').trim()
+        const annulled = q?.annulled === true
+        if (!annulled && !gabarito) missingGabarito += 1
+        if (pill) {
+          accCorrect += pill.correct
+          accTotal += pill.total
+        }
+        const prompt =
+          (q?.content ?? '').trim() ||
+          (q?.title ?? '').trim() ||
+          `Exercício ${idx + 1}`
+        let note = 'acertaram'
+        let accuracyPct: number | null = pill?.accuracyPct ?? null
+        if (annulled) {
+          note = 'fora do cálculo'
+          accuracyPct = null
+        } else if (!gabarito) {
+          note = 'sem gabarito'
+          accuracyPct = null
+        } else if (pill == null || pill.total < 1) {
+          note = 'sem respostas'
+          accuracyPct = null
+        }
+        return {
+          key: `${trailId}|${p.stage}|${p.question}`,
+          label: `Exercício ${idx + 1}`,
+          prompt,
+          accuracyPct,
+          note,
+          href: trailHref,
+        }
+      })
+
       const accuracyPct =
-        acc && acc.total > 0
-          ? Math.round((acc.correct / acc.total) * 100)
-          : null
-      const completionPct = pct(completedCount, enrolledCount)
+        accTotal > 0 ? Math.round((accCorrect / accTotal) * 100) : null
+      const completionPct = released
+        ? pct(completedCount, enrolledCount)
+        : null
+
+      const subtitleParts: string[] = []
+      if (exerciseTopics.length > 0) {
+        subtitleParts.push(
+          `${exerciseTopics.length} exercício${exerciseTopics.length === 1 ? '' : 's'}`,
+        )
+      }
+      if (missingGabarito > 0) {
+        subtitleParts.push(`${missingGabarito} sem gabarito`)
+      }
+
       return {
         key: `${trailId}|${lessonNumber}`,
         num: String(lessonNumber).padStart(2, '0'),
-        title: firstStage?.title?.trim() || `Aula ${lessonNumber}`,
+        title,
+        subtitle: released
+          ? subtitleParts.join(' · ') || undefined
+          : 'ainda não liberado',
         completionPct,
         accuracyPct,
         completedCount,
         enrolledCount,
         released,
+        exercises,
+        trailHref,
       }
     })
 
     const releasedBars = bars.filter((b) => b.released)
-    const progressVals = releasedBars
-      .map((b) => b.completionPct)
-      .filter((v): v is number => v != null)
+
+    // Progresso médio = média dos alunos no escopo (como no HTML).
+    let progressSum = 0
+    let progressN = 0
+    for (const row of scopedStudentRows) {
+      if (row.completionPct == null) continue
+      progressSum += row.completionPct
+      progressN += 1
+    }
+    const progressAvg =
+      progressN > 0 ? Math.round(progressSum / progressN) : null
+
     const accuracyVals = releasedBars
       .map((b) => b.accuracyPct)
       .filter((v): v is number => v != null)
-    const avg = (vals: number[]) =>
-      vals.length === 0
+    const accuracyAvg =
+      accuracyVals.length === 0
         ? null
-        : Math.round(vals.reduce((a, b) => a + b, 0) / vals.length)
+        : Math.round(
+            accuracyVals.reduce((a, b) => a + b, 0) / accuracyVals.length,
+          )
 
-    let lowest: { label: string; pct: number } | null = null
-    let highest: { label: string; pct: number } | null = null
+    let lowest: {
+      label: string
+      pct: number
+      note?: string
+      key: string
+    } | null = null
+    let highest: {
+      label: string
+      pct: number
+      note?: string
+      key: string
+    } | null = null
     for (const bar of releasedBars) {
       if (bar.accuracyPct == null) continue
       if (!lowest || bar.accuracyPct < lowest.pct) {
-        lowest = { label: bar.title, pct: bar.accuracyPct }
+        lowest = {
+          label: bar.title,
+          pct: bar.accuracyPct,
+          note: `Conteúdo ${bar.num}`,
+          key: bar.key,
+        }
       }
       if (!highest || bar.accuracyPct > highest.pct) {
-        highest = { label: bar.title, pct: bar.accuracyPct }
+        highest = {
+          label: bar.title,
+          pct: bar.accuracyPct,
+          note: `Conteúdo ${bar.num}`,
+          key: bar.key,
+        }
       }
     }
 
-    const below60Count = questionsDataEnabled
-      ? pillRows.filter(
-          (r) =>
-            r.trailId === trailId && r.total >= 1 && r.accuracyPct < 60,
-        ).length
-      : 0
+    const below60Count = bars.reduce(
+      (n, bar) =>
+        n +
+        bar.exercises.filter(
+          (ex) => ex.accuracyPct != null && ex.accuracyPct < 60,
+        ).length,
+      0,
+    )
 
     return {
       bars,
       summary: {
-        progressAvg: avg(progressVals),
-        accuracyAvg: avg(accuracyVals),
-        lowest,
-        highest,
+        progressAvg,
+        accuracyAvg,
+        lowest: lowest
+          ? { label: lowest.label, pct: lowest.pct, note: lowest.note }
+          : null,
+        highest: highest
+          ? { label: highest.label, pct: highest.pct, note: highest.note }
+          : null,
         releasedCount: releasedBars.length,
         totalCount: bars.length,
         below60Count,
       },
+      defaultOpenKey: lowest?.key ?? releasedBars[0]?.key ?? null,
     }
   }, [
     scopedTrail,
@@ -2715,50 +2848,136 @@ export function DashboardPage() {
     trailsByStudentIds,
     enrichedDoneByStudent,
     stageByKey,
+    questionByKey,
     pillRows,
     questionsDataEnabled,
   ])
 
+  // Ao trocar trilha/matéria, abre o conteúdo de menor acerto (como no HTML).
+  useEffect(() => {
+    setSelectedContentKey(contentBarsAndSummary.defaultOpenKey)
+  }, [selectedTrailId, selectedSubject, contentBarsAndSummary.defaultOpenKey])
+
   const opportunityRows = useMemo(() => {
     if (opportunityTab === 'duv') return []
     if (!questionsDataEnabled || !scopedTrail) return []
+    const trailId = scopedTrail.id
+
     const rows = pillRows
-      .filter((r) => r.trailId === scopedTrail.id && r.total >= 1)
+      .filter((r) => r.trailId === trailId && r.total >= 1)
       .slice()
     rows.sort((a, b) =>
       opportunityTab === 'err'
         ? a.accuracyPct - b.accuracyPct || b.total - a.total
         : b.accuracyPct - a.accuracyPct || b.total - a.total,
     )
-    return rows.slice(0, 5).map((row, idx) => ({
-      rank: String(idx + 1).padStart(2, '0'),
-      tag: `T${row.stageNumber}`,
-      tag2: `A${row.questionNumber}`,
-      title: row.title || 'Exercício',
-      detail: row.trailName,
-      value:
-        opportunityTab === 'err'
-          ? `${row.wrong} erros`
-          : `${row.correct} acertos`,
-      valueSub: `${row.accuracyPct}% de acerto · ${row.total} resp.`,
-      tone: (opportunityTab === 'err' ? 'err' : 'hit') as 'err' | 'hit',
-      href: trailPath(row.trailId),
-    }))
+
+    const lessonTitle = (lessonNumber: number) => {
+      const bar = contentBarsAndSummary.bars.find(
+        (b) => b.key === `${trailId}|${lessonNumber}`,
+      )
+      return bar?.title || `Aula ${lessonNumber}`
+    }
+
+    const mostWrongDetail = (
+      stageNumber: number,
+      questionNumber: number,
+    ): string | null => {
+      const q = questionByKey.get(
+        `${trailId}|${stageNumber}|${questionNumber}`,
+      )
+      const counts = new Map<string, number>()
+      const suffix = `|${trailId}|${stageNumber}|${questionNumber}`
+      for (const [answerKey, answer] of studentAnswerMap) {
+        if (!answerKey.endsWith(suffix) || !answer.trim()) continue
+        if (answersMatch(answer, q?.correct_option ?? '')) continue
+        const letter = formatGabaritoLetter(answer)
+        if (!letter || letter === '—') continue
+        counts.set(letter, (counts.get(letter) ?? 0) + 1)
+      }
+      let best: string | null = null
+      let bestN = 0
+      for (const [letter, n] of counts) {
+        if (n > bestN) {
+          best = letter
+          bestN = n
+        }
+      }
+      if (!best) return null
+      const opt = q?.options?.find(
+        (o) => formatGabaritoLetter(o.key) === best,
+      )
+      const optText = (opt?.text ?? '').trim()
+      return optText
+        ? `Mais marcada entre as erradas: ${best} (${optText})`
+        : `Mais marcada entre as erradas: ${best}`
+    }
+
+    // Índice do exercício dentro da aula (só stages exercise).
+    const exIndexInLesson = (stageNumber: number, questionNumber: number) => {
+      const topics = (
+        groupTopicsByLesson(
+          filterTrailTopicPositions(
+            trailId,
+            questionsByTrail.get(trailId) ?? [],
+            deselectedStages,
+            deselectedQuestions,
+          ),
+        ).get(questionNumber) ?? []
+      )
+        .filter((p) => {
+          const st = stageByKey.get(`${trailId}|${p.stage}`)
+          return st?.stage_type === 'exercise'
+        })
+        .sort((a, b) => a.stage - b.stage)
+      const idx = topics.findIndex((p) => p.stage === stageNumber)
+      return idx >= 0 ? idx + 1 : 1
+    }
+
+    return rows.slice(0, 5).map((row, idx) => {
+      const wrongPct = Math.max(0, 100 - row.accuracyPct)
+      const hit = opportunityTab === 'hit'
+      const detail = hit
+        ? undefined
+        : mostWrongDetail(row.stageNumber, row.questionNumber) ??
+          undefined
+      const prompt =
+        (row.content || '').trim() || row.title || 'Exercício'
+      const exN = exIndexInLesson(row.stageNumber, row.questionNumber)
+      return {
+        rank: String(idx + 1).padStart(2, '0'),
+        tag: lessonTitle(row.questionNumber),
+        tag2: `Conteúdo ${String(row.questionNumber).padStart(2, '0')} · Ex. ${exN}`,
+        title: prompt,
+        detail,
+        value: hit ? `${row.accuracyPct}%` : `${wrongPct}%`,
+        valueSub: hit ? 'acertaram' : 'erraram',
+        tone: (hit ? 'hit' : 'err') as 'err' | 'hit',
+        href: trailPath(row.trailId),
+      }
+    })
   }, [
     opportunityTab,
     questionsDataEnabled,
     scopedTrail,
     pillRows,
+    contentBarsAndSummary.bars,
+    questionByKey,
+    studentAnswerMap,
+    questionsByTrail,
+    deselectedStages,
+    deselectedQuestions,
+    stageByKey,
   ])
 
   const opportunityNote = useMemo(() => {
     if (opportunityTab === 'duv') {
-      return 'Dúvidas por tema ainda não estão disponíveis — o banco atual não grava tópico da conversa. Sem alteração de schema.'
+      return 'Dúvidas por tema ainda não estão disponíveis — o banco atual não grava tópico da conversa.'
     }
     if (opportunityTab === 'err') {
-      return 'Exercícios com menor % de acerto nesta trilha (mín. 1 resposta).'
+      return 'Exercícios desta trilha com mais alunos errando. Clique para ver as respostas.'
     }
-    return 'Exercícios com maior % de acerto nesta trilha (mín. 1 resposta).'
+    return 'Exercícios desta trilha que a turma já domina.'
   }, [opportunityTab])
 
   const messagesByStudent = useMemo(() => {
