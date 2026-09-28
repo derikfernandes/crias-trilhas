@@ -191,7 +191,9 @@ async function handleRequest(request: Request): Promise<Response> {
     const chunks = chunkArray(studentIds, FIRESTORE_IN_LIMIT)
     await Promise.all(
       chunks.map(async (chunk) => {
-        // Sem filtro de sender: progressão usa sender=student; agentes contam todos.
+        // Progressão e interações com tutores usam sender=student.
+        // Em agentes, `Trilha - X` espelha a resposta system e `Tutor - X` o
+        // aluno — contar os dois dobrava o KPI "Interações com tutores".
         const snap = await db
           .collection(logsCollection)
           .where('student_id', 'in', chunk)
@@ -219,6 +221,8 @@ async function handleRequest(request: Request): Promise<Response> {
           const at = logTimestampMillis(data.created_at, data.created_at_brasilia)
 
           if (isAgentTrailId(trailId)) {
+            // Só mensagens do aluno = interações com o tutor.
+            if (data.sender !== 'student') continue
             // Filtro de período aplica só ao uso de agentes, não à progressão tN.
             if (cutoffMs > 0 && at > 0 && at < cutoffMs) continue
             agentLogs.push({ student_id: studentId, trail_id: trailId, at })

@@ -158,8 +158,12 @@ function parseAgentUsage(
         })
     : []
 
-  // Rede de segurança: se a API ainda emitir aliases separados, funde por label.
+  // Rede de segurança: se a API ainda emitir aliases separados, funde por label
+  // com max (espelho Trilha/Tutor) e recalcula o total a partir das linhas.
   const agents = mergeAgentRowsByLabel(parsedRows)
+  const mergedTotal = agents.reduce((sum, a) => sum + a.messages, 0)
+  const rawTotal =
+    typeof raw.total_messages === 'number' ? raw.total_messages : 0
 
   const series = Array.isArray(raw.series)
     ? raw.series
@@ -178,8 +182,8 @@ function parseAgentUsage(
 
   return {
     periodDays: parsePeriodDays(raw.period_days),
-    totalMessages:
-      typeof raw.total_messages === 'number' ? raw.total_messages : 0,
+    // Prefere o total pós-merge (corrige payload antigo que somava o espelho).
+    totalMessages: agents.length > 0 ? mergedTotal : rawTotal,
     agents,
     series,
   }

@@ -70,7 +70,10 @@ Resposta adicional:
 
 Regras:
 
-- Contar **todas** as mensagens (qualquer `sender`) cujo `trail_id` seja agente.
+- Contar mensagens com `sender=student` cujo `trail_id` seja agente
+  (interações do aluno com o tutor). Respostas `system` no alias
+  `Trilha - *` são o espelho da IA e **não** entram no total — evita
+  dobrar cada turno.
 - **Agregar por disciplina (label):** aliases `Trilha - X` e `Tutor - X`
   (mesmo sufixo) formam **uma** linha. Somar `messages`, unir alunos,
   `last_activity = max`, `trail_ids[]` = aliases, `trail_id` = primary
