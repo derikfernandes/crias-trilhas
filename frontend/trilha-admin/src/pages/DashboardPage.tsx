@@ -55,6 +55,7 @@ import { loadXlsx } from '../lib/loadXlsx'
 import { studentPath, trailPath } from '../lib/paths'
 import { usePermissions } from '../hooks/usePermissions'
 import { situationFromProgress } from '../lib/studentSituation'
+import { pickContentExerciseExtrema } from '../lib/contentExerciseExtrema'
 import type { Institution } from '../types/institution'
 import type { Student } from '../types/student'
 import type { StudentTrail } from '../types/studentTrail'
@@ -2819,14 +2820,7 @@ export function DashboardPage() {
       .sort((a, b) => (a.accuracyPct ?? 0) - (b.accuracyPct ?? 0))
 
     // Min/máx por EXERCÍCIO (não por aula) — evita o mesmo "Conteúdo 86" nos dois cards.
-    type ExPick = {
-      label: string
-      pct: number
-      note: string
-      contentKey: string
-      exKey: string
-    }
-    const exercisePool: ExPick[] = []
+    const exercisePool = []
     for (const bar of releasedBars) {
       bar.exercises.forEach((ex, idx) => {
         if (ex.accuracyPct == null) return
@@ -2841,16 +2835,8 @@ export function DashboardPage() {
         })
       })
     }
-    exercisePool.sort((a, b) => a.pct - b.pct || a.exKey.localeCompare(b.exKey))
-
-    const lowestEx = exercisePool[0] ?? null
-    // Maior só quando há exercício com % estritamente maior (nunca o mesmo).
-    const highestEx = lowestEx
-      ? [...exercisePool]
-          .reverse()
-          .find((e) => e.exKey !== lowestEx.exKey && e.pct > lowestEx.pct) ??
-        null
-      : null
+    const { lowest: lowestEx, highest: highestEx } =
+      pickContentExerciseExtrema(exercisePool)
 
     const accuracyVals = withAcc.map((b) => b.accuracyPct as number)
     const accuracyAvg =
