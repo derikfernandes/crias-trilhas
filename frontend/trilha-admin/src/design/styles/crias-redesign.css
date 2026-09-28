@@ -627,6 +627,14 @@
   line-height: 1;
 }
 
+.crias-kpi--loading {
+  opacity: 0.55;
+}
+
+.crias-kpi--loading .crias-kpi__value {
+  letter-spacing: 0.12em;
+}
+
 .crias-kpi__hint {
   font-size: 14px;
   color: var(--c-n-800);

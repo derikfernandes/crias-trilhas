@@ -9,6 +9,8 @@ export type KpiStatProps = {
   barPct?: number | null
   icon?: ReactNode
   barTone?: KpiBarTone
+  /** Indica refetch (ex.: troca de período). */
+  loading?: boolean
 }
 
 export function kpiBarToneFromPct(pct: number | null | undefined): KpiBarTone {
@@ -26,6 +28,7 @@ export function KpiStat({
   barPct,
   icon,
   barTone,
+  loading = false,
 }: KpiStatProps) {
   const width =
     barPct == null || Number.isNaN(barPct)
@@ -34,7 +37,10 @@ export function KpiStat({
   const tone = barTone ?? kpiBarToneFromPct(width)
 
   return (
-    <div className="crias-kpi">
+    <div
+      className={loading ? 'crias-kpi crias-kpi--loading' : 'crias-kpi'}
+      aria-busy={loading || undefined}
+    >
       <span className="crias-kpi__head">
         {icon ? (
           <span className="crias-kpi__icon" aria-hidden="true">

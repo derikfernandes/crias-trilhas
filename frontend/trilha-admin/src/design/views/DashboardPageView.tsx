@@ -206,6 +206,20 @@ export function DashboardPageView({
   const tutorMessages = agentUsage.totalMessages
   const tutorCoverage =
     agentCoverageOfActivePct ?? agentUsage.coveragePct
+  const tutorPeriodHint =
+    agentPeriodDays === 7
+      ? 'últimos 7 dias'
+      : agentPeriodDays === 30
+        ? 'últimos 30 dias'
+        : 'todo o período'
+  const tutorKpiValue = agentUsageLoading
+    ? '…'
+    : tutorMessages.toLocaleString('pt-BR')
+  const tutorKpiHint = agentUsageLoading
+    ? `atualizando · ${tutorPeriodHint}`
+    : tutorCoverage == null
+      ? tutorPeriodHint
+      : `${Math.round(tutorCoverage)}% dos alunos ativos · ${tutorPeriodHint}`
   const progressPct =
     summary.avgCompletion == null ? null : Math.round(summary.avgCompletion)
   const accuracyPct =
@@ -426,15 +440,12 @@ export function DashboardPageView({
             />
             <KpiStat
               label="Interações com tutores"
-              value={tutorMessages.toLocaleString('pt-BR')}
-              hint={
-                tutorCoverage == null
-                  ? 'dos alunos ativos'
-                  : `${Math.round(tutorCoverage)}% dos alunos ativos`
-              }
-              barPct={tutorCoverage}
+              value={tutorKpiValue}
+              hint={tutorKpiHint}
+              barPct={agentUsageLoading ? null : tutorCoverage}
               barTone={kpiBarToneFromPct(tutorCoverage)}
               icon={<IconChat />}
+              loading={agentUsageLoading}
             />
           </KpiGrid>
 

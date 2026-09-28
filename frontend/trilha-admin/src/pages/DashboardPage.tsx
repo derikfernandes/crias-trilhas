@@ -964,8 +964,6 @@ export function DashboardPage() {
         })
         setAgentUsage(summary.agentUsage)
         setAgentUsagePresent(summary.agentUsagePresent)
-        setLoadingLogs(false)
-        setAgentUsageLoading(false)
         setInitialLogsLoaded(true)
         initialLogsLoadedRef.current = true
         if (!refreshingAgentsOnly) finishProgress()
@@ -986,8 +984,11 @@ export function DashboardPage() {
           syncLoadProgress('', { complete: true })
         }
         // Refetch de período: mantém último snapshot (keep-previous).
-        setLoadingLogs(false)
-        setAgentUsageLoading(false)
+      } finally {
+        if (!cancelled) {
+          setLoadingLogs(false)
+          setAgentUsageLoading(false)
+        }
       }
     }
 
@@ -3506,8 +3507,13 @@ export function DashboardPage() {
       agentUsage={agentUsageView}
       agentPeriodDays={agentPeriodDays}
       onAgentPeriodDaysChange={(days) => {
+        if (days === agentPeriodDays) return
         setAgentPeriodDays(days)
         setSelectedAgentTrailId(null)
+        // Troca de período: zera o snapshot antigo para o KPI/seção
+        // refletirem o chip na hora (evita 16k com “30 dias” selecionado).
+        setAgentUsageLoading(true)
+        setAgentUsage({ ...EMPTY_AGENT_USAGE, periodDays: days })
       }}
       agentUsageLoading={agentUsageLoading}
       agentUsageUnavailable={!agentUsagePresent}
