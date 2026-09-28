@@ -1864,14 +1864,6 @@
 .crias-gap__value--hit strong {
   color: var(--c-green-800);
 }
-  align-items: flex-end;
-  line-height: 1.2;
-}
-
-.crias-gap__value strong {
-  font-size: 18px;
-  font-variant-numeric: tabular-nums;
-}
 
 .crias-gap__row--err .crias-gap__value strong {
   color: var(--c-rose-900);
@@ -1879,12 +1871,6 @@
 
 .crias-gap__row--hit .crias-gap__value strong {
   color: var(--c-green-800);
-}
-
-.crias-gap__value span {
-  font-size: 10px;
-  font-weight: 700;
-  color: var(--c-n-700);
 }
 
 /* —— Ranking —— */
