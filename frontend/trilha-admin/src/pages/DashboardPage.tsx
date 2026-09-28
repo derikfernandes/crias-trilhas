@@ -2610,7 +2610,29 @@ export function DashboardPage() {
 
   const contentBarsAndSummary = useMemo(() => {
     if (!scopedTrail) {
-      return { bars: [] as const, summary: null, defaultOpenKey: null as string | null }
+      return {
+        bars: [] as Array<{
+          key: string
+          num: string
+          title: string
+          subtitle?: string
+          completionPct: number | null
+          accuracyPct: number | null
+          completedCount: number
+          enrolledCount: number
+          released: boolean
+          exercises: Array<{
+            key: string
+            label: string
+            prompt: string
+            accuracyPct: number | null
+            note: string
+            href?: string
+          }>
+          trailHref?: string
+        }>,
+        summary: null,
+      }
     }
     const trailId = scopedTrail.id
     const trailHref = trailPath(trailId)
@@ -2629,12 +2651,15 @@ export function DashboardPage() {
       ),
     )
 
-    // Índice de pílulas por stage|question nesta trilha.
     const pillByPos = new Map<string, PillRow>()
+    const pillsByLesson = new Map<number, PillRow[]>()
     if (questionsDataEnabled) {
       for (const row of pillRows) {
         if (row.trailId !== trailId) continue
         pillByPos.set(`${row.stageNumber}|${row.questionNumber}`, row)
+        const arr = pillsByLesson.get(row.questionNumber) ?? []
+        arr.push(row)
+        pillsByLesson.set(row.questionNumber, arr)
       }
     }
 
@@ -2643,7 +2668,6 @@ export function DashboardPage() {
         (a, b) => a.stage - b.stage,
       )
 
-      // Liberação vem da questão (is_released), não do stage.
       const released = topics.some((p) => {
         const q = questionByKey.get(`${trailId}|${p.stage}|${p.question}`)
         return q?.is_released === true
@@ -2651,18 +2675,30 @@ export function DashboardPage() {
 
       let enrolledCount = 0
       let completedCount = 0
+      let progressSum = 0
       for (const row of scopedStudentRows) {
         const enrolled = trailsByStudentIds.get(row.student.id)
         if (!enrolled?.has(trailId)) continue
         enrolledCount += 1
         const studentDone =
           enrichedDoneByStudent.get(row.student.id) ?? new Set()
-        if (isLessonCompleteForTrail(trailId, topics, studentDone)) {
-          completedCount += 1
+        if (topics.length === 0) continue
+        let doneTopics = 0
+        for (const p of topics) {
+          if (studentDone.has(`${trailId}|${p.stage}|${p.question}`)) {
+            doneTopics += 1
+          }
         }
+        progressSum += doneTopics / topics.length
+        if (doneTopics === topics.length) completedCount += 1
       }
 
-      // Título da aula: preferir stage não-exercício; senão título da 1ª questão.
+      // % médio de tópicos concluídos na aula (visível no gráfico).
+      const completionPct =
+        released && enrolledCount > 0
+          ? Math.round((progressSum / enrolledCount) * 100)
+          : null
+
       let title = `Aula ${lessonNumber}`
       for (const p of topics) {
         const st = stageByKey.get(`${trailId}|${p.stage}`)
@@ -2681,24 +2717,26 @@ export function DashboardPage() {
         }
       }
 
-      const exerciseTopics = topics.filter((p) => {
+      // Tópicos “exercício”: stage exercise, gabarito, opções ou resposta agregada.
+      let exerciseTopics = topics.filter((p) => {
         const st = stageByKey.get(`${trailId}|${p.stage}`)
-        return st?.stage_type === 'exercise'
+        const q = questionByKey.get(`${trailId}|${p.stage}|${p.question}`)
+        const hasGab = !!(q?.correct_option ?? '').trim()
+        const hasOpts = (q?.options?.length ?? 0) > 0
+        const hasPill = pillByPos.has(`${p.stage}|${p.question}`)
+        return (
+          st?.stage_type === 'exercise' || hasGab || hasOpts || hasPill
+        )
       })
+      if (exerciseTopics.length === 0) exerciseTopics = topics
 
       let missingGabarito = 0
-      let accCorrect = 0
-      let accTotal = 0
       const exercises = exerciseTopics.map((p, idx) => {
         const q = questionByKey.get(`${trailId}|${p.stage}|${p.question}`)
         const pill = pillByPos.get(`${p.stage}|${p.question}`)
         const gabarito = (q?.correct_option ?? '').trim()
         const annulled = q?.annulled === true
         if (!annulled && !gabarito) missingGabarito += 1
-        if (pill) {
-          accCorrect += pill.correct
-          accTotal += pill.total
-        }
         const prompt =
           (q?.content ?? '').trim() ||
           (q?.title ?? '').trim() ||
@@ -2708,7 +2746,7 @@ export function DashboardPage() {
         if (annulled) {
           note = 'fora do cálculo'
           accuracyPct = null
-        } else if (!gabarito) {
+        } else if (!gabarito && !pill) {
           note = 'sem gabarito'
           accuracyPct = null
         } else if (pill == null || pill.total < 1) {
@@ -2725,16 +2763,21 @@ export function DashboardPage() {
         }
       })
 
+      // Acerto da aula = soma de todas as pílulas desta aula (question_number).
+      const lessonPills = pillsByLesson.get(lessonNumber) ?? []
+      let accCorrect = 0
+      let accTotal = 0
+      for (const pill of lessonPills) {
+        accCorrect += pill.correct
+        accTotal += pill.total
+      }
       const accuracyPct =
         accTotal > 0 ? Math.round((accCorrect / accTotal) * 100) : null
-      const completionPct = released
-        ? pct(completedCount, enrolledCount)
-        : null
 
       const subtitleParts: string[] = []
-      if (exerciseTopics.length > 0) {
+      if (exercises.length > 0) {
         subtitleParts.push(
-          `${exerciseTopics.length} exercício${exerciseTopics.length === 1 ? '' : 's'}`,
+          `${exercises.length} exercício${exercises.length === 1 ? '' : 's'}`,
         )
       }
       if (missingGabarito > 0) {
@@ -2760,7 +2803,6 @@ export function DashboardPage() {
 
     const releasedBars = bars.filter((b) => b.released)
 
-    // Progresso médio = média dos alunos no escopo (como no HTML).
     let progressSum = 0
     let progressN = 0
     for (const row of scopedStudentRows) {
@@ -2771,47 +2813,38 @@ export function DashboardPage() {
     const progressAvg =
       progressN > 0 ? Math.round(progressSum / progressN) : null
 
-    const accuracyVals = releasedBars
-      .map((b) => b.accuracyPct)
-      .filter((v): v is number => v != null)
+    const withAcc = releasedBars
+      .filter((b) => b.accuracyPct != null)
+      .slice()
+      .sort((a, b) => (a.accuracyPct ?? 0) - (b.accuracyPct ?? 0))
+
+    const lowestBar = withAcc[0] ?? null
+    // Maior acerto: último da lista ordenada; se empatar com o menor, pega
+    // o de maior conclusão entre os de acerto máximo (conteúdo distinto).
+    let highestBar = withAcc.length > 0 ? withAcc[withAcc.length - 1]! : null
+    if (
+      lowestBar &&
+      highestBar &&
+      lowestBar.key === highestBar.key &&
+      withAcc.length > 1
+    ) {
+      const maxPct = highestBar.accuracyPct ?? 0
+      const candidates = withAcc.filter((b) => b.accuracyPct === maxPct)
+      highestBar =
+        candidates.find((b) => b.key !== lowestBar.key) ?? highestBar
+    }
+    if (lowestBar && highestBar && lowestBar.key === highestBar.key) {
+      // Só um conteúdo com acerto medido — não duplica no card “maior”.
+      highestBar = null
+    }
+
+    const accuracyVals = withAcc.map((b) => b.accuracyPct as number)
     const accuracyAvg =
       accuracyVals.length === 0
         ? null
         : Math.round(
             accuracyVals.reduce((a, b) => a + b, 0) / accuracyVals.length,
           )
-
-    let lowest: {
-      label: string
-      pct: number
-      note?: string
-      key: string
-    } | null = null
-    let highest: {
-      label: string
-      pct: number
-      note?: string
-      key: string
-    } | null = null
-    for (const bar of releasedBars) {
-      if (bar.accuracyPct == null) continue
-      if (!lowest || bar.accuracyPct < lowest.pct) {
-        lowest = {
-          label: bar.title,
-          pct: bar.accuracyPct,
-          note: `Conteúdo ${bar.num}`,
-          key: bar.key,
-        }
-      }
-      if (!highest || bar.accuracyPct > highest.pct) {
-        highest = {
-          label: bar.title,
-          pct: bar.accuracyPct,
-          note: `Conteúdo ${bar.num}`,
-          key: bar.key,
-        }
-      }
-    }
 
     const below60Count = bars.reduce(
       (n, bar) =>
@@ -2827,17 +2860,24 @@ export function DashboardPage() {
       summary: {
         progressAvg,
         accuracyAvg,
-        lowest: lowest
-          ? { label: lowest.label, pct: lowest.pct, note: lowest.note }
+        lowest: lowestBar
+          ? {
+              label: lowestBar.title,
+              pct: lowestBar.accuracyPct as number,
+              note: `Conteúdo ${lowestBar.num}`,
+            }
           : null,
-        highest: highest
-          ? { label: highest.label, pct: highest.pct, note: highest.note }
+        highest: highestBar
+          ? {
+              label: highestBar.title,
+              pct: highestBar.accuracyPct as number,
+              note: `Conteúdo ${highestBar.num}`,
+            }
           : null,
         releasedCount: releasedBars.length,
         totalCount: bars.length,
         below60Count,
       },
-      defaultOpenKey: lowest?.key ?? releasedBars[0]?.key ?? null,
     }
   }, [
     scopedTrail,
@@ -2853,10 +2893,33 @@ export function DashboardPage() {
     questionsDataEnabled,
   ])
 
-  // Ao trocar trilha/matéria, abre o conteúdo de menor acerto (como no HTML).
+  // Painel de exercícios só abre no clique (não auto-abre).
   useEffect(() => {
-    setSelectedContentKey(contentBarsAndSummary.defaultOpenKey)
-  }, [selectedTrailId, selectedSubject, contentBarsAndSummary.defaultOpenKey])
+    setSelectedContentKey(null)
+  }, [selectedTrailId, selectedSubject])
+
+  const crossOpportunityCards = useMemo(() => {
+    if (!questionsDataEnabled || !scopedTrail) return []
+    // Conteúdos com acerto < 65% — sem inventar dúvidas (sem metadata.topic).
+    return contentBarsAndSummary.bars
+      .filter(
+        (b) =>
+          b.released &&
+          b.accuracyPct != null &&
+          b.accuracyPct < 65 &&
+          b.exercises.length > 0,
+      )
+      .slice()
+      .sort((a, b) => (a.accuracyPct ?? 0) - (b.accuracyPct ?? 0))
+      .slice(0, 4)
+      .map((b) => ({
+        key: b.key,
+        aula: `Conteúdo ${b.num} · ${b.title}`,
+        tema: b.title,
+        accuracyPct: b.accuracyPct as number,
+        doubtsLabel: '—',
+      }))
+  }, [contentBarsAndSummary.bars, questionsDataEnabled, scopedTrail])
 
   const opportunityRows = useMemo(() => {
     if (opportunityTab === 'duv') return []
@@ -3185,6 +3248,85 @@ export function DashboardPage() {
     })
   })()
 
+  const tutorSubject = (() => {
+    const subj = selectedSubject?.trim()
+    if (!subj) return null
+    const agent = agentUsage.agents.find(
+      (a) =>
+        a.label.trim().toLowerCase() === subj.toLowerCase() ||
+        a.trailId.toLowerCase().includes(subj.toLowerCase()),
+    )
+    if (!agent || agent.messages <= 0) return null
+
+    const days =
+      agentPeriodDays === 7 ? 7 : agentPeriodDays === 30 ? 30 : 120
+    const poolSize = Math.max(1, scopedStudentRows.length)
+    const coveragePct =
+      Math.round((agent.uniqueStudents / poolSize) * 1000) / 10
+    const messagesPerDay = agent.messages / days
+    const perStudentPerDay =
+      agent.uniqueStudents > 0
+        ? agent.messages / agent.uniqueStudents / days
+        : 0
+    const perStudentPeriod =
+      agent.uniqueStudents > 0
+        ? agent.messages / agent.uniqueStudents
+        : 0
+
+    const byId = new Map(students.map((s) => [s.id, s]))
+    const trailIds = agent.trailIds?.length ? agent.trailIds : [agent.trailId]
+    const statsById = new Map(
+      (agent.studentStats ?? []).map((st) => [st.studentId, st]),
+    )
+    const ids =
+      agent.studentStats && agent.studentStats.length > 0
+        ? agent.studentStats.map((st) => st.studentId)
+        : agent.studentIds
+    const topStudents = ids
+      .map((id) => {
+        const student = byId.get(id)
+        const st = statsById.get(id)
+        const grade = student?.school_grade?.trim()
+        return {
+          id,
+          name: student?.name?.trim() || id,
+          href: studentPath(id, {
+            agentTrailId: agent.trailId,
+            agentTrailIds: trailIds,
+          }),
+          messages: st?.messages ?? 0,
+          lastActivityLabel: [
+            grade || null,
+            st?.lastActivity
+              ? `última conversa ${formatAgentLastActivity(st.lastActivity)}`
+              : null,
+          ]
+            .filter(Boolean)
+            .join(' · ') || formatAgentLastActivity(st?.lastActivity ?? null),
+        }
+      })
+      .sort((a, b) => b.messages - a.messages || a.name.localeCompare(b.name, 'pt-BR'))
+
+    const periodLabel =
+      agentPeriodDays === 7
+        ? 'últimos 7 dias'
+        : agentPeriodDays === 30
+          ? 'últimos 30 dias'
+          : 'todo o período'
+
+    return {
+      subjectLabel: subj,
+      periodLabel,
+      messages: agent.messages,
+      students: agent.uniqueStudents,
+      coveragePct,
+      messagesPerDay,
+      perStudentPerDay,
+      perStudentPeriod,
+      topStudents,
+    }
+  })()
+
   return (
     <DashboardPageView
       loadingInst={loadingInst}
@@ -3407,6 +3549,16 @@ export function DashboardPage() {
       onOpportunityTabChange={setOpportunityTab}
       opportunityRows={opportunityRows}
       opportunityNote={opportunityNote}
+      crossOpportunityCards={crossOpportunityCards}
+      crossOpportunityNote="Dúvidas por tema ainda não vêm do banco (sem metadata.topic). Cards listam conteúdos com acerto abaixo de 65%."
+      onOpenCrossContent={(key) => {
+        setSelectedContentKey(key)
+        const el = document.querySelector('.crias-content')
+        if (el instanceof HTMLElement) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+        }
+      }}
+      tutorSubject={tutorSubject}
       ranking={rankingRows}
       rankingScopeLabel={rankingScopeLabel}
       rankingWeights={rankingWeights}

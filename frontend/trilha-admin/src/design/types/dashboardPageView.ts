@@ -455,6 +455,26 @@ export type DashboardPageViewProps = {
   onOpportunityTabChange?: (tab: DashboardOpportunityTab) => void
   opportunityRows?: DashboardOpportunityRowView[]
   opportunityNote?: string | null
+  crossOpportunityCards?: Array<{
+    key: string
+    aula: string
+    tema: string
+    accuracyPct: number
+    doubtsLabel: string
+  }>
+  crossOpportunityNote?: string | null
+  onOpenCrossContent?: (key: string) => void
+  tutorSubject?: {
+    subjectLabel: string
+    periodLabel: string
+    messages: number
+    students: number
+    coveragePct: number | null
+    messagesPerDay: number
+    perStudentPerDay: number
+    perStudentPeriod: number
+    topStudents: DashboardAgentStudentLink[]
+  } | null
   ranking?: DashboardRankingRowView[]
   rankingScopeLabel?: string | null
   rankingWeights?: { progress: number; interact: number; accuracy: number }

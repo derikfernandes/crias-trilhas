@@ -1383,14 +1383,13 @@
 .crias-content__chart {
   background: var(--c-surface);
   padding: 20px 24px 16px;
-  overflow-x: auto;
 }
 
 .crias-content__legend {
   display: flex;
   flex-wrap: wrap;
   gap: 8px 20px;
-  margin-bottom: 8px;
+  margin-bottom: 12px;
   font-size: 13px;
   font-weight: 700;
 }
@@ -1423,18 +1422,23 @@
   margin-left: auto;
 }
 
+.crias-content__scroll {
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
 .crias-content__plot {
   display: grid;
-  grid-template-columns: 40px minmax(0, 1fr);
+  grid-template-columns: 44px minmax(0, 1fr);
+  grid-template-rows: 240px auto;
   column-gap: 10px;
-  min-width: min(100%, 720px);
+  row-gap: 8px;
 }
 
 .crias-content__yaxis {
   position: relative;
-  height: 260px;
-  padding-top: 36px;
-  box-sizing: border-box;
+  grid-row: 1;
+  grid-column: 1;
   font-size: 11px;
   font-weight: 700;
   color: var(--c-n-700);
@@ -1446,11 +1450,29 @@
   transform: translateY(50%);
 }
 
+.crias-content__yaxis span[data-y='100'] {
+  bottom: 100%;
+}
+
+.crias-content__yaxis span[data-y='60'] {
+  bottom: 60%;
+  color: #b3263e;
+  font-weight: 800;
+}
+
+.crias-content__yaxis span[data-y='50'] {
+  bottom: 50%;
+}
+
+.crias-content__yaxis span[data-y='0'] {
+  bottom: 0;
+}
+
 .crias-content__plot-main {
   position: relative;
-  height: 260px;
-  padding-top: 36px;
-  box-sizing: border-box;
+  grid-row: 1;
+  grid-column: 2;
+  height: 240px;
   border-bottom: 2px solid var(--c-text);
 }
 
@@ -1459,30 +1481,29 @@
   left: 0;
   right: 0;
   pointer-events: none;
-}
-
-.crias-content__gridline--100 {
-  bottom: calc(100% - 36px);
   border-top: 1px solid var(--c-n-300);
 }
 
-.crias-content__gridline--50 {
-  bottom: calc((100% - 36px) * 0.5);
-  border-top: 1px solid var(--c-n-300);
+.crias-content__gridline[data-y='100'] {
+  bottom: 100%;
 }
 
-.crias-content__gridline--60 {
-  bottom: calc((100% - 36px) * 0.6);
+.crias-content__gridline[data-y='50'] {
+  bottom: 50%;
+}
+
+.crias-content__gridline--60,
+.crias-content__gridline[data-y='60'] {
+  bottom: 60%;
   border-top: 2px dashed #d9546b;
   z-index: 2;
 }
 
 .crias-content__bars {
   position: absolute;
-  inset: 36px 0 0;
+  inset: 0;
   display: grid;
-  gap: 8px;
-  align-items: stretch;
+  gap: 0;
   z-index: 3;
 }
 
@@ -1490,18 +1511,21 @@
   height: 100%;
   display: flex;
   align-items: flex-end;
-  gap: 2px;
-  padding: 0;
+  justify-content: center;
+  gap: 3px;
+  padding: 0 4px;
   border: 0;
   background: transparent;
   cursor: pointer;
   position: relative;
   font: inherit;
   color: inherit;
+  box-sizing: border-box;
 }
 
 .crias-content__col--open {
   background: color-mix(in srgb, var(--c-text) 8%, transparent);
+  box-shadow: inset 0 0 0 2px var(--c-green);
 }
 
 .crias-content__col--future {
@@ -1518,9 +1542,11 @@
 }
 
 .crias-content__bar {
-  flex: 1;
-  min-width: 0;
-  min-height: 2px;
+  width: 40%;
+  max-width: 18px;
+  min-width: 6px;
+  min-height: 3px;
+  align-self: flex-end;
 }
 
 .crias-content__bar--comp {
@@ -1529,7 +1555,7 @@
 
 .crias-content__tooltip {
   position: absolute;
-  bottom: calc(100% - 28px);
+  bottom: calc(100% + 8px);
   transform: translateX(-50%);
   z-index: 6;
   width: 220px;
@@ -1580,15 +1606,9 @@
   color: inherit;
 }
 
-.crias-content__xaxis {
-  display: grid;
-  grid-template-columns: 40px minmax(0, 1fr);
-  column-gap: 10px;
-  padding-top: 8px;
-  min-width: min(100%, 720px);
-}
-
 .crias-content__xaxis-label {
+  grid-row: 2;
+  grid-column: 1;
   font-size: 10px;
   font-weight: 800;
   color: var(--c-n-700);
@@ -1597,8 +1617,10 @@
 }
 
 .crias-content__nums {
+  grid-row: 2;
+  grid-column: 2;
   display: grid;
-  gap: 8px;
+  gap: 0;
 }
 
 .crias-content__num {
@@ -1871,6 +1893,230 @@
 
 .crias-gap__row--hit .crias-gap__value strong {
   color: var(--c-green-800);
+}
+
+/* —— Oportunidades cruzadas —— */
+.crias-cross {
+  margin-top: 32px;
+  background: var(--c-surface);
+  padding: 24px;
+}
+
+.crias-cross__title {
+  font-size: 20px;
+  margin: 4px 0 16px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.crias-cross__note {
+  font-size: 13px;
+  color: var(--c-n-700);
+  margin: -8px 0 16px;
+}
+
+.crias-cross__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.crias-cross__card {
+  background: var(--c-bg);
+  color: var(--c-text);
+  padding: 18px;
+  border: 0;
+  box-shadow: inset 0 4px 0 var(--c-yellow-800);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.crias-cross__card:hover {
+  box-shadow:
+    inset 0 4px 0 var(--c-yellow-800),
+    inset 0 0 0 2px var(--c-text);
+}
+
+.crias-cross__aula {
+  display: inline-flex;
+  align-self: flex-start;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.25;
+  background: var(--c-text);
+  color: var(--c-bg);
+}
+
+.crias-cross__tema {
+  display: inline-flex;
+  align-self: flex-start;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.25;
+  background: var(--c-yellow);
+}
+
+.crias-cross__metrics {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border-top: 2px solid var(--c-text);
+}
+
+.crias-cross__metrics > span {
+  padding: 10px 10px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.crias-cross__metrics > span:last-child {
+  padding-left: 10px;
+  box-shadow: inset 1px 0 0 var(--c-divider);
+}
+
+.crias-cross__metric-label {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: var(--c-n-700);
+}
+
+.crias-cross__metrics strong {
+  font-size: 30px;
+  letter-spacing: -0.03em;
+}
+
+.crias-cross__acc {
+  color: var(--c-rose-900);
+}
+
+/* —— Tutor por matéria —— */
+.crias-tutor-subj {
+  padding: 32px 0 36px;
+  border-bottom: 2px solid var(--c-divider);
+}
+
+.crias-tutor-subj__head {
+  margin-bottom: 18px;
+}
+
+.crias-tutor-subj__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 24px 40px;
+  align-items: stretch;
+}
+
+.crias-tutor-subj__col {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.crias-tutor-subj__consol {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border-top: 2px solid var(--c-text);
+  margin-top: 10px;
+}
+
+.crias-tutor-subj__metric {
+  position: relative;
+  padding: 12px 20px 12px 0;
+  border-bottom: 1px solid var(--c-divider);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 4px;
+  min-height: 88px;
+}
+
+.crias-tutor-subj__metric-label {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: var(--c-n-700);
+  line-height: 1.3;
+}
+
+.crias-tutor-subj__metric strong {
+  font-size: 36px;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.crias-tutor-subj__bar {
+  display: block;
+  height: 4px;
+  background: var(--c-n-200, #e8e4d4);
+  margin-top: 4px;
+}
+
+.crias-tutor-subj__bar > span {
+  display: block;
+  height: 100%;
+  background: var(--c-yellow-800);
+}
+
+.crias-tutor-subj__list {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  border-top: 2px solid var(--c-text);
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.crias-tutor-subj__row {
+  width: 100%;
+  flex: 1;
+  display: grid;
+  align-items: center;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  padding: 11px 0;
+  border-bottom: 1px solid var(--c-divider);
+  text-decoration: none;
+  color: var(--c-text);
+}
+
+.crias-tutor-subj__row:hover {
+  background: var(--c-surface);
+}
+
+.crias-tutor-subj__row > span:first-child {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 2px;
+}
+
+.crias-tutor-subj__row strong {
+  font-size: 14px;
+}
+
+.crias-tutor-subj__msgs {
+  font-size: 14px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.crias-tutor-subj__foot {
+  font-size: 13px;
+  color: var(--c-n-700);
+  margin: 12px 0 0;
 }
 
 /* —— Ranking —— */

@@ -11,6 +11,8 @@ import { StudentsCharts } from './dashboard/StudentsCharts'
 import { AgentUsageSection } from './dashboard/AgentUsageSection'
 import { ContentPerformanceSection } from './dashboard/ContentPerformanceSection'
 import { LearningOpportunitiesSection } from './dashboard/LearningOpportunitiesSection'
+import { CrossOpportunitiesSection } from './dashboard/CrossOpportunitiesSection'
+import { TutorSubjectSection } from './dashboard/TutorSubjectSection'
 import { StudentRankingSection } from './dashboard/StudentRankingSection'
 import { SubjectScopeSection } from './dashboard/SubjectScopeSection'
 import { KpiGrid, KpiStat, kpiBarToneFromPct } from '../components/cards/KpiStat'
@@ -171,6 +173,10 @@ export function DashboardPageView({
   onOpportunityTabChange,
   opportunityRows,
   opportunityNote,
+  crossOpportunityCards,
+  crossOpportunityNote,
+  onOpenCrossContent,
+  tutorSubject,
   ranking,
   rankingScopeLabel,
   rankingWeights,
@@ -574,19 +580,46 @@ export function DashboardPageView({
           ) : null}
 
           {onOpportunityTabChange ? (
-            <LearningOpportunitiesSection
-              subjectLabel={
-                selectedSubject ??
-                subjectTabs?.[0]?.label ??
-                'Instituição'
-              }
-              tab={opportunityTab ?? 'err'}
-              onTabChange={onOpportunityTabChange}
-              rows={opportunityRows ?? []}
-              note={
-                opportunityNote ??
-                'Top exercícios com respostas neste filtro. Dúvidas por tema exigem metadado ainda inexistente.'
-              }
+            <>
+              <LearningOpportunitiesSection
+                subjectLabel={
+                  selectedSubject ??
+                  subjectTabs?.[0]?.label ??
+                  'Instituição'
+                }
+                tab={opportunityTab ?? 'err'}
+                onTabChange={onOpportunityTabChange}
+                rows={opportunityRows ?? []}
+                note={
+                  opportunityNote ??
+                  'Top exercícios com respostas neste filtro. Dúvidas por tema exigem metadado ainda inexistente.'
+                }
+              />
+              {crossOpportunityCards && crossOpportunityCards.length > 0 ? (
+                <CrossOpportunitiesSection
+                  cards={crossOpportunityCards.map((c) => ({
+                    ...c,
+                    onOpen: onOpenCrossContent
+                      ? () => onOpenCrossContent(c.key)
+                      : undefined,
+                  }))}
+                  note={crossOpportunityNote}
+                />
+              ) : null}
+            </>
+          ) : null}
+
+          {tutorSubject ? (
+            <TutorSubjectSection
+              subjectLabel={tutorSubject.subjectLabel}
+              periodLabel={tutorSubject.periodLabel}
+              messages={tutorSubject.messages}
+              students={tutorSubject.students}
+              coveragePct={tutorSubject.coveragePct}
+              messagesPerDay={tutorSubject.messagesPerDay}
+              perStudentPerDay={tutorSubject.perStudentPerDay}
+              perStudentPeriod={tutorSubject.perStudentPeriod}
+              topStudents={tutorSubject.topStudents}
             />
           ) : null}
 

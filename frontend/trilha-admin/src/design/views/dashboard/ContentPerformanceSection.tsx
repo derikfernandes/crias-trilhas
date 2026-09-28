@@ -68,9 +68,10 @@ export function ContentPerformanceSection({
   const selected =
     bars.find((b) => b.key === selectedKey && b.released) ?? null
   const hovered = bars.find((b) => b.key === hoverKey) ?? null
-  const tip = hovered ?? selected
+  const tip = hovered
 
-  const colTemplate = `repeat(${bars.length}, minmax(28px, 1fr))`
+  const colW = Math.max(36, Math.min(56, Math.floor(900 / Math.max(1, bars.length))))
+  const plotWidth = bars.length * colW
 
   return (
     <section
@@ -196,154 +197,145 @@ export function ContentPerformanceSection({
           </span>
         </div>
 
-        <div className="crias-content__plot">
-          <div className="crias-content__yaxis" aria-hidden="true">
-            <span style={{ bottom: 'calc(100% - 36px)' }}>100%</span>
-            <span
-              style={{
-                bottom: 'calc((100% - 36px) * 0.6)',
-                color: '#b3263e',
-                fontWeight: 800,
-              }}
-            >
-              60%
-            </span>
-            <span style={{ bottom: 'calc((100% - 36px) * 0.5)' }}>50%</span>
-            <span style={{ bottom: 0 }}>0</span>
-          </div>
-
+        <div className="crias-content__scroll">
           <div
-            className="crias-content__plot-main"
-            style={{ minWidth: Math.max(0, bars.length * 36) }}
+            className="crias-content__plot"
+            style={{ width: Math.max(plotWidth + 48, 480) }}
           >
-            <div className="crias-content__gridline crias-content__gridline--100" />
-            <div className="crias-content__gridline crias-content__gridline--50" />
-            <div className="crias-content__gridline crias-content__gridline--60" />
-
-            <div
-              className="crias-content__bars"
-              style={{ gridTemplateColumns: colTemplate }}
-            >
-              {bars.map((bar) => {
-                const open = selectedKey === bar.key
-                const ch = bar.released ? (bar.completionPct ?? 0) : 0
-                const ah = bar.released ? (bar.accuracyPct ?? 0) : 0
-                const low =
-                  bar.accuracyPct != null && bar.accuracyPct < 60
-                return (
-                  <button
-                    key={bar.key}
-                    type="button"
-                    className={[
-                      'crias-content__col',
-                      open ? 'crias-content__col--open' : '',
-                      !bar.released ? 'crias-content__col--future' : '',
-                    ]
-                      .filter(Boolean)
-                      .join(' ')}
-                    disabled={!bar.released}
-                    aria-pressed={open}
-                    aria-label={
-                      bar.released
-                        ? `Conteúdo ${bar.num}, ${bar.title}: ${formatPct(bar.completionPct, 0)} concluíram, ${formatPct(bar.accuracyPct, 0)} de acerto`
-                        : `Conteúdo ${bar.num}, ${bar.title}: ainda não liberado`
-                    }
-                    onMouseEnter={() => setHoverKey(bar.key)}
-                    onFocus={() => setHoverKey(bar.key)}
-                    onClick={() =>
-                      onSelectKey(
-                        open || !bar.released ? null : bar.key,
-                      )
-                    }
-                  >
-                    {bar.released ? (
-                      <>
-                        <span
-                          className="crias-content__bar crias-content__bar--comp"
-                          style={{
-                            height: `${Math.max(0, Math.min(100, ch))}%`,
-                          }}
-                        />
-                        <span
-                          className="crias-content__bar crias-content__bar--acc"
-                          style={{
-                            height: `${Math.max(0, Math.min(100, ah))}%`,
-                            background: low ? '#d9546b' : 'var(--c-text)',
-                          }}
-                        />
-                      </>
-                    ) : null}
-                  </button>
-                )
-              })}
+            <div className="crias-content__yaxis" aria-hidden="true">
+              <span data-y="100">100%</span>
+              <span data-y="60">60%</span>
+              <span data-y="50">50%</span>
+              <span data-y="0">0</span>
             </div>
 
-            {tip ? (
+            <div className="crias-content__plot-main">
+              <div className="crias-content__gridline" data-y="100" />
+              <div className="crias-content__gridline" data-y="50" />
+              <div className="crias-content__gridline crias-content__gridline--60" data-y="60" />
+
               <div
-                className="crias-content__tooltip"
+                className="crias-content__bars"
                 style={{
-                  left: `${((bars.findIndex((b) => b.key === tip.key) + 0.5) / bars.length) * 100}%`,
+                  gridTemplateColumns: `repeat(${bars.length}, ${colW}px)`,
                 }}
               >
-                <span className="crias-content__tooltip-kicker">
-                  Conteúdo {tip.num}
-                </span>
-                <strong>{tip.title}</strong>
-                {tip.released ? (
-                  <span className="crias-content__tooltip-grid">
-                    <span>
-                      <span className="muted">Concluíram</span>
-                      <strong>{formatPct(tip.completionPct, 0)}</strong>
-                      <span className="muted">
-                        {tip.completedCount.toLocaleString('pt-BR')} alunos
-                      </span>
-                    </span>
-                    <span>
-                      <span className="muted">Acerto</span>
-                      <strong
-                        style={{
-                          color:
-                            tip.accuracyPct != null && tip.accuracyPct < 60
-                              ? '#ff9fb0'
-                              : undefined,
-                        }}
-                      >
-                        {formatPct(tip.accuracyPct, 0)}
-                      </strong>
-                      <span className="muted">
-                        {tip.subtitle ?? 'exercícios'}
-                      </span>
-                    </span>
-                  </span>
-                ) : (
-                  <span className="muted">ainda não liberado</span>
-                )}
+                {bars.map((bar) => {
+                  const open = selectedKey === bar.key
+                  const ch = bar.released ? Math.max(0, bar.completionPct ?? 0) : 0
+                  const ah = bar.released ? Math.max(0, bar.accuracyPct ?? 0) : 0
+                  const low =
+                    bar.accuracyPct != null && bar.accuracyPct < 60
+                  return (
+                    <button
+                      key={bar.key}
+                      type="button"
+                      className={[
+                        'crias-content__col',
+                        open ? 'crias-content__col--open' : '',
+                        !bar.released ? 'crias-content__col--future' : '',
+                      ]
+                        .filter(Boolean)
+                        .join(' ')}
+                      disabled={!bar.released}
+                      aria-pressed={open}
+                      aria-label={
+                        bar.released
+                          ? `Conteúdo ${bar.num}, ${bar.title}: ${formatPct(bar.completionPct, 0)} concluíram, ${formatPct(bar.accuracyPct, 0)} de acerto`
+                          : `Conteúdo ${bar.num}, ${bar.title}: ainda não liberado`
+                      }
+                      onMouseEnter={() => setHoverKey(bar.key)}
+                      onFocus={() => setHoverKey(bar.key)}
+                      onClick={() =>
+                        onSelectKey(
+                          open || !bar.released ? null : bar.key,
+                        )
+                      }
+                    >
+                      {bar.released ? (
+                        <>
+                          <span
+                            className="crias-content__bar crias-content__bar--comp"
+                            style={{ height: `${Math.min(100, ch)}%` }}
+                          />
+                          <span
+                            className="crias-content__bar crias-content__bar--acc"
+                            style={{
+                              height: `${Math.min(100, ah)}%`,
+                              background: low ? '#d9546b' : 'var(--c-text)',
+                            }}
+                          />
+                        </>
+                      ) : null}
+                    </button>
+                  )
+                })}
               </div>
-            ) : null}
-          </div>
-        </div>
 
-        <div className="crias-content__xaxis">
-          <span className="crias-content__xaxis-label">CONT.</span>
-          <div
-            className="crias-content__nums"
-            style={{
-              gridTemplateColumns: colTemplate,
-              minWidth: Math.max(0, bars.length * 36),
-            }}
-          >
-            {bars.map((bar) => (
-              <span
-                key={bar.key}
-                className={
-                  selectedKey === bar.key
-                    ? 'crias-content__num crias-content__num--on'
-                    : 'crias-content__num'
-                }
-              >
-                {bar.num}
-              </span>
-            ))}
+              {tip ? (
+                <div
+                  className="crias-content__tooltip"
+                  style={{
+                    left: `${((bars.findIndex((b) => b.key === tip.key) + 0.5) / bars.length) * 100}%`,
+                  }}
+                >
+                  <span className="crias-content__tooltip-kicker">
+                    Conteúdo {tip.num}
+                  </span>
+                  <strong>{tip.title}</strong>
+                  {tip.released ? (
+                    <span className="crias-content__tooltip-grid">
+                      <span>
+                        <span className="muted">Concluíram</span>
+                        <strong>{formatPct(tip.completionPct, 0)}</strong>
+                        <span className="muted">
+                          {tip.completedCount.toLocaleString('pt-BR')} alunos
+                        </span>
+                      </span>
+                      <span>
+                        <span className="muted">Acerto</span>
+                        <strong
+                          style={{
+                            color:
+                              tip.accuracyPct != null && tip.accuracyPct < 60
+                                ? '#ff9fb0'
+                                : undefined,
+                          }}
+                        >
+                          {formatPct(tip.accuracyPct, 0)}
+                        </strong>
+                        <span className="muted">
+                          {tip.subtitle ?? 'exercícios'}
+                        </span>
+                      </span>
+                    </span>
+                  ) : (
+                    <span className="muted">ainda não liberado</span>
+                  )}
+                </div>
+              ) : null}
+            </div>
+
+            <span className="crias-content__xaxis-label">CONT.</span>
+            <div
+              className="crias-content__nums"
+              style={{
+                gridTemplateColumns: `repeat(${bars.length}, ${colW}px)`,
+              }}
+            >
+              {bars.map((bar) => (
+                <span
+                  key={bar.key}
+                  className={
+                    selectedKey === bar.key
+                      ? 'crias-content__num crias-content__num--on'
+                      : 'crias-content__num'
+                  }
+                >
+                  {bar.num}
+                </span>
+              ))}
+            </div>
           </div>
         </div>
       </div>
