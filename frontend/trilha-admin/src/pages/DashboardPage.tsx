@@ -56,6 +56,7 @@ import { studentPath, trailPath } from '../lib/paths'
 import { usePermissions } from '../hooks/usePermissions'
 import { situationFromProgress } from '../lib/studentSituation'
 import { pickContentExerciseExtrema } from '../lib/contentExerciseExtrema'
+import type { ContentExercisePick } from '../lib/contentExerciseExtrema'
 import type { Institution } from '../types/institution'
 import type { Student } from '../types/student'
 import type { StudentTrail } from '../types/studentTrail'
@@ -545,7 +546,7 @@ export function DashboardPage() {
   const [agentUsage, setAgentUsage] =
     useState<AgentUsageView>(EMPTY_AGENT_USAGE)
   const [agentPeriodDays, setAgentPeriodDays] =
-    useState<AgentUsagePeriodDays>(0)
+    useState<AgentUsagePeriodDays>(30)
   const [selectedAgentTrailId, setSelectedAgentTrailId] = useState<
     string | null
   >(null)
@@ -2820,7 +2821,7 @@ export function DashboardPage() {
       .sort((a, b) => (a.accuracyPct ?? 0) - (b.accuracyPct ?? 0))
 
     // Min/máx por EXERCÍCIO (não por aula) — evita o mesmo "Conteúdo 86" nos dois cards.
-    const exercisePool = []
+    const exercisePool: ContentExercisePick[] = []
     for (const bar of releasedBars) {
       bar.exercises.forEach((ex, idx) => {
         if (ex.accuracyPct == null) return

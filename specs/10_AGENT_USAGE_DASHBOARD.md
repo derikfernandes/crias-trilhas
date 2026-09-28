@@ -75,9 +75,9 @@ Regras:
   `Trilha - *` são o espelho da IA e **não** entram no total — evita
   dobrar cada turno.
 - **Agregar por disciplina (label):** aliases `Trilha - X` e `Tutor - X`
-  (mesmo sufixo) formam **uma** linha. Somar `messages`, unir alunos,
-  `last_activity = max`, `trail_ids[]` = aliases, `trail_id` = primary
-  (preferir allowlist canônica).
+  (mesmo sufixo) formam **uma** linha. Volume = **max** dos aliases
+  (não a soma), unir alunos, `last_activity = max`, `trail_ids[]` = aliases,
+  `trail_id` = primary (preferir allowlist canônica).
 - Incluir `student_stats[]` (`student_id`, `messages`, `last_activity`) para
   drill-down útil.
 - `pct_of_total` = `messages / total_messages * 100` (1 casa decimal), ou `0`
