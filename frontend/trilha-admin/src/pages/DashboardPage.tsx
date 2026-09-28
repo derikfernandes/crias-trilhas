@@ -2818,25 +2818,39 @@ export function DashboardPage() {
       .slice()
       .sort((a, b) => (a.accuracyPct ?? 0) - (b.accuracyPct ?? 0))
 
-    const lowestBar = withAcc[0] ?? null
-    // Maior acerto: último da lista ordenada; se empatar com o menor, pega
-    // o de maior conclusão entre os de acerto máximo (conteúdo distinto).
-    let highestBar = withAcc.length > 0 ? withAcc[withAcc.length - 1]! : null
-    if (
-      lowestBar &&
-      highestBar &&
-      lowestBar.key === highestBar.key &&
-      withAcc.length > 1
-    ) {
-      const maxPct = highestBar.accuracyPct ?? 0
-      const candidates = withAcc.filter((b) => b.accuracyPct === maxPct)
-      highestBar =
-        candidates.find((b) => b.key !== lowestBar.key) ?? highestBar
+    // Min/máx por EXERCÍCIO (não por aula) — evita o mesmo "Conteúdo 86" nos dois cards.
+    type ExPick = {
+      label: string
+      pct: number
+      note: string
+      contentKey: string
+      exKey: string
     }
-    if (lowestBar && highestBar && lowestBar.key === highestBar.key) {
-      // Só um conteúdo com acerto medido — não duplica no card “maior”.
-      highestBar = null
+    const exercisePool: ExPick[] = []
+    for (const bar of releasedBars) {
+      bar.exercises.forEach((ex, idx) => {
+        if (ex.accuracyPct == null) return
+        const short =
+          ex.prompt.length > 72 ? `${ex.prompt.slice(0, 69)}…` : ex.prompt
+        exercisePool.push({
+          label: short,
+          pct: ex.accuracyPct,
+          note: `Conteúdo ${bar.num} · Ex. ${idx + 1}`,
+          contentKey: bar.key,
+          exKey: ex.key,
+        })
+      })
     }
+    exercisePool.sort((a, b) => a.pct - b.pct || a.exKey.localeCompare(b.exKey))
+
+    const lowestEx = exercisePool[0] ?? null
+    // Maior só quando há exercício com % estritamente maior (nunca o mesmo).
+    const highestEx = lowestEx
+      ? [...exercisePool]
+          .reverse()
+          .find((e) => e.exKey !== lowestEx.exKey && e.pct > lowestEx.pct) ??
+        null
+      : null
 
     const accuracyVals = withAcc.map((b) => b.accuracyPct as number)
     const accuracyAvg =
@@ -2860,18 +2874,20 @@ export function DashboardPage() {
       summary: {
         progressAvg,
         accuracyAvg,
-        lowest: lowestBar
+        lowest: lowestEx
           ? {
-              label: lowestBar.title,
-              pct: lowestBar.accuracyPct as number,
-              note: `Conteúdo ${lowestBar.num}`,
+              label: lowestEx.label,
+              pct: lowestEx.pct,
+              note: lowestEx.note,
+              contentKey: lowestEx.contentKey,
             }
           : null,
-        highest: highestBar
+        highest: highestEx
           ? {
-              label: highestBar.title,
-              pct: highestBar.accuracyPct as number,
-              note: `Conteúdo ${highestBar.num}`,
+              label: highestEx.label,
+              pct: highestEx.pct,
+              note: highestEx.note,
+              contentKey: highestEx.contentKey,
             }
           : null,
         releasedCount: releasedBars.length,

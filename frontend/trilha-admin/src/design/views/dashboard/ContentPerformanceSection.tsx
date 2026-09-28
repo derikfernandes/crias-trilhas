@@ -135,7 +135,7 @@ export function ContentPerformanceSection({
             <span className="crias-kpi__icon crias-kpi__icon--rose">
               <IconAlertLocal />
             </span>
-            Conteúdo com menor acerto
+            Exercício com menor acerto
           </span>
           <span
             className="crias-content__sum-value"
@@ -148,7 +148,17 @@ export function ContentPerformanceSection({
             {summary.lowest?.note ? (
               <>
                 <br />
-                {summary.lowest.note}
+                {summary.lowest.contentKey ? (
+                  <button
+                    type="button"
+                    className="crias-content__sum-link"
+                    onClick={() => onSelectKey(summary.lowest!.contentKey!)}
+                  >
+                    {summary.lowest.note}
+                  </button>
+                ) : (
+                  summary.lowest.note
+                )}
               </>
             ) : null}
           </span>
@@ -158,7 +168,7 @@ export function ContentPerformanceSection({
             <span className="crias-kpi__icon crias-kpi__icon--green">
               <IconTrophyLocal />
             </span>
-            Conteúdo com maior acerto
+            Exercício com maior acerto
           </span>
           <span
             className="crias-content__sum-value"
@@ -171,7 +181,17 @@ export function ContentPerformanceSection({
             {summary.highest?.note ? (
               <>
                 <br />
-                {summary.highest.note}
+                {summary.highest.contentKey ? (
+                  <button
+                    type="button"
+                    className="crias-content__sum-link"
+                    onClick={() => onSelectKey(summary.highest!.contentKey!)}
+                  >
+                    {summary.highest.note}
+                  </button>
+                ) : (
+                  summary.highest.note
+                )}
               </>
             ) : null}
           </span>

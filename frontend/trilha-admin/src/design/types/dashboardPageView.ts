@@ -273,8 +273,19 @@ export type DashboardContentBarView = {
 export type DashboardContentSummaryView = {
   progressAvg: number | null
   accuracyAvg: number | null
-  lowest: { label: string; pct: number; note?: string } | null
-  highest: { label: string; pct: number; note?: string } | null
+  /** Exercício (não aula) com menor/maior acerto. */
+  lowest: {
+    label: string
+    pct: number
+    note?: string
+    contentKey?: string
+  } | null
+  highest: {
+    label: string
+    pct: number
+    note?: string
+    contentKey?: string
+  } | null
   releasedCount: number
   totalCount: number
   below60Count: number

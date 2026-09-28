@@ -1380,6 +1380,22 @@
   color: var(--c-text);
 }
 
+.crias-content__sum-link {
+  display: inline;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: inherit;
+  color: var(--c-green-800);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.crias-content__sum-link:hover {
+  color: var(--c-text);
+}
+
 .crias-content__chart {
   background: var(--c-surface);
   padding: 20px 24px 16px;
