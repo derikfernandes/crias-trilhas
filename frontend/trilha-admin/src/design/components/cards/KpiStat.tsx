@@ -11,6 +11,11 @@ export type KpiStatProps = {
   barTone?: KpiBarTone
   /** Indica refetch (ex.: troca de período). */
   loading?: boolean
+  /** Card selecionado (abre o painel de detalhes abaixo). */
+  selected?: boolean
+  /** Torna o card clicável. */
+  onSelect?: () => void
+  detailLabel?: string
 }
 
 export function kpiBarToneFromPct(pct: number | null | undefined): KpiBarTone {
@@ -29,18 +34,26 @@ export function KpiStat({
   icon,
   barTone,
   loading = false,
+  selected = false,
+  onSelect,
+  detailLabel,
 }: KpiStatProps) {
   const width =
     barPct == null || Number.isNaN(barPct)
       ? null
       : Math.max(0, Math.min(100, barPct))
   const tone = barTone ?? kpiBarToneFromPct(width)
+  const classes = [
+    'crias-kpi',
+    loading ? 'crias-kpi--loading' : '',
+    selected ? 'crias-kpi--selected' : '',
+    onSelect ? 'crias-kpi--interactive' : '',
+  ]
+    .filter(Boolean)
+    .join(' ')
 
-  return (
-    <div
-      className={loading ? 'crias-kpi crias-kpi--loading' : 'crias-kpi'}
-      aria-busy={loading || undefined}
-    >
+  const body = (
+    <>
       <span className="crias-kpi__head">
         {icon ? (
           <span className="crias-kpi__icon" aria-hidden="true">
@@ -59,6 +72,31 @@ export function KpiStat({
         </div>
       ) : null}
       {hint ? <span className="crias-kpi__hint">{hint}</span> : null}
+      {onSelect ? (
+        <span className="crias-kpi__detail">
+          {detailLabel ?? (selected ? 'Ocultar ˄' : 'Ver detalhes ›')}
+        </span>
+      ) : null}
+    </>
+  )
+
+  if (onSelect) {
+    return (
+      <button
+        type="button"
+        className={classes}
+        aria-busy={loading || undefined}
+        aria-pressed={selected}
+        onClick={onSelect}
+      >
+        {body}
+      </button>
+    )
+  }
+
+  return (
+    <div className={classes} aria-busy={loading || undefined}>
+      {body}
     </div>
   )
 }

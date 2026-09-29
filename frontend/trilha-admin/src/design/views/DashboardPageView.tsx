@@ -17,6 +17,7 @@ import { StudentRankingSection } from './dashboard/StudentRankingSection'
 import { SubjectScopeSection } from './dashboard/SubjectScopeSection'
 import { KpiGrid, KpiStat, kpiBarToneFromPct } from '../components/cards/KpiStat'
 import { JourneyBands } from '../components/cards/JourneyBands'
+import { KpiDetailEmpty } from './dashboard/KpiDetailEmpty'
 import { CriasTabs } from '../components/navigation/CriasTabs'
 import { PageEmpty, PageError } from '../components/feedback/PageState'
 import { StatusTag } from '../components/ui/StatusTag'
@@ -42,6 +43,8 @@ type ExpandedEnunciado = {
   trailName: string
   text: string
 }
+
+type OverviewKpi = 'students' | 'progress' | 'accuracy' | 'tutors'
 
 export function DashboardPageView({
   loadingInst,
@@ -186,6 +189,7 @@ export function DashboardPageView({
 }: DashboardPageViewProps) {
   const [expandedEnunciado, setExpandedEnunciado] =
     useState<ExpandedEnunciado | null>(null)
+  const [selectedKpi, setSelectedKpi] = useState<OverviewKpi | null>(null)
 
   useEffect(() => {
     if (!expandedEnunciado) return
@@ -195,6 +199,15 @@ export function DashboardPageView({
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [expandedEnunciado])
+
+  // Troca de instituição ou período: fecha o painel para não misturar contexto.
+  useEffect(() => {
+    setSelectedKpi(null)
+  }, [selectedId])
+
+  const toggleKpi = (key: OverviewKpi) => {
+    setSelectedKpi((prev) => (prev === key ? null : key))
+  }
 
   const selectedInstitutionLabel =
     institutionOptions.find((o) => o.id === selectedId)?.label ?? null
@@ -421,6 +434,8 @@ export function DashboardPageView({
               barPct={activeBarPct}
               barTone={kpiBarToneFromPct(activeBarPct)}
               icon={<IconUsers />}
+              selected={selectedKpi === 'students'}
+              onSelect={() => toggleKpi('students')}
             />
             <KpiStat
               label="Progresso médio"
@@ -429,6 +444,8 @@ export function DashboardPageView({
               barPct={progressPct}
               barTone={kpiBarToneFromPct(progressPct)}
               icon={<IconTrendUp />}
+              selected={selectedKpi === 'progress'}
+              onSelect={() => toggleKpi('progress')}
             />
             <KpiStat
               label="Acerto médio"
@@ -437,6 +454,8 @@ export function DashboardPageView({
               barPct={accuracyPct}
               barTone={kpiBarToneFromPct(accuracyPct)}
               icon={<IconTarget />}
+              selected={selectedKpi === 'accuracy'}
+              onSelect={() => toggleKpi('accuracy')}
             />
             <KpiStat
               label="Interações com tutores"
@@ -446,208 +465,251 @@ export function DashboardPageView({
               barTone={kpiBarToneFromPct(tutorCoverage)}
               icon={<IconChat />}
               loading={agentUsageLoading}
+              selected={selectedKpi === 'tutors'}
+              onSelect={() => toggleKpi('tutors')}
             />
           </KpiGrid>
 
-          <AgentUsageSection
-            agentUsage={agentUsage}
-            periodDays={agentPeriodDays}
-            onPeriodDaysChange={onAgentPeriodDaysChange}
-            loading={agentUsageLoading}
-            unavailable={agentUsageUnavailable}
-            onRetry={onRetryLogs}
-            selectedAgentTrailId={selectedAgentTrailId}
-            onSelectAgentTrailId={onSelectAgentTrailId}
-            selectedAgentStudents={selectedAgentStudents}
-            coverageOfActivePct={agentCoverageOfActivePct}
-          />
+          {selectedKpi == null ? <KpiDetailEmpty /> : null}
 
-          {subjectTabs &&
-          subjectTabs.length > 0 &&
-          onSelectSubject &&
-          onSelectTrailId &&
-          scopeSummary ? (
-            <SubjectScopeSection
-              subjectTabs={subjectTabs}
-              selectedSubject={selectedSubject ?? null}
-              onSelectSubject={onSelectSubject}
-              gradeOptions={gradeOptions ?? []}
-              selectedGrade={selectedGrade ?? null}
-              onSelectGrade={onSelectGrade ?? (() => {})}
-              trailOptions={trailFilterOptions ?? []}
-              selectedTrailId={selectedTrailId ?? null}
-              onSelectTrailId={onSelectTrailId}
-              scopeSummary={scopeSummary}
-            />
-          ) : null}
-
-          {journeyBands && journeyBands.length > 0 ? (
-            <JourneyBands
-              bands={journeyBands}
-              stalledHref={journeyStalledHref}
-              stalledLinkLabel={journeyStalledLinkLabel}
-            />
-          ) : null}
-
-          {contentSummary &&
-          contentBars &&
-          contentBars.length > 0 &&
-          onSelectContentKey ? (
-            <ContentPerformanceSection
-              summary={contentSummary}
-              bars={contentBars}
-              selectedKey={selectedContentKey ?? null}
-              onSelectKey={onSelectContentKey}
-            />
-          ) : null}
-
-          {activityMatrix && activityMatrix.cells.length > 0 ? (
-            <section className="crias-journey" aria-label="Mapa conteúdo a conteúdo">
-              <div className="crias-journey__head">
-                <div>
-                  <div className="crias-label">Mapa conteúdo a conteúdo</div>
-                  <h2
-                    className="crias-section-title"
-                    style={{ borderBottom: 0, paddingBottom: 0 }}
-                  >
-                    Acerto por atividade × exercício
-                  </h2>
-                </div>
-              </div>
-              <div className="crias-matrix">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Bloco \ Ativ.</th>
-                      {activityMatrix.questions.map((q) => (
-                        <th key={q}>A{q}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {activityMatrix.stages.map((stage) => (
-                      <tr key={stage}>
-                        <th scope="row">B{stage}</th>
-                        {activityMatrix.questions.map((q) => {
-                          const cell = activityMatrix.cells.find(
-                            (c) =>
-                              c.stageNumber === stage &&
-                              c.questionNumber === q,
-                          )
-                          if (!cell || cell.total === 0) {
-                            return (
-                              <td
-                                key={`${stage}-${q}`}
-                                className="crias-matrix__cell crias-matrix__cell--empty"
-                              >
-                                —
-                              </td>
-                            )
-                          }
-                          const pctVal = cell.accuracyPct ?? 0
-                          const tone =
-                            pctVal >= 70
-                              ? 'crias-matrix__cell--high'
-                              : pctVal >= 40
-                                ? 'crias-matrix__cell--mid'
-                                : 'crias-matrix__cell--low'
-                          const selected =
-                            selectedMatrixCellKey === cell.key
-                          return (
-                            <td key={`${stage}-${q}`}>
-                              <button
-                                type="button"
-                                className={`crias-matrix__cell ${tone}`}
-                                aria-pressed={selected}
-                                onClick={() =>
-                                  onSelectMatrixCell?.(
-                                    selected ? null : cell.key,
-                                  )
-                                }
-                              >
-                                {formatPct(cell.accuracyPct, 0)}
-                              </button>
-                            </td>
-                          )
-                        })}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              {optionDistribution && optionDistribution.length > 0 ? (
-                <div className="crias-option-dist" aria-label="Distribuição A/B/C">
-                  {optionDistribution.map((item) => (
-                    <div key={item.option} className="crias-option-dist__item">
-                      <span className="crias-option-dist__key">
-                        {item.option}
-                      </span>
-                      {item.count} ({item.pct}%)
-                    </div>
-                  ))}
-                </div>
-              ) : null}
-            </section>
-          ) : null}
-
-          {onOpportunityTabChange ? (
-            <>
-              <LearningOpportunitiesSection
-                subjectLabel={
-                  selectedSubject ??
-                  subjectTabs?.[0]?.label ??
-                  'Instituição'
-                }
-                tab={opportunityTab ?? 'err'}
-                onTabChange={onOpportunityTabChange}
-                rows={opportunityRows ?? []}
-                note={
-                  opportunityNote ??
-                  'Top exercícios com respostas neste filtro. Dúvidas por tema exigem metadado ainda inexistente.'
-                }
+          {selectedKpi === 'tutors' ? (
+            <div className="crias-kpi-detail">
+              <AgentUsageSection
+                agentUsage={agentUsage}
+                periodDays={agentPeriodDays}
+                onPeriodDaysChange={onAgentPeriodDaysChange}
+                loading={agentUsageLoading}
+                unavailable={agentUsageUnavailable}
+                onRetry={onRetryLogs}
+                selectedAgentTrailId={selectedAgentTrailId}
+                onSelectAgentTrailId={onSelectAgentTrailId}
+                selectedAgentStudents={selectedAgentStudents}
+                coverageOfActivePct={agentCoverageOfActivePct}
               />
-              {crossOpportunityCards && crossOpportunityCards.length > 0 ? (
-                <CrossOpportunitiesSection
-                  cards={crossOpportunityCards.map((c) => ({
-                    ...c,
-                    onOpen: onOpenCrossContent
-                      ? () => onOpenCrossContent(c.key)
-                      : undefined,
-                  }))}
-                  note={crossOpportunityNote}
+              {tutorSubject ? (
+                <TutorSubjectSection
+                  subjectLabel={tutorSubject.subjectLabel}
+                  periodLabel={tutorSubject.periodLabel}
+                  messages={tutorSubject.messages}
+                  students={tutorSubject.students}
+                  coveragePct={tutorSubject.coveragePct}
+                  messagesPerDay={tutorSubject.messagesPerDay}
+                  perStudentPerDay={tutorSubject.perStudentPerDay}
+                  perStudentPeriod={tutorSubject.perStudentPeriod}
+                  topStudents={tutorSubject.topStudents}
                 />
               ) : null}
-            </>
+            </div>
           ) : null}
 
-          {tutorSubject ? (
-            <TutorSubjectSection
-              subjectLabel={tutorSubject.subjectLabel}
-              periodLabel={tutorSubject.periodLabel}
-              messages={tutorSubject.messages}
-              students={tutorSubject.students}
-              coveragePct={tutorSubject.coveragePct}
-              messagesPerDay={tutorSubject.messagesPerDay}
-              perStudentPerDay={tutorSubject.perStudentPerDay}
-              perStudentPeriod={tutorSubject.perStudentPeriod}
-              topStudents={tutorSubject.topStudents}
-            />
+          {selectedKpi === 'students' ? (
+            <div className="crias-kpi-detail">
+              {journeyBands && journeyBands.length > 0 ? (
+                <JourneyBands
+                  bands={journeyBands}
+                  stalledHref={journeyStalledHref}
+                  stalledLinkLabel={journeyStalledLinkLabel}
+                />
+              ) : null}
+              {ranking &&
+              rankingWeights &&
+              onRankingWeightsChange &&
+              onToggleShowAllRanking ? (
+                <StudentRankingSection
+                  rows={ranking}
+                  scopeLabel={rankingScopeLabel ?? 'Todos os alunos do filtro'}
+                  weights={rankingWeights}
+                  onWeightsChange={onRankingWeightsChange}
+                  showAll={showAllRanking ?? false}
+                  onToggleShowAll={onToggleShowAllRanking}
+                />
+              ) : null}
+            </div>
           ) : null}
 
-          {ranking &&
-          rankingWeights &&
-          onRankingWeightsChange &&
-          onToggleShowAllRanking ? (
-            <StudentRankingSection
-              rows={ranking}
-              scopeLabel={rankingScopeLabel ?? 'Todos os alunos do filtro'}
-              weights={rankingWeights}
-              onWeightsChange={onRankingWeightsChange}
-              showAll={showAllRanking ?? false}
-              onToggleShowAll={onToggleShowAllRanking}
-            />
+          {selectedKpi === 'progress' || selectedKpi === 'accuracy' ? (
+            <div className="crias-kpi-detail">
+              {subjectTabs &&
+              subjectTabs.length > 0 &&
+              onSelectSubject &&
+              onSelectTrailId &&
+              scopeSummary ? (
+                <SubjectScopeSection
+                  subjectTabs={subjectTabs}
+                  selectedSubject={selectedSubject ?? null}
+                  onSelectSubject={onSelectSubject}
+                  gradeOptions={gradeOptions ?? []}
+                  selectedGrade={selectedGrade ?? null}
+                  onSelectGrade={onSelectGrade ?? (() => {})}
+                  trailOptions={trailFilterOptions ?? []}
+                  selectedTrailId={selectedTrailId ?? null}
+                  onSelectTrailId={onSelectTrailId}
+                  scopeSummary={scopeSummary}
+                />
+              ) : null}
+
+              {selectedKpi === 'progress' &&
+              journeyBands &&
+              journeyBands.length > 0 ? (
+                <JourneyBands
+                  bands={journeyBands}
+                  stalledHref={journeyStalledHref}
+                  stalledLinkLabel={journeyStalledLinkLabel}
+                />
+              ) : null}
+
+              {contentSummary &&
+              contentBars &&
+              contentBars.length > 0 &&
+              onSelectContentKey ? (
+                <ContentPerformanceSection
+                  summary={contentSummary}
+                  bars={contentBars}
+                  selectedKey={selectedContentKey ?? null}
+                  onSelectKey={onSelectContentKey}
+                />
+              ) : null}
+
+              {selectedKpi === 'accuracy' ? (
+                <>
+                  {activityMatrix && activityMatrix.cells.length > 0 ? (
+                    <section
+                      className="crias-journey"
+                      aria-label="Mapa conteúdo a conteúdo"
+                    >
+                      <div className="crias-journey__head">
+                        <div>
+                          <div className="crias-label">
+                            Mapa conteúdo a conteúdo
+                          </div>
+                          <h2
+                            className="crias-section-title"
+                            style={{ borderBottom: 0, paddingBottom: 0 }}
+                          >
+                            Acerto por atividade × exercício
+                          </h2>
+                        </div>
+                      </div>
+                      <div className="crias-matrix">
+                        <table>
+                          <thead>
+                            <tr>
+                              <th>Bloco \ Ativ.</th>
+                              {activityMatrix.questions.map((q) => (
+                                <th key={q}>A{q}</th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {activityMatrix.stages.map((stage) => (
+                              <tr key={stage}>
+                                <th scope="row">B{stage}</th>
+                                {activityMatrix.questions.map((q) => {
+                                  const cell = activityMatrix.cells.find(
+                                    (c) =>
+                                      c.stageNumber === stage &&
+                                      c.questionNumber === q,
+                                  )
+                                  if (!cell || cell.total === 0) {
+                                    return (
+                                      <td
+                                        key={`${stage}-${q}`}
+                                        className="crias-matrix__cell crias-matrix__cell--empty"
+                                      >
+                                        —
+                                      </td>
+                                    )
+                                  }
+                                  const pctVal = cell.accuracyPct ?? 0
+                                  const tone =
+                                    pctVal >= 70
+                                      ? 'crias-matrix__cell--high'
+                                      : pctVal >= 40
+                                        ? 'crias-matrix__cell--mid'
+                                        : 'crias-matrix__cell--low'
+                                  const selected =
+                                    selectedMatrixCellKey === cell.key
+                                  return (
+                                    <td key={`${stage}-${q}`}>
+                                      <button
+                                        type="button"
+                                        className={`crias-matrix__cell ${tone}`}
+                                        aria-pressed={selected}
+                                        onClick={() =>
+                                          onSelectMatrixCell?.(
+                                            selected ? null : cell.key,
+                                          )
+                                        }
+                                      >
+                                        {formatPct(cell.accuracyPct, 0)}
+                                      </button>
+                                    </td>
+                                  )
+                                })}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      {optionDistribution && optionDistribution.length > 0 ? (
+                        <div
+                          className="crias-option-dist"
+                          aria-label="Distribuição A/B/C"
+                        >
+                          {optionDistribution.map((item) => (
+                            <div
+                              key={item.option}
+                              className="crias-option-dist__item"
+                            >
+                              <span className="crias-option-dist__key">
+                                {item.option}
+                              </span>
+                              {item.count} ({item.pct}%)
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
+                    </section>
+                  ) : null}
+
+                  {onOpportunityTabChange ? (
+                    <>
+                      <LearningOpportunitiesSection
+                        subjectLabel={
+                          selectedSubject ??
+                          subjectTabs?.[0]?.label ??
+                          'Instituição'
+                        }
+                        tab={opportunityTab ?? 'err'}
+                        onTabChange={onOpportunityTabChange}
+                        rows={opportunityRows ?? []}
+                        note={
+                          opportunityNote ??
+                          'Top exercícios com respostas neste filtro. Dúvidas por tema exigem metadado ainda inexistente.'
+                        }
+                      />
+                      {crossOpportunityCards &&
+                      crossOpportunityCards.length > 0 ? (
+                        <CrossOpportunitiesSection
+                          cards={crossOpportunityCards.map((c) => ({
+                            ...c,
+                            onOpen: onOpenCrossContent
+                              ? () => onOpenCrossContent(c.key)
+                              : undefined,
+                          }))}
+                          note={crossOpportunityNote}
+                        />
+                      ) : null}
+                    </>
+                  ) : null}
+                </>
+              ) : null}
+            </div>
           ) : null}
 
+          {/* Tabelas Alunos/Questões só depois de abrir um indicador — evita “carregar tudo”. */}
+          {selectedKpi != null ? (
+            <>
           <CriasTabs
             ariaLabel="Seções da visão geral"
             activeId={activeTab}
@@ -1350,6 +1412,8 @@ export function DashboardPageView({
                 </section>
               )}
             </div>
+          ) : null}
+            </>
           ) : null}
 
           {expandedEnunciado ? (
