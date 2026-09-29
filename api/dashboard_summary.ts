@@ -223,8 +223,8 @@ async function handleRequest(request: Request): Promise<Response> {
           if (isAgentTrailId(trailId)) {
             // Só mensagens do aluno = interações com o tutor.
             if (data.sender !== 'student') continue
-            // Filtro de período aplica só ao uso de agentes, não à progressão tN.
-            if (cutoffMs > 0 && at > 0 && at < cutoffMs) continue
+            // Filtro de período: sem timestamp confiável, não entra no recorte.
+            if (cutoffMs > 0 && (at <= 0 || at < cutoffMs)) continue
             agentLogs.push({ student_id: studentId, trail_id: trailId, at })
             continue
           }
