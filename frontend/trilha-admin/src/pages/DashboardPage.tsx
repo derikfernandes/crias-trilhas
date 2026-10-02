@@ -42,7 +42,10 @@ import {
   snapshotToTrailStageQuestion,
   TRAIL_STAGE_QUESTIONS_COLLECTION,
 } from '../lib/trailStageQuestionFirestore'
-import { fetchDashboardLogSummary } from '../lib/dashboardSummaryApi'
+import {
+  fetchDashboardKpisSummary,
+  fetchDashboardLogSummary,
+} from '../lib/dashboardSummaryApi'
 import {
   buildForcedCompletionLookup,
   collectForcedCompletions,
@@ -267,10 +270,11 @@ function scoreStudentFromAnswerMap(
 }
 
 const DATA_SOURCES = 3
-/** Stages e questões (carregados por trilha) também entram no gate de loading. */
-const META_SOURCES = 2
-/** Passos de progresso: fontes de dados + metadados + 1 passo de métricas (logs). */
-const TOTAL_LOAD_STEPS = DATA_SOURCES + META_SOURCES + 1
+/**
+ * Gate inicial da Visão geral: alunos/trilhas + mode=kpis.
+ * Meta + summary full só depois do primeiro clique num KPI.
+ */
+const INITIAL_LOAD_STEPS = DATA_SOURCES + 1
 
 const EMPTY_LOG_AGGREGATES: LogAggregates = {
   doneByStudent: new Map(),
@@ -537,7 +541,7 @@ export function DashboardPage() {
   const [loadingMeta, setLoadingMeta] = useState(false)
   const [, setLoadingLogs] = useState(false)
   const [loadStepsDone, setLoadStepsDone] = useState(0)
-  const [loadStepsTotal, setLoadStepsTotal] = useState(TOTAL_LOAD_STEPS)
+  const [loadStepsTotal, setLoadStepsTotal] = useState(INITIAL_LOAD_STEPS)
   const [loadPercent, setLoadPercent] = useState(0)
   const [loadLabel, setLoadLabel] = useState('')
   const [dataError, setDataError] = useState<string | null>(null)
@@ -552,10 +556,16 @@ export function DashboardPage() {
   >(null)
   const [agentUsageLoading, setAgentUsageLoading] = useState(false)
   const [agentUsagePresent, setAgentUsagePresent] = useState(true)
-  const [initialLogsLoaded, setInitialLogsLoaded] = useState(false)
-  const initialLogsLoadedRef = useRef(false)
+  /** mode=kpis chegou — libera empty state + cards. */
+  const [initialKpisLoaded, setInitialKpisLoaded] = useState(false)
+  const initialKpisLoadedRef = useRef(false)
+  /** Usuário pediu detalhe (clique num KPI) — dispara meta + mode=full. */
+  const [detailRequested, setDetailRequested] = useState(false)
+  const [fullDetailLoaded, setFullDetailLoaded] = useState(false)
+  const fullDetailLoadedRef = useRef(false)
+  const [fullDetailLoading, setFullDetailLoading] = useState(false)
   const dashboardLoadStartedAtRef = useRef(0)
-  const loadProgressRef = useRef({ done: 0, total: TOTAL_LOAD_STEPS })
+  const loadProgressRef = useRef({ done: 0, total: INITIAL_LOAD_STEPS })
   const loadTargetPercentRef = useRef(0)
 
   const computeLoadPercent = (done: number, total: number, complete = false) => {
@@ -694,34 +704,41 @@ export function DashboardPage() {
         setLoadingData(false)
         setLoadingMeta(false)
         setLoadingLogs(false)
-        setInitialLogsLoaded(false)
-        initialLogsLoadedRef.current = false
+        setInitialKpisLoaded(false)
+        initialKpisLoadedRef.current = false
+        setDetailRequested(false)
+        setFullDetailLoaded(false)
+        fullDetailLoadedRef.current = false
+        setFullDetailLoading(false)
         setAgentUsageLoading(false)
         setSelectedAgentTrailId(null)
         setLoadStepsDone(0)
-        setLoadStepsTotal(TOTAL_LOAD_STEPS)
-        loadProgressRef.current = { done: 0, total: TOTAL_LOAD_STEPS }
+        setLoadStepsTotal(INITIAL_LOAD_STEPS)
+        loadProgressRef.current = { done: 0, total: INITIAL_LOAD_STEPS }
         loadTargetPercentRef.current = 0
         setLoadPercent(0)
         setLoadLabel('')
         return
       }
 
-      loadProgressRef.current = { done: 0, total: TOTAL_LOAD_STEPS }
+      loadProgressRef.current = { done: 0, total: INITIAL_LOAD_STEPS }
       loadTargetPercentRef.current = 0
       dashboardLoadStartedAtRef.current = performance.now()
       setLoadingData(true)
-      // Evita frame com dashboard zerado entre o fim do loadingData e o início
-      // dos efeitos de metadados/logs.
-      setLoadingMeta(true)
+      // Meta/full só sob demanda (clique no KPI). Gate inicial = base + kpis.
+      setLoadingMeta(false)
       setLoadingLogs(true)
-      setInitialLogsLoaded(false)
-      initialLogsLoadedRef.current = false
+      setInitialKpisLoaded(false)
+      initialKpisLoadedRef.current = false
+      setDetailRequested(false)
+      setFullDetailLoaded(false)
+      fullDetailLoadedRef.current = false
+      setFullDetailLoading(false)
       setAgentUsageLoading(false)
       setSelectedAgentTrailId(null)
       setLogsError(null)
       setLoadStepsDone(0)
-      setLoadStepsTotal(TOTAL_LOAD_STEPS)
+      setLoadStepsTotal(INITIAL_LOAD_STEPS)
       setLoadPercent(0)
       setLoadLabel('Carregando alunos e trilhas…')
       const dbOk = db
@@ -807,8 +824,7 @@ export function DashboardPage() {
     [trails],
   )
 
-  // Stages e questões filtrados pelas trilhas da instituição (em chunks de 30
-  // IDs por limitação do operador "in"), em vez de baixar as coleções inteiras.
+  // Stages e questões: só após o primeiro clique num indicador (detailRequested).
   // One-shot (getDocs): conteúdo muda pouco durante a sessão do dashboard.
   useEffect(() => {
     let cancelled = false
@@ -820,19 +836,12 @@ export function DashboardPage() {
         setLoadingMeta(false)
         return
       }
-      if (loadingData) return
+      if (!detailRequested || loadingData) return
 
       const dbOk = db
       const trailIds = trailIdsKey ? trailIdsKey.split('\0') : []
 
-      loadProgressRef.current.done = Math.min(
-        loadProgressRef.current.done,
-        DATA_SOURCES,
-      )
-
       const metaDone = (source: 'stages' | 'questions') => {
-        loadProgressRef.current.done += 1
-        syncLoadProgress('Carregando conteúdo das trilhas…')
         if (source === 'questions') {
           setLoadingMeta(false)
         }
@@ -896,10 +905,9 @@ export function DashboardPage() {
       cancelled = true
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedId, trailIdsKey, loadingData])
+  }, [selectedId, trailIdsKey, loadingData, detailRequested])
 
-  // Métricas dos alunos + uso de agentes: somente /api/dashboard_summary.
-  // Sem fallback que baixa conversation_logs no browser.
+  // Gate inicial: mode=kpis (agent_usage + contagens). Sem mapa students.
   useEffect(() => {
     let cancelled = false
 
@@ -912,61 +920,49 @@ export function DashboardPage() {
     const institutionId = selectedId
     const studentIds = studentIdsKey ? studentIdsKey.split('\0') : []
     if (studentIds.length === 0) {
-      setLogAggregates(EMPTY_LOG_AGGREGATES)
       setAgentUsage({ ...EMPTY_AGENT_USAGE, periodDays: agentPeriodDays })
       setAgentUsagePresent(true)
       setLogsError(null)
       setLoadingLogs(false)
       setAgentUsageLoading(false)
-      setInitialLogsLoaded(true)
-      initialLogsLoadedRef.current = true
-      loadProgressRef.current.done = loadProgressRef.current.total
+      setInitialKpisLoaded(true)
+      initialKpisLoadedRef.current = true
+      loadProgressRef.current.done = INITIAL_LOAD_STEPS
+      loadProgressRef.current.total = INITIAL_LOAD_STEPS
       syncLoadProgress('', { complete: true })
       return () => {
         cancelled = true
       }
     }
 
-    const refreshingAgentsOnly = initialLogsLoadedRef.current
+    const refreshing = initialKpisLoadedRef.current
     setLoadingLogs(true)
-    if (refreshingAgentsOnly) setAgentUsageLoading(true)
+    if (refreshing) setAgentUsageLoading(true)
     setLogsError(null)
-    loadProgressRef.current.done = Math.min(
-      loadProgressRef.current.done,
-      DATA_SOURCES + META_SOURCES,
-    )
-    if (!refreshingAgentsOnly) {
-      syncLoadProgress('Calculando métricas dos alunos…')
-    }
-
-    const finishProgress = () => {
+    if (!refreshing) {
       loadProgressRef.current.done = Math.min(
-        loadProgressRef.current.done + 1,
-        loadProgressRef.current.total,
+        loadProgressRef.current.done,
+        DATA_SOURCES,
       )
-      const complete =
-        loadProgressRef.current.done >= loadProgressRef.current.total
-      syncLoadProgress(complete ? '' : 'Calculando métricas dos alunos…', {
-        complete,
-      })
+      syncLoadProgress('Carregando indicadores…')
     }
 
     async function run() {
       try {
-        const summary = await fetchDashboardLogSummary(
+        const kpis = await fetchDashboardKpisSummary(
           institutionId,
           agentPeriodDays,
         )
         if (cancelled) return
-        setLogAggregates({
-          doneByStudent: summary.doneByStudent,
-          answerMap: summary.answerMap,
-        })
-        setAgentUsage(summary.agentUsage)
-        setAgentUsagePresent(summary.agentUsagePresent)
-        setInitialLogsLoaded(true)
-        initialLogsLoadedRef.current = true
-        if (!refreshingAgentsOnly) finishProgress()
+        setAgentUsage(kpis.agentUsage)
+        setAgentUsagePresent(kpis.agentUsagePresent)
+        setInitialKpisLoaded(true)
+        initialKpisLoadedRef.current = true
+        if (!refreshing) {
+          loadProgressRef.current.done = INITIAL_LOAD_STEPS
+          loadProgressRef.current.total = INITIAL_LOAD_STEPS
+          syncLoadProgress('', { complete: true })
+        }
       } catch (err) {
         if (cancelled) return
         setLogsError(
@@ -974,16 +970,15 @@ export function DashboardPage() {
             ? err.message
             : 'Erro ao carregar métricas dos alunos.',
         )
-        if (!refreshingAgentsOnly) {
-          setLogAggregates(EMPTY_LOG_AGGREGATES)
+        if (!refreshing) {
           setAgentUsage({ ...EMPTY_AGENT_USAGE, periodDays: agentPeriodDays })
           // Libera o gate para o banner de erro + retry ficarem acessíveis.
-          setInitialLogsLoaded(true)
-          initialLogsLoadedRef.current = true
-          loadProgressRef.current.done = loadProgressRef.current.total
+          setInitialKpisLoaded(true)
+          initialKpisLoadedRef.current = true
+          loadProgressRef.current.done = INITIAL_LOAD_STEPS
+          loadProgressRef.current.total = INITIAL_LOAD_STEPS
           syncLoadProgress('', { complete: true })
         }
-        // Refetch de período: mantém último snapshot (keep-previous).
       } finally {
         if (!cancelled) {
           setLoadingLogs(false)
@@ -1001,8 +996,83 @@ export function DashboardPage() {
   }, [
     selectedId,
     studentIdsKey,
+    loadingData,
+    logsRetryKey,
+    agentPeriodDays,
+  ])
+
+  // Detalhe sob demanda: mode=full (progressão) após clique num KPI.
+  useEffect(() => {
+    let cancelled = false
+
+    if (!db || !selectedId || loadingData || !detailRequested) {
+      return () => {
+        cancelled = true
+      }
+    }
+
+    const institutionId = selectedId
+    const studentIds = studentIdsKey ? studentIdsKey.split('\0') : []
+    if (studentIds.length === 0) {
+      setLogAggregates(EMPTY_LOG_AGGREGATES)
+      setFullDetailLoaded(true)
+      fullDetailLoadedRef.current = true
+      setFullDetailLoading(false)
+      return () => {
+        cancelled = true
+      }
+    }
+
+    const refreshing = fullDetailLoadedRef.current
+    setFullDetailLoading(true)
+    if (refreshing) setAgentUsageLoading(true)
+
+    async function run() {
+      try {
+        const summary = await fetchDashboardLogSummary(
+          institutionId,
+          agentPeriodDays,
+        )
+        if (cancelled) return
+        setLogAggregates({
+          doneByStudent: summary.doneByStudent,
+          answerMap: summary.answerMap,
+        })
+        // Full também traz agent_usage — mantém KPI/tutores alinhados ao período.
+        setAgentUsage(summary.agentUsage)
+        setAgentUsagePresent(summary.agentUsagePresent)
+        setFullDetailLoaded(true)
+        fullDetailLoadedRef.current = true
+      } catch (err) {
+        if (cancelled) return
+        setLogsError(
+          err instanceof Error
+            ? err.message
+            : 'Erro ao carregar detalhes do dashboard.',
+        )
+        if (!refreshing) {
+          setLogAggregates(EMPTY_LOG_AGGREGATES)
+        }
+      } finally {
+        if (!cancelled) {
+          setFullDetailLoading(false)
+          setAgentUsageLoading(false)
+        }
+      }
+    }
+
+    void run()
+
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    selectedId,
+    studentIdsKey,
     trailIdsKey,
     loadingData,
+    detailRequested,
     logsRetryKey,
     agentPeriodDays,
   ])
@@ -1086,10 +1156,10 @@ export function DashboardPage() {
   /** Trilhas ativas consideradas nos números da tabela de alunos. */
   const relevantTrails = activeTrails
 
-  // Paridade VG: habilita agregações de exercícios cedo (ranking/oportunidades/
-  // conteúdo) sem esperar a aba Questões — só leitura, sem escrever no banco.
+  // Agregações de exercícios (ranking/oportunidades/conteúdo) só depois do
+  // detalhe sob demanda — evita trabalho pesado na abertura da VG.
   useEffect(() => {
-    if (!selectedId || loadingData || loadingMeta) return
+    if (!selectedId || loadingData || loadingMeta || !fullDetailLoaded) return
     if (!questionsDataEnabled) {
       startQuestionsTransition(() => {
         setQuestionsDataEnabled(true)
@@ -1099,6 +1169,7 @@ export function DashboardPage() {
     selectedId,
     loadingData,
     loadingMeta,
+    fullDetailLoaded,
     questionsDataEnabled,
     startQuestionsTransition,
   ])
@@ -2432,8 +2503,10 @@ export function DashboardPage() {
     selectedStageCount < availableStages.length
 
   const isDashboardLoading =
-    Boolean(selectedId) &&
-    (loadingData || loadingMeta || !initialLogsLoaded)
+    Boolean(selectedId) && (loadingData || !initialKpisLoaded)
+
+  const progressionKpisLoading =
+    detailRequested && (fullDetailLoading || loadingMeta || !fullDetailLoaded)
 
   useEffect(() => {
     if (isDashboardLoading) return
@@ -3379,11 +3452,21 @@ export function DashboardPage() {
       logsError={logsError}
       onRetryLogs={() => {
         // Reabre o gate no retry após falha de first-load (banner acessível).
-        initialLogsLoadedRef.current = false
-        setInitialLogsLoaded(false)
+        initialKpisLoadedRef.current = false
+        setInitialKpisLoaded(false)
+        fullDetailLoadedRef.current = false
+        setFullDetailLoaded(false)
         setLogsError(null)
         setLogsRetryKey((k) => k + 1)
       }}
+      onRequestKpiDetail={() => {
+        if (!detailRequested) setDetailRequested(true)
+      }}
+      progressionKpisLoading={progressionKpisLoading}
+      detailLoading={
+        detailRequested &&
+        (fullDetailLoading || loadingMeta || !fullDetailLoaded)
+      }
       summary={summary}
       missingGabaritoCount={missingGabaritoCount}
       annulledGabaritoCount={annulledGabaritoCount}

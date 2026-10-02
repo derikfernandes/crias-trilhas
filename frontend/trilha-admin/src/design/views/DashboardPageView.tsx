@@ -146,6 +146,9 @@ export function DashboardPageView({
   onAgentPeriodDaysChange,
   agentUsageLoading,
   agentUsageUnavailable = false,
+  onRequestKpiDetail,
+  progressionKpisLoading = false,
+  detailLoading = false,
   selectedAgentTrailId,
   onSelectAgentTrailId,
   selectedAgentStudents,
@@ -206,7 +209,11 @@ export function DashboardPageView({
   }, [selectedId])
 
   const toggleKpi = (key: OverviewKpi) => {
-    setSelectedKpi((prev) => (prev === key ? null : key))
+    setSelectedKpi((prev) => {
+      const next = prev === key ? null : key
+      if (next != null) onRequestKpiDetail?.()
+      return next
+    })
   }
 
   const selectedInstitutionLabel =
@@ -439,21 +446,39 @@ export function DashboardPageView({
             />
             <KpiStat
               label="Progresso médio"
-              value={formatPct(progressPct, 0)}
-              hint="dos conteúdos liberados"
-              barPct={progressPct}
+              value={
+                progressionKpisLoading ? '…' : formatPct(progressPct, 0)
+              }
+              hint={
+                progressionKpisLoading
+                  ? 'calculando…'
+                  : progressPct == null
+                    ? 'clique para carregar'
+                    : 'dos conteúdos liberados'
+              }
+              barPct={progressionKpisLoading ? null : progressPct}
               barTone={kpiBarToneFromPct(progressPct)}
               icon={<IconTrendUp />}
+              loading={progressionKpisLoading}
               selected={selectedKpi === 'progress'}
               onSelect={() => toggleKpi('progress')}
             />
             <KpiStat
               label="Acerto médio"
-              value={formatPct(accuracyPct, 0)}
-              hint="dos exercícios da trilha"
-              barPct={accuracyPct}
+              value={
+                progressionKpisLoading ? '…' : formatPct(accuracyPct, 0)
+              }
+              hint={
+                progressionKpisLoading
+                  ? 'calculando…'
+                  : accuracyPct == null
+                    ? 'clique para carregar'
+                    : 'dos exercícios da trilha'
+              }
+              barPct={progressionKpisLoading ? null : accuracyPct}
               barTone={kpiBarToneFromPct(accuracyPct)}
               icon={<IconTarget />}
+              loading={progressionKpisLoading}
               selected={selectedKpi === 'accuracy'}
               onSelect={() => toggleKpi('accuracy')}
             />
@@ -504,14 +529,20 @@ export function DashboardPageView({
 
           {selectedKpi === 'students' ? (
             <div className="crias-kpi-detail">
-              {journeyBands && journeyBands.length > 0 ? (
+              {detailLoading ? (
+                <p className="muted" role="status" style={{ padding: '24px 0' }}>
+                  Carregando detalhes dos alunos…
+                </p>
+              ) : null}
+              {!detailLoading && journeyBands && journeyBands.length > 0 ? (
                 <JourneyBands
                   bands={journeyBands}
                   stalledHref={journeyStalledHref}
                   stalledLinkLabel={journeyStalledLinkLabel}
                 />
               ) : null}
-              {ranking &&
+              {!detailLoading &&
+              ranking &&
               rankingWeights &&
               onRankingWeightsChange &&
               onToggleShowAllRanking ? (
@@ -529,7 +560,13 @@ export function DashboardPageView({
 
           {selectedKpi === 'progress' || selectedKpi === 'accuracy' ? (
             <div className="crias-kpi-detail">
-              {subjectTabs &&
+              {detailLoading ? (
+                <p className="muted" role="status" style={{ padding: '24px 0' }}>
+                  Carregando análises de progresso e acerto…
+                </p>
+              ) : null}
+              {!detailLoading &&
+              subjectTabs &&
               subjectTabs.length > 0 &&
               onSelectSubject &&
               onSelectTrailId &&
@@ -548,7 +585,8 @@ export function DashboardPageView({
                 />
               ) : null}
 
-              {selectedKpi === 'progress' &&
+              {!detailLoading &&
+              selectedKpi === 'progress' &&
               journeyBands &&
               journeyBands.length > 0 ? (
                 <JourneyBands
@@ -558,7 +596,8 @@ export function DashboardPageView({
                 />
               ) : null}
 
-              {contentSummary &&
+              {!detailLoading &&
+              contentSummary &&
               contentBars &&
               contentBars.length > 0 &&
               onSelectContentKey ? (
@@ -570,7 +609,7 @@ export function DashboardPageView({
                 />
               ) : null}
 
-              {selectedKpi === 'accuracy' ? (
+              {!detailLoading && selectedKpi === 'accuracy' ? (
                 <>
                   {activityMatrix && activityMatrix.cells.length > 0 ? (
                     <section

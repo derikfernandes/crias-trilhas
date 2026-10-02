@@ -430,6 +430,15 @@ export type DashboardPageViewProps = {
   agentUsageLoading: boolean
   /** Resposta OK sem campo agent_usage (não confundir com empty real). */
   agentUsageUnavailable?: boolean
+  /**
+   * Dispara carga sob demanda (meta + mode=full) no primeiro clique num KPI.
+   * Aditivo — omitir mantém comportamento só de UI.
+   */
+  onRequestKpiDetail?: () => void
+  /** Progresso/acerto ainda calculando após pedir detalhe. */
+  progressionKpisLoading?: boolean
+  /** Painel de detalhe aguardando meta/full. */
+  detailLoading?: boolean
   selectedAgentTrailId: string | null
   onSelectAgentTrailId: (trailId: string | null) => void
   selectedAgentStudents: DashboardAgentStudentLink[]

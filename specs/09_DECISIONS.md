@@ -62,6 +62,10 @@ Decisões:
 3. O painel **não** deve baixar `conversation_logs` brutos no browser para
    montar essas métricas; em falha do endpoint, erro + retry.
 4. Não inventar agentes sem `trail_id` confirmado pelo produto.
+5. Extensão aditiva `mode=kpis` | `mode=full` (default = full omitido): a
+   Visão geral abre com `kpis` e só pede `full` + stages/questões ao clicar
+   num indicador. Clientes do `main` sem `mode` continuam no contrato
+   histórico.
 
 ## Decisão 10 — Visão geral = protótipo HTML, sem alterar o banco
 

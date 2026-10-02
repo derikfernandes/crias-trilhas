@@ -42,8 +42,11 @@ Query opcional:
 
 - `period_days` — `0` (padrão, todo o período), `7` ou `30`. Filtra logs
   pela data de criação (`created_at` / `created_at_brasilia`).
+- `mode` — omitir/`full` (padrão, resposta histórica) ou `kpis` (payload
+  leve: `student_count`, `active_student_count`, `agent_usage`; **sem**
+  `students` / `trail_ids`). Ver `04_API_CONTRACT.md`.
 
-Resposta adicional:
+Resposta adicional (presente em `full` e em `kpis`):
 
 ```json
 {
@@ -97,9 +100,15 @@ Regras:
   exibir erro + retry.
 - Onde realtime não for crítico (stages, questões, e dados base do
   dashboard), preferir `getDocs` one-shot em vez de `onSnapshot`.
-- Loading: gate do dashboard permanece até o summary chegar
-  (`!initialLogsLoaded`); refetch de período mantém último snapshot + badge
-  “Atualizando…”.
+- **Carga em duas fases (Visão geral):**
+  1. Abertura: Firestore (alunos/trilhas/student_trails) +
+     `GET …/dashboard_summary?mode=kpis` → libera empty state + 4 cards
+     (ativos + tutores; progresso/acerto pedem o full).
+  2. Ao clicar num indicador: stages/questões +
+     `GET …/dashboard_summary` (`mode=full` / omitido) para painéis e
+     % de progresso/acerto.
+- Loading: gate inicial até `mode=kpis` (`!initialKpisLoaded`); refetch de
+  período nos KPIs mantém último snapshot + badge “Atualizando…”.
 
 ## 5. UI — bloco “Tutores de IA” (tab Alunos)
 

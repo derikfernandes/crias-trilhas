@@ -187,9 +187,12 @@ describe('DashboardPageView — accordion de KPIs', () => {
 
   it('ao clicar em Interações com tutores, abre Conversas com os tutores', async () => {
     const user = userEvent.setup()
+    const onRequestKpiDetail = vi.fn()
     render(
       <MemoryRouter>
-        <DashboardPageView {...baseProps()} />
+        <DashboardPageView
+          {...baseProps({ onRequestKpiDetail })}
+        />
       </MemoryRouter>,
     )
 
@@ -199,6 +202,7 @@ describe('DashboardPageView — accordion de KPIs', () => {
     expect(tutorsBtn).toBeTruthy()
     await user.click(tutorsBtn!)
 
+    expect(onRequestKpiDetail).toHaveBeenCalled()
     expect(screen.getByTestId('agent-usage-section')).toBeInTheDocument()
     expect(
       screen.getByRole('heading', { name: 'Conversas com os tutores' }),

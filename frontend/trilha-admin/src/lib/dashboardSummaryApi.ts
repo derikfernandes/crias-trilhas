@@ -5,6 +5,10 @@
  * O endpoint devolve um formato compacto (trilhas referenciadas por índice e
  * chaves "trailIdx|stage|question"); aqui as chaves são expandidas para o
  * formato que o dashboard já usava: "trailId|stage|question".
+ *
+ * Modos (aditivo; omitir / full = contrato histórico do main):
+ * - full: progressão + agent_usage
+ * - kpis: contagens + agent_usage (sem mapa students)
  */
 
 import {
@@ -15,11 +19,21 @@ import {
   type AgentUsageView,
 } from './agentUsage'
 
+export type DashboardSummaryMode = 'full' | 'kpis'
+
 export type DashboardLogSummary = {
   doneByStudent: Map<string, Set<string>>
   answerMap: Map<string, string>
   agentUsage: AgentUsageView
   /** False quando a resposta OK omite `agent_usage` (deploy antigo / contrato incompleto). */
+  agentUsagePresent: boolean
+}
+
+export type DashboardKpisSummary = {
+  mode: 'kpis'
+  studentCount: number
+  activeStudentCount: number
+  agentUsage: AgentUsageView
   agentUsagePresent: boolean
 }
 
@@ -54,6 +68,10 @@ type AgentUsageApiSeries = {
 }
 
 type DashboardSummaryResponse = {
+  mode?: string
+  institution_id?: string
+  student_count?: number
+  active_student_count?: number
   trail_ids?: string[]
   students?: Record<
     string,
@@ -189,14 +207,19 @@ function parseAgentUsage(
   }
 }
 
-export async function fetchDashboardLogSummary(
+async function fetchDashboardSummaryRaw(
   institutionId: string,
-  periodDays: AgentUsagePeriodDays = 0,
-): Promise<DashboardLogSummary> {
+  periodDays: AgentUsagePeriodDays,
+  mode: DashboardSummaryMode,
+): Promise<DashboardSummaryResponse> {
   const url = new URL('/api/dashboard_summary', resolveApiBaseUrl())
   url.searchParams.set('institution_id', institutionId)
   if (periodDays > 0) {
     url.searchParams.set('period_days', String(periodDays))
+  }
+  // Omitir mode=full: URL idêntica ao contrato histórico do main.
+  if (mode !== 'full') {
+    url.searchParams.set('mode', mode)
   }
 
   const res = await fetch(url.toString(), {
@@ -217,11 +240,60 @@ export async function fetchDashboardLogSummary(
     throw new Error(message)
   }
 
+  if (!body || typeof body !== 'object') {
+    throw new Error(
+      'Resposta inválida de /api/dashboard_summary (endpoint indisponível?).',
+    )
+  }
+
+  return body
+}
+
+/** Payload leve para os cards iniciais (mode=kpis). */
+export async function fetchDashboardKpisSummary(
+  institutionId: string,
+  periodDays: AgentUsagePeriodDays = 0,
+): Promise<DashboardKpisSummary> {
+  const body = await fetchDashboardSummaryRaw(
+    institutionId,
+    periodDays,
+    'kpis',
+  )
+
+  if (body.mode !== 'kpis' || typeof body.student_count !== 'number') {
+    throw new Error(
+      'Resposta inválida de /api/dashboard_summary?mode=kpis (endpoint antigo?).',
+    )
+  }
+
+  return {
+    mode: 'kpis',
+    studentCount: body.student_count,
+    activeStudentCount:
+      typeof body.active_student_count === 'number'
+        ? body.active_student_count
+        : body.student_count,
+    agentUsage: parseAgentUsage(body.agent_usage),
+    agentUsagePresent:
+      body.agent_usage != null && typeof body.agent_usage === 'object',
+  }
+}
+
+/** Summary completo (mode=full / default). Contrato histórico. */
+export async function fetchDashboardLogSummary(
+  institutionId: string,
+  periodDays: AgentUsagePeriodDays = 0,
+): Promise<DashboardLogSummary> {
+  const body = await fetchDashboardSummaryRaw(
+    institutionId,
+    periodDays,
+    'full',
+  )
+
   // Sem o endpoint (ex.: Vite dev ou deploy antigo), o fallback de SPA devolve
   // 200 com index.html. Valida a forma da resposta para não tratar isso como
   // "sem dados".
   if (
-    !body ||
     typeof body.students !== 'object' ||
     body.students === null ||
     !Array.isArray(body.trail_ids)
@@ -235,7 +307,7 @@ export async function fetchDashboardLogSummary(
   const doneByStudent = new Map<string, Set<string>>()
   const answerMap = new Map<string, string>()
 
-  for (const [studentId, entry] of Object.entries(body?.students ?? {})) {
+  for (const [studentId, entry] of Object.entries(body.students ?? {})) {
     const done = new Set<string>()
     for (const [compactKey, answer] of Object.entries(entry.answers ?? {})) {
       const key = expandKey(compactKey, trailIds)
