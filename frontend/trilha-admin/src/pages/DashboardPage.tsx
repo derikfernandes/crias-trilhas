@@ -42,7 +42,10 @@ import {
   snapshotToTrailStageQuestion,
   TRAIL_STAGE_QUESTIONS_COLLECTION,
 } from '../lib/trailStageQuestionFirestore'
-import { fetchDashboardLogSummary } from '../lib/dashboardSummaryApi'
+import {
+  fetchDashboardKpisSummary,
+  fetchDashboardLogSummary,
+} from '../lib/dashboardSummaryApi'
 import {
   buildForcedCompletionLookup,
   collectForcedCompletions,
@@ -55,6 +58,8 @@ import { loadXlsx } from '../lib/loadXlsx'
 import { studentPath, trailPath } from '../lib/paths'
 import { usePermissions } from '../hooks/usePermissions'
 import { situationFromProgress } from '../lib/studentSituation'
+import { pickContentExerciseExtrema } from '../lib/contentExerciseExtrema'
+import type { ContentExercisePick } from '../lib/contentExerciseExtrema'
 import type { Institution } from '../types/institution'
 import type { Student } from '../types/student'
 import type { StudentTrail } from '../types/studentTrail'
@@ -265,10 +270,11 @@ function scoreStudentFromAnswerMap(
 }
 
 const DATA_SOURCES = 3
-/** Stages e questões (carregados por trilha) também entram no gate de loading. */
-const META_SOURCES = 2
-/** Passos de progresso: fontes de dados + metadados + 1 passo de métricas (logs). */
-const TOTAL_LOAD_STEPS = DATA_SOURCES + META_SOURCES + 1
+/**
+ * Gate inicial da Visão geral: alunos/trilhas + mode=kpis.
+ * Meta + summary full só depois do primeiro clique num KPI.
+ */
+const INITIAL_LOAD_STEPS = DATA_SOURCES + 1
 
 const EMPTY_LOG_AGGREGATES: LogAggregates = {
   doneByStudent: new Map(),
@@ -535,7 +541,7 @@ export function DashboardPage() {
   const [loadingMeta, setLoadingMeta] = useState(false)
   const [, setLoadingLogs] = useState(false)
   const [loadStepsDone, setLoadStepsDone] = useState(0)
-  const [loadStepsTotal, setLoadStepsTotal] = useState(TOTAL_LOAD_STEPS)
+  const [loadStepsTotal, setLoadStepsTotal] = useState(INITIAL_LOAD_STEPS)
   const [loadPercent, setLoadPercent] = useState(0)
   const [loadLabel, setLoadLabel] = useState('')
   const [dataError, setDataError] = useState<string | null>(null)
@@ -550,10 +556,16 @@ export function DashboardPage() {
   >(null)
   const [agentUsageLoading, setAgentUsageLoading] = useState(false)
   const [agentUsagePresent, setAgentUsagePresent] = useState(true)
-  const [initialLogsLoaded, setInitialLogsLoaded] = useState(false)
-  const initialLogsLoadedRef = useRef(false)
+  /** mode=kpis chegou — libera empty state + cards. */
+  const [initialKpisLoaded, setInitialKpisLoaded] = useState(false)
+  const initialKpisLoadedRef = useRef(false)
+  /** Usuário pediu detalhe (clique num KPI) — dispara meta + mode=full. */
+  const [detailRequested, setDetailRequested] = useState(false)
+  const [fullDetailLoaded, setFullDetailLoaded] = useState(false)
+  const fullDetailLoadedRef = useRef(false)
+  const [fullDetailLoading, setFullDetailLoading] = useState(false)
   const dashboardLoadStartedAtRef = useRef(0)
-  const loadProgressRef = useRef({ done: 0, total: TOTAL_LOAD_STEPS })
+  const loadProgressRef = useRef({ done: 0, total: INITIAL_LOAD_STEPS })
   const loadTargetPercentRef = useRef(0)
 
   const computeLoadPercent = (done: number, total: number, complete = false) => {
@@ -579,6 +591,20 @@ export function DashboardPage() {
   const [pctMin, setPctMin] = useState(0)
   const [pctMax, setPctMax] = useState(100)
   const [selectedGrade, setSelectedGrade] = useState<string | null>(null)
+  const [selectedSubject, setSelectedSubject] = useState<string | null>(null)
+  const [selectedTrailId, setSelectedTrailId] = useState<string | null>(null)
+  const [selectedContentKey, setSelectedContentKey] = useState<string | null>(
+    null,
+  )
+  const [opportunityTab, setOpportunityTab] = useState<'err' | 'duv' | 'hit'>(
+    'err',
+  )
+  const [rankingWeights, setRankingWeights] = useState({
+    progress: 100 / 3,
+    interact: 100 / 3,
+    accuracy: 100 / 3,
+  })
+  const [showAllRanking, setShowAllRanking] = useState(false)
   const [selectedMatrixCellKey, setSelectedMatrixCellKey] = useState<
     string | null
   >(null)
@@ -678,34 +704,41 @@ export function DashboardPage() {
         setLoadingData(false)
         setLoadingMeta(false)
         setLoadingLogs(false)
-        setInitialLogsLoaded(false)
-        initialLogsLoadedRef.current = false
+        setInitialKpisLoaded(false)
+        initialKpisLoadedRef.current = false
+        setDetailRequested(false)
+        setFullDetailLoaded(false)
+        fullDetailLoadedRef.current = false
+        setFullDetailLoading(false)
         setAgentUsageLoading(false)
         setSelectedAgentTrailId(null)
         setLoadStepsDone(0)
-        setLoadStepsTotal(TOTAL_LOAD_STEPS)
-        loadProgressRef.current = { done: 0, total: TOTAL_LOAD_STEPS }
+        setLoadStepsTotal(INITIAL_LOAD_STEPS)
+        loadProgressRef.current = { done: 0, total: INITIAL_LOAD_STEPS }
         loadTargetPercentRef.current = 0
         setLoadPercent(0)
         setLoadLabel('')
         return
       }
 
-      loadProgressRef.current = { done: 0, total: TOTAL_LOAD_STEPS }
+      loadProgressRef.current = { done: 0, total: INITIAL_LOAD_STEPS }
       loadTargetPercentRef.current = 0
       dashboardLoadStartedAtRef.current = performance.now()
       setLoadingData(true)
-      // Evita frame com dashboard zerado entre o fim do loadingData e o início
-      // dos efeitos de metadados/logs.
-      setLoadingMeta(true)
+      // Meta/full só sob demanda (clique no KPI). Gate inicial = base + kpis.
+      setLoadingMeta(false)
       setLoadingLogs(true)
-      setInitialLogsLoaded(false)
-      initialLogsLoadedRef.current = false
+      setInitialKpisLoaded(false)
+      initialKpisLoadedRef.current = false
+      setDetailRequested(false)
+      setFullDetailLoaded(false)
+      fullDetailLoadedRef.current = false
+      setFullDetailLoading(false)
       setAgentUsageLoading(false)
       setSelectedAgentTrailId(null)
       setLogsError(null)
       setLoadStepsDone(0)
-      setLoadStepsTotal(TOTAL_LOAD_STEPS)
+      setLoadStepsTotal(INITIAL_LOAD_STEPS)
       setLoadPercent(0)
       setLoadLabel('Carregando alunos e trilhas…')
       const dbOk = db
@@ -791,8 +824,7 @@ export function DashboardPage() {
     [trails],
   )
 
-  // Stages e questões filtrados pelas trilhas da instituição (em chunks de 30
-  // IDs por limitação do operador "in"), em vez de baixar as coleções inteiras.
+  // Stages e questões: só após o primeiro clique num indicador (detailRequested).
   // One-shot (getDocs): conteúdo muda pouco durante a sessão do dashboard.
   useEffect(() => {
     let cancelled = false
@@ -804,19 +836,12 @@ export function DashboardPage() {
         setLoadingMeta(false)
         return
       }
-      if (loadingData) return
+      if (!detailRequested || loadingData) return
 
       const dbOk = db
       const trailIds = trailIdsKey ? trailIdsKey.split('\0') : []
 
-      loadProgressRef.current.done = Math.min(
-        loadProgressRef.current.done,
-        DATA_SOURCES,
-      )
-
       const metaDone = (source: 'stages' | 'questions') => {
-        loadProgressRef.current.done += 1
-        syncLoadProgress('Carregando conteúdo das trilhas…')
         if (source === 'questions') {
           setLoadingMeta(false)
         }
@@ -880,10 +905,9 @@ export function DashboardPage() {
       cancelled = true
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedId, trailIdsKey, loadingData])
+  }, [selectedId, trailIdsKey, loadingData, detailRequested])
 
-  // Métricas dos alunos + uso de agentes: somente /api/dashboard_summary.
-  // Sem fallback que baixa conversation_logs no browser.
+  // Gate inicial: mode=kpis (agent_usage + contagens). Sem mapa students.
   useEffect(() => {
     let cancelled = false
 
@@ -896,44 +920,112 @@ export function DashboardPage() {
     const institutionId = selectedId
     const studentIds = studentIdsKey ? studentIdsKey.split('\0') : []
     if (studentIds.length === 0) {
-      setLogAggregates(EMPTY_LOG_AGGREGATES)
       setAgentUsage({ ...EMPTY_AGENT_USAGE, periodDays: agentPeriodDays })
       setAgentUsagePresent(true)
       setLogsError(null)
       setLoadingLogs(false)
       setAgentUsageLoading(false)
-      setInitialLogsLoaded(true)
-      initialLogsLoadedRef.current = true
-      loadProgressRef.current.done = loadProgressRef.current.total
+      setInitialKpisLoaded(true)
+      initialKpisLoadedRef.current = true
+      loadProgressRef.current.done = INITIAL_LOAD_STEPS
+      loadProgressRef.current.total = INITIAL_LOAD_STEPS
       syncLoadProgress('', { complete: true })
       return () => {
         cancelled = true
       }
     }
 
-    const refreshingAgentsOnly = initialLogsLoadedRef.current
+    const refreshing = initialKpisLoadedRef.current
     setLoadingLogs(true)
-    if (refreshingAgentsOnly) setAgentUsageLoading(true)
+    if (refreshing) setAgentUsageLoading(true)
     setLogsError(null)
-    loadProgressRef.current.done = Math.min(
-      loadProgressRef.current.done,
-      DATA_SOURCES + META_SOURCES,
-    )
-    if (!refreshingAgentsOnly) {
-      syncLoadProgress('Calculando métricas dos alunos…')
+    if (!refreshing) {
+      loadProgressRef.current.done = Math.min(
+        loadProgressRef.current.done,
+        DATA_SOURCES,
+      )
+      syncLoadProgress('Carregando indicadores…')
     }
 
-    const finishProgress = () => {
-      loadProgressRef.current.done = Math.min(
-        loadProgressRef.current.done + 1,
-        loadProgressRef.current.total,
-      )
-      const complete =
-        loadProgressRef.current.done >= loadProgressRef.current.total
-      syncLoadProgress(complete ? '' : 'Calculando métricas dos alunos…', {
-        complete,
-      })
+    async function run() {
+      try {
+        const kpis = await fetchDashboardKpisSummary(
+          institutionId,
+          agentPeriodDays,
+        )
+        if (cancelled) return
+        setAgentUsage(kpis.agentUsage)
+        setAgentUsagePresent(kpis.agentUsagePresent)
+        setInitialKpisLoaded(true)
+        initialKpisLoadedRef.current = true
+        if (!refreshing) {
+          loadProgressRef.current.done = INITIAL_LOAD_STEPS
+          loadProgressRef.current.total = INITIAL_LOAD_STEPS
+          syncLoadProgress('', { complete: true })
+        }
+      } catch (err) {
+        if (cancelled) return
+        setLogsError(
+          err instanceof Error
+            ? err.message
+            : 'Erro ao carregar métricas dos alunos.',
+        )
+        if (!refreshing) {
+          setAgentUsage({ ...EMPTY_AGENT_USAGE, periodDays: agentPeriodDays })
+          // Libera o gate para o banner de erro + retry ficarem acessíveis.
+          setInitialKpisLoaded(true)
+          initialKpisLoadedRef.current = true
+          loadProgressRef.current.done = INITIAL_LOAD_STEPS
+          loadProgressRef.current.total = INITIAL_LOAD_STEPS
+          syncLoadProgress('', { complete: true })
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingLogs(false)
+          setAgentUsageLoading(false)
+        }
+      }
     }
+
+    void run()
+
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    selectedId,
+    studentIdsKey,
+    loadingData,
+    logsRetryKey,
+    agentPeriodDays,
+  ])
+
+  // Detalhe sob demanda: mode=full (progressão) após clique num KPI.
+  useEffect(() => {
+    let cancelled = false
+
+    if (!db || !selectedId || loadingData || !detailRequested) {
+      return () => {
+        cancelled = true
+      }
+    }
+
+    const institutionId = selectedId
+    const studentIds = studentIdsKey ? studentIdsKey.split('\0') : []
+    if (studentIds.length === 0) {
+      setLogAggregates(EMPTY_LOG_AGGREGATES)
+      setFullDetailLoaded(true)
+      fullDetailLoadedRef.current = true
+      setFullDetailLoading(false)
+      return () => {
+        cancelled = true
+      }
+    }
+
+    const refreshing = fullDetailLoadedRef.current
+    setFullDetailLoading(true)
+    if (refreshing) setAgentUsageLoading(true)
 
     async function run() {
       try {
@@ -946,32 +1038,26 @@ export function DashboardPage() {
           doneByStudent: summary.doneByStudent,
           answerMap: summary.answerMap,
         })
+        // Full também traz agent_usage — mantém KPI/tutores alinhados ao período.
         setAgentUsage(summary.agentUsage)
         setAgentUsagePresent(summary.agentUsagePresent)
-        setLoadingLogs(false)
-        setAgentUsageLoading(false)
-        setInitialLogsLoaded(true)
-        initialLogsLoadedRef.current = true
-        if (!refreshingAgentsOnly) finishProgress()
+        setFullDetailLoaded(true)
+        fullDetailLoadedRef.current = true
       } catch (err) {
         if (cancelled) return
         setLogsError(
           err instanceof Error
             ? err.message
-            : 'Erro ao carregar métricas dos alunos.',
+            : 'Erro ao carregar detalhes do dashboard.',
         )
-        if (!refreshingAgentsOnly) {
+        if (!refreshing) {
           setLogAggregates(EMPTY_LOG_AGGREGATES)
-          setAgentUsage({ ...EMPTY_AGENT_USAGE, periodDays: agentPeriodDays })
-          // Libera o gate para o banner de erro + retry ficarem acessíveis.
-          setInitialLogsLoaded(true)
-          initialLogsLoadedRef.current = true
-          loadProgressRef.current.done = loadProgressRef.current.total
-          syncLoadProgress('', { complete: true })
         }
-        // Refetch de período: mantém último snapshot (keep-previous).
-        setLoadingLogs(false)
-        setAgentUsageLoading(false)
+      } finally {
+        if (!cancelled) {
+          setFullDetailLoading(false)
+          setAgentUsageLoading(false)
+        }
       }
     }
 
@@ -986,6 +1072,7 @@ export function DashboardPage() {
     studentIdsKey,
     trailIdsKey,
     loadingData,
+    detailRequested,
     logsRetryKey,
     agentPeriodDays,
   ])
@@ -1068,6 +1155,81 @@ export function DashboardPage() {
 
   /** Trilhas ativas consideradas nos números da tabela de alunos. */
   const relevantTrails = activeTrails
+
+  // Agregações de exercícios (ranking/oportunidades/conteúdo) só depois do
+  // detalhe sob demanda — evita trabalho pesado na abertura da VG.
+  useEffect(() => {
+    if (!selectedId || loadingData || loadingMeta || !fullDetailLoaded) return
+    if (!questionsDataEnabled) {
+      startQuestionsTransition(() => {
+        setQuestionsDataEnabled(true)
+      })
+    }
+  }, [
+    selectedId,
+    loadingData,
+    loadingMeta,
+    fullDetailLoaded,
+    questionsDataEnabled,
+    startQuestionsTransition,
+  ])
+
+  const subjectTabs = useMemo(() => {
+    const set = new Set<string>()
+    for (const t of activeTrails) {
+      const s = t.subject?.trim()
+      if (s) set.add(s)
+    }
+    return [...set]
+      .sort((a, b) => a.localeCompare(b, 'pt-BR'))
+      .map((s) => ({ id: s, label: s }))
+  }, [activeTrails])
+
+  // Garante matéria/trilha selecionadas quando a lista muda.
+  useEffect(() => {
+    if (subjectTabs.length === 0) {
+      if (selectedSubject !== null) setSelectedSubject(null)
+      if (selectedTrailId !== null) setSelectedTrailId(null)
+      return
+    }
+    const subjectOk =
+      selectedSubject != null &&
+      subjectTabs.some((t) => t.id === selectedSubject)
+    const nextSubject = subjectOk
+      ? selectedSubject!
+      : subjectTabs[0]!.id
+    if (nextSubject !== selectedSubject) {
+      setSelectedSubject(nextSubject)
+    }
+    const trailsForSubject = activeTrails.filter(
+      (t) => (t.subject?.trim() || '') === nextSubject,
+    )
+    if (trailsForSubject.length === 0) {
+      if (selectedTrailId !== null) setSelectedTrailId(null)
+      return
+    }
+    const trailOk =
+      selectedTrailId != null &&
+      trailsForSubject.some((t) => t.id === selectedTrailId)
+    const nextTrail = trailOk
+      ? selectedTrailId!
+      : trailsForSubject[0]!.id
+    if (nextTrail !== selectedTrailId) {
+      setSelectedTrailId(nextTrail)
+    }
+  }, [subjectTabs, activeTrails, selectedSubject, selectedTrailId])
+
+  const scopedTrails = useMemo(() => {
+    if (!selectedSubject) return activeTrails
+    return activeTrails.filter(
+      (t) => (t.subject?.trim() || '') === selectedSubject,
+    )
+  }, [activeTrails, selectedSubject])
+
+  const scopedTrail = useMemo(() => {
+    if (!selectedTrailId) return scopedTrails[0] ?? null
+    return scopedTrails.find((t) => t.id === selectedTrailId) ?? null
+  }, [scopedTrails, selectedTrailId])
 
   /** Stages das trilhas relevantes, para o filtro de seleção (agrupados por trilha). */
   const availableStages = useMemo(() => {
@@ -1346,6 +1508,14 @@ export function DashboardPage() {
       return true
     })
   }, [studentRows, nameFilter, pctMin, pctMax, selectedGrade])
+
+  const scopedStudentRows = useMemo(() => {
+    if (!scopedTrail) return filteredStudentRows
+    return filteredStudentRows.filter((row) => {
+      const enrolled = trailsByStudentIds.get(row.student.id)
+      return enrolled?.has(scopedTrail.id) ?? false
+    })
+  }, [filteredStudentRows, scopedTrail, trailsByStudentIds])
 
   const chartFilteredStudentRows = useMemo(() => {
     if (!studentChartFilter) return filteredStudentRows
@@ -1694,7 +1864,7 @@ export function DashboardPage() {
       stalled: 0,
       notStarted: 0,
     }
-    for (const row of filteredStudentRows) {
+    for (const row of scopedStudentRows) {
       const situation = situationFromProgress({
         status: statusByStudent.get(row.student.id),
         completionPct: row.completionPct,
@@ -1702,23 +1872,48 @@ export function DashboardPage() {
       })
       counts[situation.key] += 1
     }
+    // Ordem do protótipo: Não iniciaram → Início → Meio → Fim → Concluíram.
+    // "Parado 7+" fica só no link do cabeçalho (não entra na barra).
     return [
-      { key: 'completed' as const, label: 'Concluiu', count: counts.completed },
-      { key: 'final' as const, label: 'Final', count: counts.final },
-      { key: 'mid' as const, label: 'Meio', count: counts.mid },
-      { key: 'start' as const, label: 'Início', count: counts.start },
+      {
+        key: 'notStarted' as const,
+        label: 'Não iniciaram',
+        count: counts.notStarted,
+        criterion: '0 conteúdos concluídos',
+      },
+      {
+        key: 'start' as const,
+        label: 'Início',
+        count: counts.start,
+        criterion: '1% a 33% dos conteúdos liberados',
+      },
+      {
+        key: 'mid' as const,
+        label: 'Meio',
+        count: counts.mid,
+        criterion: '34% a 66%',
+      },
+      {
+        key: 'final' as const,
+        label: 'Fim',
+        count: counts.final,
+        criterion: '67% a 99%',
+      },
+      {
+        key: 'completed' as const,
+        label: 'Concluíram',
+        count: counts.completed,
+        criterion: '100% dos conteúdos liberados',
+      },
+      // Contagem usada só pelo link do cabeçalho (filtrada na view).
       {
         key: 'stalled' as const,
         label: 'Parado 7+ dias',
         count: counts.stalled,
-      },
-      {
-        key: 'notStarted' as const,
-        label: 'Não iniciou',
-        count: counts.notStarted,
+        criterion: 'sem interação há 7 dias ou mais',
       },
     ]
-  }, [filteredStudentRows, statusByStudent, lastInteractionByStudent])
+  }, [scopedStudentRows, statusByStudent, lastInteractionByStudent])
 
   const gradeOptions = useMemo(() => {
     const set = new Set<string>()
@@ -2308,8 +2503,10 @@ export function DashboardPage() {
     selectedStageCount < availableStages.length
 
   const isDashboardLoading =
-    Boolean(selectedId) &&
-    (loadingData || loadingMeta || !initialLogsLoaded)
+    Boolean(selectedId) && (loadingData || !initialKpisLoaded)
+
+  const progressionKpisLoading =
+    detailRequested && (fullDetailLoading || loadingMeta || !fullDetailLoaded)
 
   useEffect(() => {
     if (isDashboardLoading) return
@@ -2459,6 +2656,562 @@ export function DashboardPage() {
       }))
   }, [selectedMatrixCellKey, studentAnswerMap, questionsDataEnabled])
 
+  const trailFilterOptions = useMemo(
+    () =>
+      scopedTrails.map((t) => ({
+        id: t.id,
+        label: t.name || t.id,
+      })),
+    [scopedTrails],
+  )
+
+  const scopeSummary = useMemo(() => {
+    const subjectLabel = selectedSubject ?? 'Instituição'
+    const trailLabel = scopedTrail?.name || scopedTrail?.id || '—'
+    let accuracySum = 0
+    let accuracyCount = 0
+    for (const row of scopedStudentRows) {
+      if (row.accuracyPct == null) continue
+      accuracySum += row.accuracyPct
+      accuracyCount += 1
+    }
+    return {
+      studentCount: scopedStudentRows.length,
+      trailCount: scopedTrails.length,
+      accuracyPct:
+        accuracyCount > 0 ? Math.round(accuracySum / accuracyCount) : null,
+      scopeLabel: `${subjectLabel} · ${trailLabel}`,
+    }
+  }, [selectedSubject, scopedTrail, scopedStudentRows, scopedTrails])
+
+  const contentBarsAndSummary = useMemo(() => {
+    if (!scopedTrail) {
+      return {
+        bars: [] as Array<{
+          key: string
+          num: string
+          title: string
+          subtitle?: string
+          completionPct: number | null
+          accuracyPct: number | null
+          completedCount: number
+          enrolledCount: number
+          released: boolean
+          exercises: Array<{
+            key: string
+            label: string
+            prompt: string
+            accuracyPct: number | null
+            note: string
+            href?: string
+          }>
+          trailHref?: string
+        }>,
+        summary: null,
+      }
+    }
+    const trailId = scopedTrail.id
+    const trailHref = trailPath(trailId)
+    const lessonNumbers = trailLessonNumbers(
+      trailId,
+      questionsByTrail,
+      deselectedStages,
+      deselectedQuestions,
+    )
+    const byLesson = groupTopicsByLesson(
+      filterTrailTopicPositions(
+        trailId,
+        questionsByTrail.get(trailId) ?? [],
+        deselectedStages,
+        deselectedQuestions,
+      ),
+    )
+
+    const pillByPos = new Map<string, PillRow>()
+    const pillsByLesson = new Map<number, PillRow[]>()
+    if (questionsDataEnabled) {
+      for (const row of pillRows) {
+        if (row.trailId !== trailId) continue
+        pillByPos.set(`${row.stageNumber}|${row.questionNumber}`, row)
+        const arr = pillsByLesson.get(row.questionNumber) ?? []
+        arr.push(row)
+        pillsByLesson.set(row.questionNumber, arr)
+      }
+    }
+
+    const bars = lessonNumbers.map((lessonNumber) => {
+      const topics = [...(byLesson.get(lessonNumber) ?? [])].sort(
+        (a, b) => a.stage - b.stage,
+      )
+
+      const released = topics.some((p) => {
+        const q = questionByKey.get(`${trailId}|${p.stage}|${p.question}`)
+        return q?.is_released === true
+      })
+
+      let enrolledCount = 0
+      let completedCount = 0
+      let progressSum = 0
+      for (const row of scopedStudentRows) {
+        const enrolled = trailsByStudentIds.get(row.student.id)
+        if (!enrolled?.has(trailId)) continue
+        enrolledCount += 1
+        const studentDone =
+          enrichedDoneByStudent.get(row.student.id) ?? new Set()
+        if (topics.length === 0) continue
+        let doneTopics = 0
+        for (const p of topics) {
+          if (studentDone.has(`${trailId}|${p.stage}|${p.question}`)) {
+            doneTopics += 1
+          }
+        }
+        progressSum += doneTopics / topics.length
+        if (doneTopics === topics.length) completedCount += 1
+      }
+
+      // % médio de tópicos concluídos na aula (visível no gráfico).
+      const completionPct =
+        released && enrolledCount > 0
+          ? Math.round((progressSum / enrolledCount) * 100)
+          : null
+
+      let title = `Aula ${lessonNumber}`
+      for (const p of topics) {
+        const st = stageByKey.get(`${trailId}|${p.stage}`)
+        if (st && st.stage_type !== 'exercise' && st.title?.trim()) {
+          title = st.title.trim()
+          break
+        }
+      }
+      if (title === `Aula ${lessonNumber}`) {
+        for (const p of topics) {
+          const q = questionByKey.get(`${trailId}|${p.stage}|${p.question}`)
+          if (q?.title?.trim()) {
+            title = q.title.trim()
+            break
+          }
+        }
+      }
+
+      // Tópicos “exercício”: stage exercise, gabarito, opções ou resposta agregada.
+      let exerciseTopics = topics.filter((p) => {
+        const st = stageByKey.get(`${trailId}|${p.stage}`)
+        const q = questionByKey.get(`${trailId}|${p.stage}|${p.question}`)
+        const hasGab = !!(q?.correct_option ?? '').trim()
+        const hasOpts = (q?.options?.length ?? 0) > 0
+        const hasPill = pillByPos.has(`${p.stage}|${p.question}`)
+        return (
+          st?.stage_type === 'exercise' || hasGab || hasOpts || hasPill
+        )
+      })
+      if (exerciseTopics.length === 0) exerciseTopics = topics
+
+      let missingGabarito = 0
+      const exercises = exerciseTopics.map((p, idx) => {
+        const q = questionByKey.get(`${trailId}|${p.stage}|${p.question}`)
+        const pill = pillByPos.get(`${p.stage}|${p.question}`)
+        const gabarito = (q?.correct_option ?? '').trim()
+        const annulled = q?.annulled === true
+        if (!annulled && !gabarito) missingGabarito += 1
+        const prompt =
+          (q?.content ?? '').trim() ||
+          (q?.title ?? '').trim() ||
+          `Exercício ${idx + 1}`
+        let note = 'acertaram'
+        let accuracyPct: number | null = pill?.accuracyPct ?? null
+        if (annulled) {
+          note = 'fora do cálculo'
+          accuracyPct = null
+        } else if (!gabarito && !pill) {
+          note = 'sem gabarito'
+          accuracyPct = null
+        } else if (pill == null || pill.total < 1) {
+          note = 'sem respostas'
+          accuracyPct = null
+        }
+        return {
+          key: `${trailId}|${p.stage}|${p.question}`,
+          label: `Exercício ${idx + 1}`,
+          prompt,
+          accuracyPct,
+          note,
+          href: trailHref,
+        }
+      })
+
+      // Acerto da aula = soma de todas as pílulas desta aula (question_number).
+      const lessonPills = pillsByLesson.get(lessonNumber) ?? []
+      let accCorrect = 0
+      let accTotal = 0
+      for (const pill of lessonPills) {
+        accCorrect += pill.correct
+        accTotal += pill.total
+      }
+      const accuracyPct =
+        accTotal > 0 ? Math.round((accCorrect / accTotal) * 100) : null
+
+      const subtitleParts: string[] = []
+      if (exercises.length > 0) {
+        subtitleParts.push(
+          `${exercises.length} exercício${exercises.length === 1 ? '' : 's'}`,
+        )
+      }
+      if (missingGabarito > 0) {
+        subtitleParts.push(`${missingGabarito} sem gabarito`)
+      }
+
+      return {
+        key: `${trailId}|${lessonNumber}`,
+        num: String(lessonNumber).padStart(2, '0'),
+        title,
+        subtitle: released
+          ? subtitleParts.join(' · ') || undefined
+          : 'ainda não liberado',
+        completionPct,
+        accuracyPct,
+        completedCount,
+        enrolledCount,
+        released,
+        exercises,
+        trailHref,
+      }
+    })
+
+    const releasedBars = bars.filter((b) => b.released)
+
+    let progressSum = 0
+    let progressN = 0
+    for (const row of scopedStudentRows) {
+      if (row.completionPct == null) continue
+      progressSum += row.completionPct
+      progressN += 1
+    }
+    const progressAvg =
+      progressN > 0 ? Math.round(progressSum / progressN) : null
+
+    const withAcc = releasedBars
+      .filter((b) => b.accuracyPct != null)
+      .slice()
+      .sort((a, b) => (a.accuracyPct ?? 0) - (b.accuracyPct ?? 0))
+
+    // Min/máx por EXERCÍCIO (não por aula) — evita o mesmo "Conteúdo 86" nos dois cards.
+    const exercisePool: ContentExercisePick[] = []
+    for (const bar of releasedBars) {
+      bar.exercises.forEach((ex, idx) => {
+        if (ex.accuracyPct == null) return
+        const short =
+          ex.prompt.length > 72 ? `${ex.prompt.slice(0, 69)}…` : ex.prompt
+        exercisePool.push({
+          label: short,
+          pct: ex.accuracyPct,
+          note: `Conteúdo ${bar.num} · Ex. ${idx + 1}`,
+          contentKey: bar.key,
+          exKey: ex.key,
+        })
+      })
+    }
+    const { lowest: lowestEx, highest: highestEx } =
+      pickContentExerciseExtrema(exercisePool)
+
+    const accuracyVals = withAcc.map((b) => b.accuracyPct as number)
+    const accuracyAvg =
+      accuracyVals.length === 0
+        ? null
+        : Math.round(
+            accuracyVals.reduce((a, b) => a + b, 0) / accuracyVals.length,
+          )
+
+    const below60Count = bars.reduce(
+      (n, bar) =>
+        n +
+        bar.exercises.filter(
+          (ex) => ex.accuracyPct != null && ex.accuracyPct < 60,
+        ).length,
+      0,
+    )
+
+    return {
+      bars,
+      summary: {
+        progressAvg,
+        accuracyAvg,
+        lowest: lowestEx
+          ? {
+              label: lowestEx.label,
+              pct: lowestEx.pct,
+              note: lowestEx.note,
+              contentKey: lowestEx.contentKey,
+            }
+          : null,
+        highest: highestEx
+          ? {
+              label: highestEx.label,
+              pct: highestEx.pct,
+              note: highestEx.note,
+              contentKey: highestEx.contentKey,
+            }
+          : null,
+        releasedCount: releasedBars.length,
+        totalCount: bars.length,
+        below60Count,
+      },
+    }
+  }, [
+    scopedTrail,
+    questionsByTrail,
+    deselectedStages,
+    deselectedQuestions,
+    scopedStudentRows,
+    trailsByStudentIds,
+    enrichedDoneByStudent,
+    stageByKey,
+    questionByKey,
+    pillRows,
+    questionsDataEnabled,
+  ])
+
+  // Painel de exercícios só abre no clique (não auto-abre).
+  useEffect(() => {
+    setSelectedContentKey(null)
+  }, [selectedTrailId, selectedSubject])
+
+  const crossOpportunityCards = useMemo(() => {
+    if (!questionsDataEnabled || !scopedTrail) return []
+    // Conteúdos com acerto < 65% — sem inventar dúvidas (sem metadata.topic).
+    return contentBarsAndSummary.bars
+      .filter(
+        (b) =>
+          b.released &&
+          b.accuracyPct != null &&
+          b.accuracyPct < 65 &&
+          b.exercises.length > 0,
+      )
+      .slice()
+      .sort((a, b) => (a.accuracyPct ?? 0) - (b.accuracyPct ?? 0))
+      .slice(0, 4)
+      .map((b) => ({
+        key: b.key,
+        aula: `Conteúdo ${b.num} · ${b.title}`,
+        tema: b.title,
+        accuracyPct: b.accuracyPct as number,
+        doubtsLabel: '—',
+      }))
+  }, [contentBarsAndSummary.bars, questionsDataEnabled, scopedTrail])
+
+  const opportunityRows = useMemo(() => {
+    if (opportunityTab === 'duv') return []
+    if (!questionsDataEnabled || !scopedTrail) return []
+    const trailId = scopedTrail.id
+
+    const rows = pillRows
+      .filter((r) => r.trailId === trailId && r.total >= 1)
+      .slice()
+    rows.sort((a, b) =>
+      opportunityTab === 'err'
+        ? a.accuracyPct - b.accuracyPct || b.total - a.total
+        : b.accuracyPct - a.accuracyPct || b.total - a.total,
+    )
+
+    const lessonTitle = (lessonNumber: number) => {
+      const bar = contentBarsAndSummary.bars.find(
+        (b) => b.key === `${trailId}|${lessonNumber}`,
+      )
+      return bar?.title || `Aula ${lessonNumber}`
+    }
+
+    const mostWrongDetail = (
+      stageNumber: number,
+      questionNumber: number,
+    ): string | null => {
+      const q = questionByKey.get(
+        `${trailId}|${stageNumber}|${questionNumber}`,
+      )
+      const counts = new Map<string, number>()
+      const suffix = `|${trailId}|${stageNumber}|${questionNumber}`
+      for (const [answerKey, answer] of studentAnswerMap) {
+        if (!answerKey.endsWith(suffix) || !answer.trim()) continue
+        if (answersMatch(answer, q?.correct_option ?? '')) continue
+        const letter = formatGabaritoLetter(answer)
+        if (!letter || letter === '—') continue
+        counts.set(letter, (counts.get(letter) ?? 0) + 1)
+      }
+      let best: string | null = null
+      let bestN = 0
+      for (const [letter, n] of counts) {
+        if (n > bestN) {
+          best = letter
+          bestN = n
+        }
+      }
+      if (!best) return null
+      const opt = q?.options?.find(
+        (o) => formatGabaritoLetter(o.key) === best,
+      )
+      const optText = (opt?.text ?? '').trim()
+      return optText
+        ? `Mais marcada entre as erradas: ${best} (${optText})`
+        : `Mais marcada entre as erradas: ${best}`
+    }
+
+    // Índice do exercício dentro da aula (só stages exercise).
+    const exIndexInLesson = (stageNumber: number, questionNumber: number) => {
+      const topics = (
+        groupTopicsByLesson(
+          filterTrailTopicPositions(
+            trailId,
+            questionsByTrail.get(trailId) ?? [],
+            deselectedStages,
+            deselectedQuestions,
+          ),
+        ).get(questionNumber) ?? []
+      )
+        .filter((p) => {
+          const st = stageByKey.get(`${trailId}|${p.stage}`)
+          return st?.stage_type === 'exercise'
+        })
+        .sort((a, b) => a.stage - b.stage)
+      const idx = topics.findIndex((p) => p.stage === stageNumber)
+      return idx >= 0 ? idx + 1 : 1
+    }
+
+    return rows.slice(0, 5).map((row, idx) => {
+      const wrongPct = Math.max(0, 100 - row.accuracyPct)
+      const hit = opportunityTab === 'hit'
+      const detail = hit
+        ? undefined
+        : mostWrongDetail(row.stageNumber, row.questionNumber) ??
+          undefined
+      const prompt =
+        (row.content || '').trim() || row.title || 'Exercício'
+      const exN = exIndexInLesson(row.stageNumber, row.questionNumber)
+      return {
+        rank: String(idx + 1).padStart(2, '0'),
+        tag: lessonTitle(row.questionNumber),
+        tag2: `Conteúdo ${String(row.questionNumber).padStart(2, '0')} · Ex. ${exN}`,
+        title: prompt,
+        detail,
+        value: hit ? `${row.accuracyPct}%` : `${wrongPct}%`,
+        valueSub: hit ? 'acertaram' : 'erraram',
+        tone: (hit ? 'hit' : 'err') as 'err' | 'hit',
+        href: trailPath(row.trailId),
+      }
+    })
+  }, [
+    opportunityTab,
+    questionsDataEnabled,
+    scopedTrail,
+    pillRows,
+    contentBarsAndSummary.bars,
+    questionByKey,
+    studentAnswerMap,
+    questionsByTrail,
+    deselectedStages,
+    deselectedQuestions,
+    stageByKey,
+  ])
+
+  const opportunityNote = useMemo(() => {
+    if (opportunityTab === 'duv') {
+      return 'Dúvidas por tema ainda não estão disponíveis — o banco atual não grava tópico da conversa.'
+    }
+    if (opportunityTab === 'err') {
+      return 'Exercícios desta trilha com mais alunos errando. Clique para ver as respostas.'
+    }
+    return 'Exercícios desta trilha que a turma já domina.'
+  }, [opportunityTab])
+
+  const messagesByStudent = useMemo(() => {
+    const map = new Map<string, number>()
+    for (const agent of agentUsage.agents) {
+      if (agent.studentStats?.length) {
+        for (const st of agent.studentStats) {
+          map.set(
+            st.studentId,
+            (map.get(st.studentId) ?? 0) + st.messages,
+          )
+        }
+      } else {
+        // API antiga: sem stats por aluno — não inventa mensagens.
+        for (const id of agent.studentIds) {
+          if (!map.has(id)) map.set(id, 0)
+        }
+      }
+    }
+    return map
+  }, [agentUsage])
+
+  const rankingRows = useMemo(() => {
+    const rows = scopedStudentRows
+    if (rows.length === 0) return []
+    const msgs = rows.map(
+      (r) => messagesByStudent.get(r.student.id) ?? 0,
+    )
+    const avgMsgs =
+      msgs.reduce((a, b) => a + b, 0) / Math.max(1, msgs.length)
+
+    const scored = rows.map((row) => {
+      const progressPct = row.completionPct
+      const accuracyPct = row.accuracyPct
+      const messages = messagesByStudent.get(row.student.id) ?? 0
+      const interactNorm = Math.min(
+        100,
+        avgMsgs > 0 ? (50 * messages) / avgMsgs : 0,
+      )
+      const p = progressPct ?? 0
+      const a = accuracyPct ?? 0
+      const wp = rankingWeights.progress / 100
+      const wi = rankingWeights.interact / 100
+      const wa = rankingWeights.accuracy / 100
+      const score = Math.round(wp * p + wi * interactNorm + wa * a)
+      const rawP = wp * p
+      const rawI = wi * interactNorm
+      const rawA = wa * a
+      const rawSum = rawP + rawI + rawA || 1
+      const delta = messages - avgMsgs
+      const deltaPct =
+        avgMsgs > 0 ? Math.round((delta / avgMsgs) * 100) : 0
+      return {
+        studentId: row.student.id,
+        name: row.student.name || row.student.id,
+        href: studentPath(row.student.id),
+        meta: [
+          row.student.school_grade?.trim() || null,
+          scopedTrail?.name || null,
+        ]
+          .filter(Boolean)
+          .join(' · '),
+        progressPct,
+        accuracyPct,
+        messages,
+        messagesVsAvgLabel:
+          delta >= 0
+            ? `+${deltaPct}% vs média`
+            : `${deltaPct}% vs média`,
+        messagesPositive: delta >= 0,
+        score,
+        segProgress: Math.round((rawP / rawSum) * 100),
+        segInteract: Math.round((rawI / rawSum) * 100),
+        segAccuracy: Math.round((rawA / rawSum) * 100),
+      }
+    })
+    scored.sort((a, b) => b.score - a.score || b.messages - a.messages)
+    return scored
+  }, [
+    scopedStudentRows,
+    messagesByStudent,
+    rankingWeights,
+    scopedTrail,
+  ])
+
+  const rankingScopeLabel = useMemo(() => {
+    const parts = [
+      selectedSubject ?? 'todas as matérias',
+      scopedTrail?.name || 'todas as trilhas',
+      selectedGrade ? `série ${selectedGrade}` : 'todas as séries',
+    ]
+    return parts.join(' · ')
+  }, [selectedSubject, scopedTrail, selectedGrade])
+
   const paginatedStudentRowsView = paginatedStudentRows.map((row) => {
     const situation = situationFromProgress({
       status: statusByStudent.get(row.student.id),
@@ -2572,6 +3325,85 @@ export function DashboardPage() {
     })
   })()
 
+  const tutorSubject = (() => {
+    const subj = selectedSubject?.trim()
+    if (!subj) return null
+    const agent = agentUsage.agents.find(
+      (a) =>
+        a.label.trim().toLowerCase() === subj.toLowerCase() ||
+        a.trailId.toLowerCase().includes(subj.toLowerCase()),
+    )
+    if (!agent || agent.messages <= 0) return null
+
+    const days =
+      agentPeriodDays === 7 ? 7 : agentPeriodDays === 30 ? 30 : 120
+    const poolSize = Math.max(1, scopedStudentRows.length)
+    const coveragePct =
+      Math.round((agent.uniqueStudents / poolSize) * 1000) / 10
+    const messagesPerDay = agent.messages / days
+    const perStudentPerDay =
+      agent.uniqueStudents > 0
+        ? agent.messages / agent.uniqueStudents / days
+        : 0
+    const perStudentPeriod =
+      agent.uniqueStudents > 0
+        ? agent.messages / agent.uniqueStudents
+        : 0
+
+    const byId = new Map(students.map((s) => [s.id, s]))
+    const trailIds = agent.trailIds?.length ? agent.trailIds : [agent.trailId]
+    const statsById = new Map(
+      (agent.studentStats ?? []).map((st) => [st.studentId, st]),
+    )
+    const ids =
+      agent.studentStats && agent.studentStats.length > 0
+        ? agent.studentStats.map((st) => st.studentId)
+        : agent.studentIds
+    const topStudents = ids
+      .map((id) => {
+        const student = byId.get(id)
+        const st = statsById.get(id)
+        const grade = student?.school_grade?.trim()
+        return {
+          id,
+          name: student?.name?.trim() || id,
+          href: studentPath(id, {
+            agentTrailId: agent.trailId,
+            agentTrailIds: trailIds,
+          }),
+          messages: st?.messages ?? 0,
+          lastActivityLabel: [
+            grade || null,
+            st?.lastActivity
+              ? `última conversa ${formatAgentLastActivity(st.lastActivity)}`
+              : null,
+          ]
+            .filter(Boolean)
+            .join(' · ') || formatAgentLastActivity(st?.lastActivity ?? null),
+        }
+      })
+      .sort((a, b) => b.messages - a.messages || a.name.localeCompare(b.name, 'pt-BR'))
+
+    const periodLabel =
+      agentPeriodDays === 7
+        ? 'últimos 7 dias'
+        : agentPeriodDays === 30
+          ? 'últimos 30 dias'
+          : 'todo o período'
+
+    return {
+      subjectLabel: subj,
+      periodLabel,
+      messages: agent.messages,
+      students: agent.uniqueStudents,
+      coveragePct,
+      messagesPerDay,
+      perStudentPerDay,
+      perStudentPeriod,
+      topStudents,
+    }
+  })()
+
   return (
     <DashboardPageView
       loadingInst={loadingInst}
@@ -2582,9 +3414,14 @@ export function DashboardPage() {
         setStudentChartFilter(null)
         setActiveTab('students')
         setQuestionsDataEnabled(false)
-        setAgentPeriodDays(30)
+        setAgentPeriodDays(0)
         setSelectedAgentTrailId(null)
         setSelectedGrade(null)
+        setSelectedSubject(null)
+        setSelectedTrailId(null)
+        setSelectedContentKey(null)
+        setOpportunityTab('err')
+        setShowAllRanking(false)
         setSelectedMatrixCellKey(null)
         setPillSearch('')
         setPillTrailFilter('')
@@ -2615,11 +3452,21 @@ export function DashboardPage() {
       logsError={logsError}
       onRetryLogs={() => {
         // Reabre o gate no retry após falha de first-load (banner acessível).
-        initialLogsLoadedRef.current = false
-        setInitialLogsLoaded(false)
+        initialKpisLoadedRef.current = false
+        setInitialKpisLoaded(false)
+        fullDetailLoadedRef.current = false
+        setFullDetailLoaded(false)
         setLogsError(null)
         setLogsRetryKey((k) => k + 1)
       }}
+      onRequestKpiDetail={() => {
+        if (!detailRequested) setDetailRequested(true)
+      }}
+      progressionKpisLoading={progressionKpisLoading}
+      detailLoading={
+        detailRequested &&
+        (fullDetailLoading || loadingMeta || !fullDetailLoaded)
+      }
       summary={summary}
       missingGabaritoCount={missingGabaritoCount}
       annulledGabaritoCount={annulledGabaritoCount}
@@ -2743,8 +3590,13 @@ export function DashboardPage() {
       agentUsage={agentUsageView}
       agentPeriodDays={agentPeriodDays}
       onAgentPeriodDaysChange={(days) => {
+        if (days === agentPeriodDays) return
         setAgentPeriodDays(days)
         setSelectedAgentTrailId(null)
+        // Troca de período: zera o snapshot antigo para o KPI/seção
+        // refletirem o chip na hora (evita 16k com “30 dias” selecionado).
+        setAgentUsageLoading(true)
+        setAgentUsage({ ...EMPTY_AGENT_USAGE, periodDays: days })
       }}
       agentUsageLoading={agentUsageLoading}
       agentUsageUnavailable={!agentUsagePresent}
@@ -2763,10 +3615,48 @@ export function DashboardPage() {
       gradeOptions={gradeOptions}
       selectedGrade={selectedGrade}
       onSelectGrade={setSelectedGrade}
+      subjectTabs={subjectTabs}
+      selectedSubject={selectedSubject}
+      onSelectSubject={(subject) => {
+        setSelectedSubject(subject)
+        setSelectedContentKey(null)
+        setSelectedTrailId(null)
+      }}
+      trailFilterOptions={trailFilterOptions}
+      selectedTrailId={selectedTrailId}
+      onSelectTrailId={(trailId) => {
+        setSelectedTrailId(trailId)
+        setSelectedContentKey(null)
+      }}
+      scopeSummary={scopeSummary}
+      contentSummary={contentBarsAndSummary.summary}
+      contentBars={[...contentBarsAndSummary.bars]}
+      selectedContentKey={selectedContentKey}
+      onSelectContentKey={setSelectedContentKey}
       activityMatrix={activityMatrix}
       selectedMatrixCellKey={selectedMatrixCellKey}
       onSelectMatrixCell={setSelectedMatrixCellKey}
       optionDistribution={optionDistribution}
+      opportunityTab={opportunityTab}
+      onOpportunityTabChange={setOpportunityTab}
+      opportunityRows={opportunityRows}
+      opportunityNote={opportunityNote}
+      crossOpportunityCards={crossOpportunityCards}
+      crossOpportunityNote="Dúvidas por tema ainda não vêm do banco (sem metadata.topic). Cards listam conteúdos com acerto abaixo de 65%."
+      onOpenCrossContent={(key) => {
+        setSelectedContentKey(key)
+        const el = document.querySelector('.crias-content')
+        if (el instanceof HTMLElement) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+        }
+      }}
+      tutorSubject={tutorSubject}
+      ranking={rankingRows}
+      rankingScopeLabel={rankingScopeLabel}
+      rankingWeights={rankingWeights}
+      onRankingWeightsChange={setRankingWeights}
+      showAllRanking={showAllRanking}
+      onToggleShowAllRanking={() => setShowAllRanking((v) => !v)}
     />
   )
 }

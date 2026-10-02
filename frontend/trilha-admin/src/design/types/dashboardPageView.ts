@@ -209,13 +209,6 @@ export type DashboardAgentStudentLink = {
   lastActivityLabel: string
 }
 
-/** Faixas de percurso (Início/Meio/Final/Parado/…). */
-export type DashboardJourneyBandView = {
-  key: 'completed' | 'final' | 'mid' | 'start' | 'stalled' | 'notStarted'
-  label: string
-  count: number
-}
-
 export type DashboardActivityMatrixCell = {
   stageNumber: number
   questionNumber: number
@@ -236,14 +229,99 @@ export type DashboardOptionDistributionItem = {
   pct: number
 }
 
-/** Opcional / bloqueado por 08 — view não renderiza se undefined. */
+/** Faixas de percurso (Início/Meio/Final/Parado/…). */
+export type DashboardJourneyBandView = {
+  key: 'completed' | 'final' | 'mid' | 'start' | 'stalled' | 'notStarted'
+  label: string
+  count: number
+  /** Critério textual (ex.: "1% a 33% dos conteúdos liberados"). */
+  criterion?: string
+  /** Cor CSS da faixa (opcional; view tem default por key). */
+  color?: string
+  href?: string
+}
+
+export type DashboardSubjectTabView = {
+  id: string
+  label: string
+}
+
+export type DashboardContentExerciseView = {
+  key: string
+  label: string
+  prompt: string
+  accuracyPct: number | null
+  note: string
+  href?: string
+}
+
+export type DashboardContentBarView = {
+  key: string
+  num: string
+  title: string
+  /** Ex.: "3 exercícios · 1 sem gabarito" */
+  subtitle?: string
+  completionPct: number | null
+  accuracyPct: number | null
+  completedCount: number
+  enrolledCount: number
+  released: boolean
+  exercises: DashboardContentExerciseView[]
+  trailHref?: string
+}
+
+export type DashboardContentSummaryView = {
+  progressAvg: number | null
+  accuracyAvg: number | null
+  /** Exercício (não aula) com menor/maior acerto. */
+  lowest: {
+    label: string
+    pct: number
+    note?: string
+    contentKey?: string
+  } | null
+  highest: {
+    label: string
+    pct: number
+    note?: string
+    contentKey?: string
+  } | null
+  releasedCount: number
+  totalCount: number
+  below60Count: number
+}
+
+export type DashboardOpportunityRowView = {
+  rank: string
+  tag: string
+  tag2?: string
+  title: string
+  detail?: string
+  value: string
+  valueSub: string
+  tone: 'err' | 'hit' | 'duv'
+  href?: string
+}
+
+export type DashboardOpportunityTab = 'err' | 'duv' | 'hit'
+
 export type DashboardRankingRowView = {
   studentId: string
   name: string
   href: string
-  scoreLabel: string
+  meta: string
+  progressPct: number | null
+  accuracyPct: number | null
+  messages: number
+  messagesVsAvgLabel: string
+  messagesPositive: boolean
+  score: number
+  segProgress: number
+  segInteract: number
+  segAccuracy: number
 }
 
+/** Opcional — dúvidas por tema (sem metadata.topic = lista vazia). */
 export type DashboardTopicDoubtView = {
   topic: string
   count: number
@@ -352,6 +430,15 @@ export type DashboardPageViewProps = {
   agentUsageLoading: boolean
   /** Resposta OK sem campo agent_usage (não confundir com empty real). */
   agentUsageUnavailable?: boolean
+  /**
+   * Dispara carga sob demanda (meta + mode=full) no primeiro clique num KPI.
+   * Aditivo — omitir mantém comportamento só de UI.
+   */
+  onRequestKpiDetail?: () => void
+  /** Progresso/acerto ainda calculando após pedir detalhe. */
+  progressionKpisLoading?: boolean
+  /** Painel de detalhe aguardando meta/full. */
+  detailLoading?: boolean
   selectedAgentTrailId: string | null
   onSelectAgentTrailId: (trailId: string | null) => void
   selectedAgentStudents: DashboardAgentStudentLink[]
@@ -364,12 +451,59 @@ export type DashboardPageViewProps = {
   gradeOptions?: DashboardPickerItem[]
   selectedGrade?: string | null
   onSelectGrade?: (grade: string | null) => void
+  subjectTabs?: DashboardSubjectTabView[]
+  selectedSubject?: string | null
+  onSelectSubject?: (subject: string | null) => void
+  trailFilterOptions?: DashboardPickerItem[]
+  selectedTrailId?: string | null
+  onSelectTrailId?: (trailId: string | null) => void
+  scopeSummary?: {
+    studentCount: number
+    trailCount: number
+    accuracyPct: number | null
+    scopeLabel: string
+  } | null
+  contentSummary?: DashboardContentSummaryView | null
+  contentBars?: DashboardContentBarView[]
+  selectedContentKey?: string | null
+  onSelectContentKey?: (key: string | null) => void
   activityMatrix?: DashboardActivityMatrixView | null
   selectedMatrixCellKey?: string | null
   onSelectMatrixCell?: (key: string | null) => void
   optionDistribution?: DashboardOptionDistributionItem[] | null
-  /** Bloqueados por 08 — não renderizar se undefined. */
+  opportunityTab?: DashboardOpportunityTab
+  onOpportunityTabChange?: (tab: DashboardOpportunityTab) => void
+  opportunityRows?: DashboardOpportunityRowView[]
+  opportunityNote?: string | null
+  crossOpportunityCards?: Array<{
+    key: string
+    aula: string
+    tema: string
+    accuracyPct: number
+    doubtsLabel: string
+  }>
+  crossOpportunityNote?: string | null
+  onOpenCrossContent?: (key: string) => void
+  tutorSubject?: {
+    subjectLabel: string
+    periodLabel: string
+    messages: number
+    students: number
+    coveragePct: number | null
+    messagesPerDay: number
+    perStudentPerDay: number
+    perStudentPeriod: number
+    topStudents: DashboardAgentStudentLink[]
+  } | null
   ranking?: DashboardRankingRowView[]
+  rankingScopeLabel?: string | null
+  rankingWeights?: { progress: number; interact: number; accuracy: number }
+  onRankingWeightsChange?: (next: {
+    progress: number
+    interact: number
+    accuracy: number
+  }) => void
+  showAllRanking?: boolean
+  onToggleShowAllRanking?: () => void
   topicDoubts?: DashboardTopicDoubtView[]
-  learningOpportunities?: unknown
 }
